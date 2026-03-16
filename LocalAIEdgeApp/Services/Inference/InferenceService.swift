@@ -36,3 +36,54 @@ enum InferenceServiceError: LocalizedError {
         }
     }
 }
+
+enum AssistantResponseSanitizer {
+    static func clean(_ text: String) -> String {
+        var cleaned = text
+
+        let globalPatterns = [
+            "(?is)<think>[\\s\\S]*?</think>",
+            "(?i)<end_of_turn>",
+            "(?i)<start_of_turn>\\s*(model|user|system)?",
+            "(?i)<\\|eot_id\\|>",
+            "(?i)<eot_id>",
+            "(?i)<\\|end_of_text\\|>",
+            "(?i)<\\|im_end\\|>",
+            "(?i)<\\|assistant\\|>",
+            "(?i)<\\|user\\|>",
+            "(?i)<\\|system\\|>",
+            "(?i)<\\|im_start\\|>(assistant|user|system)",
+            "(?i)<\\|start_header_id\\|>(assistant|user|system)<\\|end_header_id\\|>",
+            "(?i)<｜Assistant｜>",
+            "(?i)<｜User｜>",
+            "(?i)<｜System｜>",
+            "(?i)</s>",
+            "(?i)<s>",
+            "(?i)<bos>",
+            "(?i)<eos>",
+            "(?i)\\[INST\\]",
+            "(?i)\\[/INST\\]",
+            "(?i)<<SYS>>",
+            "(?i)<</SYS>>"
+        ]
+
+        for pattern in globalPatterns {
+            cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+
+        let leadingPromptPatterns = [
+            "(?is)^###\\s*System[\\s\\S]*?###\\s*Current User Request\\s*\\nUser:.*?\\nAssistant:\\s*",
+            "(?is)^system\\s*:\\s*.*?assistant\\s*:\\s*"
+        ]
+
+        for pattern in leadingPromptPatterns {
+            cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+
+        cleaned = cleaned.replacingOccurrences(of: "^(assistant|model)\\s*:\\s*", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}

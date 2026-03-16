@@ -13,6 +13,9 @@ struct ChatView: View {
     @State private var showModelPicker = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var attachedImage: UIImage?
+    @StateObject private var voiceController = VoiceInteractionController()
+
+    private let streamUpdateInterval: Duration = .milliseconds(80)
 
     private var composerBottomSpacing: CGFloat {
         isInputFocused ? 8 : 78
@@ -24,6 +27,13 @@ struct ChatView: View {
 
     private var isVisionModel: Bool {
         store.defaultModel?.catalogItem.supportsVision == true
+    }
+
+    private var lastAssistantResponseText: String? {
+        activeMessages
+            .last(where: { $0.role == .assistant })?
+            .text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func inferenceServiceForModel(_ model: InstalledModel) -> InferenceService {
@@ -161,9 +171,13 @@ struct ChatView: View {
                 liveSearchEnabled: $liveSearchEnabled,
                 attachedImage: $attachedImage,
                 isInputFocused: $isInputFocused,
+                voiceModeEnabled: store.settings.voiceModeEnabled,
+                isListening: voiceController.isListening,
+                voiceStatusMessage: voiceController.lastError,
                 isVisionModel: isVisionModel,
                 isSending: isSending,
                 onSend: sendPrompt,
+                onToggleVoiceInput: toggleVoiceInput,
                 onStop: stopGeneration
             )
             .padding(.horizontal, 16)
@@ -179,6 +193,17 @@ struct ChatView: View {
             )
         }
         .onAppear { store.reconcileInstalledFiles() }
+        .onChange(of: voiceController.transcript) {
+            if voiceController.isListening {
+                prompt = voiceController.transcript
+            }
+        }
+        .onChange(of: store.settings.voiceModeEnabled) {
+            if !store.settings.voiceModeEnabled {
+                voiceController.stopListening()
+                voiceController.stopSpeaking()
+            }
+        }
     }
 
     private var activeMessages: [ChatMessage] {
@@ -239,6 +264,22 @@ struct ChatView: View {
                 .overlay(
                     Capsule().stroke(AppTheme.hairline, lineWidth: 1)
                 )
+
+                if store.settings.voiceModeEnabled, let lastAssistantResponseText, !lastAssistantResponseText.isEmpty {
+                    Button {
+                        replayLastAssistantResponse()
+                    } label: {
+                        Image(systemName: voiceController.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(voiceController.isSpeaking ? AppTheme.warning : AppTheme.accent)
+                            .padding(8)
+                            .background(AppTheme.panel.opacity(0.8))
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle().stroke(AppTheme.hairline, lineWidth: 1)
+                            )
+                    }
+                }
             }
 
             // Capability badges + model summary
@@ -308,7 +349,9 @@ struct ChatView: View {
         NavigationStack {
             List {
                 let readyModels = store.installedModels.filter {
-                    $0.installState == .installed && ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil)
+                    $0.catalogItem.primaryUse == .chat &&
+                    $0.installState == .installed &&
+                    ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil)
                 }
                 if readyModels.isEmpty {
                     VStack(spacing: 12) {
@@ -495,7 +538,36 @@ struct ChatView: View {
         isSending = false
     }
 
+    private func toggleVoiceInput() {
+        guard store.settings.voiceModeEnabled else { return }
+
+        Task {
+            await voiceController.toggleListening(seedText: prompt)
+        }
+    }
+
+    private func replayLastAssistantResponse() {
+        if voiceController.isSpeaking {
+            voiceController.stopSpeaking()
+            return
+        }
+
+        guard let lastAssistantResponseText, !lastAssistantResponseText.isEmpty else { return }
+        voiceController.speak(lastAssistantResponseText, using: store.settings)
+    }
+
+    private func cleanedDisplayedAssistantText(_ text: String) -> String {
+        AssistantResponseSanitizer.clean(text)
+    }
+
+    @MainActor
+    private func updateStreamingMessage(_ text: String, messageID: UUID, sessionID: UUID) {
+        store.updateMessageText(messageID, in: sessionID, text: text)
+    }
+
     private func sendPrompt() {
+        voiceController.stopListening()
+
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let currentImage = attachedImage
         guard !trimmedPrompt.isEmpty || currentImage != nil else { return }
@@ -547,26 +619,47 @@ struct ChatView: View {
                 }
 
                 var accumulated = ""
+                var stoppedByUser = false
+                let clock = ContinuousClock()
+                var lastFlush = clock.now
                 for await piece in stream {
                     if Task.isCancelled {
                         accumulated += "\n\n*(Response stopped by user)*"
-                        let snapshot = accumulated
-                        await MainActor.run {
-                            store.updateMessageText(messageID, in: sessionID, text: snapshot)
-                        }
+                        stoppedByUser = true
+                        await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
                         break
                     }
+
                     accumulated += piece
-                    let snapshot = accumulated
-                    await MainActor.run {
-                        store.updateMessageText(messageID, in: sessionID, text: snapshot)
+
+                    let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                        || piece.contains(where: \ .isNewline)
+                        || accumulated.count <= 48
+
+                    guard shouldFlush else {
+                        continue
                     }
+
+                    lastFlush = clock.now
+                    await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
                 }
 
-                // Final cleanup: if empty after streaming, show fallback
-                if accumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Sanitize the final text — this is what gets stored in conversation history,
+                // so template tokens must be stripped to prevent feedback loops on next turn.
+                let finalText = cleanedDisplayedAssistantText(accumulated)
+                if finalText.isEmpty {
+                    let fallback = "The model finished without returning text. Try a shorter prompt or another model."
+                    await updateStreamingMessage(fallback, messageID: messageID, sessionID: sessionID)
+                } else {
+                    await updateStreamingMessage(finalText, messageID: messageID, sessionID: sessionID)
+                }
+
+                if !stoppedByUser,
+                   store.settings.voiceModeEnabled,
+                   store.settings.autoPlayVoiceResponses,
+                   !finalText.isEmpty {
                     await MainActor.run {
-                        store.updateMessageText(messageID, in: sessionID, text: "The model finished without returning text. Try a shorter prompt or another model.")
+                        voiceController.speak(finalText, using: store.settings)
                     }
                 }
 

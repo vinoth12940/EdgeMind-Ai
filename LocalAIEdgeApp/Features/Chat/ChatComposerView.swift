@@ -6,9 +6,13 @@ struct ChatComposerView: View {
     @Binding var liveSearchEnabled: Bool
     @Binding var attachedImage: UIImage?
     @Binding var isInputFocused: Bool
+    let voiceModeEnabled: Bool
+    let isListening: Bool
+    let voiceStatusMessage: String?
     let isVisionModel: Bool
     let isSending: Bool
     let onSend: () -> Void
+    let onToggleVoiceInput: () -> Void
     var onStop: (() -> Void)? = nil
 
     @FocusState private var isFocused: Bool
@@ -157,6 +161,22 @@ struct ChatComposerView: View {
                         }
                     }
 
+                if voiceModeEnabled {
+                    Button(action: onToggleVoiceInput) {
+                        Image(systemName: isListening ? "stop.fill" : "mic.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Circle()
+                                    .fill(isListening ? Color.red : AppTheme.warning)
+                            )
+                            .scaleEffect(isListening ? 1.0 : 0.94)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: isListening)
+                    }
+                    .disabled(isSending)
+                }
+
                 if isSending, let onStop {
                     Button(action: onStop) {
                         Image(systemName: "stop.circle.fill")
@@ -184,6 +204,20 @@ struct ChatComposerView: View {
                             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: canSend)
                     }
                     .disabled(!canSend)
+                }
+            }
+
+            if let voiceStatusMessage, !voiceStatusMessage.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.warning)
+
+                    Text(voiceStatusMessage)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary)
+
+                    Spacer()
                 }
             }
         }

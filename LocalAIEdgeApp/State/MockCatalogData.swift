@@ -901,6 +901,20 @@ enum MockCatalogData {
             supportsVision: true,
             recommendedForIPhone: true
         ),
+        ModelCatalogItem(
+            displayName: "Kokoro 82M Voice",
+            family: .kokoro,
+            variant: "4-bit MLX",
+            summary: "Downloadable Kokoro voice asset for future native MLX speech synthesis. The current app uses Apple Speech for dictation and spoken replies while this asset path is prepared.",
+            parameterSize: "82M",
+            quantization: "MLX 4-bit",
+            diskSize: "~340 MB",
+            contextWindow: "Audio",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Kokoro-82M-4bit",
+            primaryUse: .voice,
+            recommendedForIPhone: true
+        ),
     ]
 
     static let installedModels: [InstalledModel] = []

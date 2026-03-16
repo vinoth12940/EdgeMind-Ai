@@ -114,7 +114,7 @@ struct ModelLibraryView: View {
                     .foregroundStyle(AppTheme.textPrimary)
             }
 
-            Text("\(store.catalog.count) models from \(MockCatalogData.allLabs.count) labs — llama.cpp + MLX runtimes")
+            Text("\(store.catalog.count) chat models and voice assets from \(MockCatalogData.allLabs.count) labs — llama.cpp + MLX runtimes")
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.textSecondary)
         }
@@ -256,6 +256,7 @@ struct ModelLibraryView: View {
 
     private func installedModelCard(_ model: InstalledModel) -> some View {
         let labColor = AppTheme.labColor(for: model.catalogItem.family)
+        let isVoiceAsset = model.catalogItem.primaryUse == .voice
 
         return HStack(spacing: 12) {
             // Lab accent bar
@@ -301,15 +302,25 @@ struct ModelLibraryView: View {
                 }
             } else {
                 HStack(spacing: 8) {
-                    Button(model.isDefault ? "Default" : "Use") {
-                        store.setDefaultModel(id: model.catalogItem.id)
+                    if isVoiceAsset {
+                        Text("Voice Asset")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.orange.opacity(0.15))
+                            .foregroundStyle(.orange)
+                            .clipShape(Capsule())
+                    } else {
+                        Button(model.isDefault ? "Default" : "Use") {
+                            store.setDefaultModel(id: model.catalogItem.id)
+                        }
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(model.isDefault ? AppTheme.success.opacity(0.2) : AppTheme.accent.opacity(0.15))
+                        .foregroundStyle(model.isDefault ? AppTheme.success : AppTheme.accent)
+                        .clipShape(Capsule())
                     }
-                    .font(.caption.weight(.bold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(model.isDefault ? AppTheme.success.opacity(0.2) : AppTheme.accent.opacity(0.15))
-                    .foregroundStyle(model.isDefault ? AppTheme.success : AppTheme.accent)
-                    .clipShape(Capsule())
 
                     Button {
                         modelToDelete = model
@@ -607,20 +618,34 @@ struct ModelLibraryView: View {
     private func actionRow(for item: ModelCatalogItem, installed: InstalledModel?) -> some View {
         HStack(spacing: 8) {
             if installed?.installState == .installed {
-                Button {
-                    store.setDefaultModel(id: item.id)
-                } label: {
+                if item.primaryUse == .voice {
                     HStack(spacing: 5) {
-                        Image(systemName: installed?.isDefault == true ? "star.fill" : "message.fill")
+                        Image(systemName: "waveform.path")
                             .font(.system(size: 11))
-                        Text(installed?.isDefault == true ? "Default" : "Use for Chat")
+                        Text("Voice Asset Ready")
                             .font(.caption.weight(.bold))
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(installed?.isDefault == true ? AppTheme.success.opacity(0.2) : AppTheme.accent.opacity(0.15))
-                    .foregroundStyle(installed?.isDefault == true ? AppTheme.success : AppTheme.accent)
+                    .background(Color.orange.opacity(0.15))
+                    .foregroundStyle(.orange)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                } else {
+                    Button {
+                        store.setDefaultModel(id: item.id)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: installed?.isDefault == true ? "star.fill" : "message.fill")
+                                .font(.system(size: 11))
+                            Text(installed?.isDefault == true ? "Default" : "Use for Chat")
+                                .font(.caption.weight(.bold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(installed?.isDefault == true ? AppTheme.success.opacity(0.2) : AppTheme.accent.opacity(0.15))
+                        .foregroundStyle(installed?.isDefault == true ? AppTheme.success : AppTheme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
                 }
 
                 Button {
@@ -658,7 +683,7 @@ struct ModelLibraryView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "apple.logo")
                                 .font(.system(size: 12))
-                            Text("Download MLX Model")
+                            Text(item.primaryUse == .voice ? "Download Voice Asset" : "Download MLX Model")
                                 .font(.caption.weight(.bold))
                         }
                         .frame(maxWidth: .infinity)

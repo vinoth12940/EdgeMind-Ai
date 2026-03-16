@@ -7,6 +7,10 @@ struct AppSettings: Codable, Hashable {
     var privacyModeEnabled: Bool
     var useSearchByDefault: Bool
     var voiceModeEnabled: Bool
+    var voiceModel: VoiceModel
+    var voicePreset: VoicePreset
+    var autoPlayVoiceResponses: Bool
+    var voiceResponseRate: Double
 
     // Web Search API Configuration
     var webSearchProvider: WebSearchProvider
@@ -14,6 +18,44 @@ struct AppSettings: Codable, Hashable {
 
     // HuggingFace Authentication
     var huggingFaceToken: String
+
+    enum VoiceModel: String, Codable, Hashable, CaseIterable {
+        case kokoro82M = "Kokoro 82M"
+
+        var catalogDisplayName: String {
+            switch self {
+            case .kokoro82M:
+                return "Kokoro 82M Voice"
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .kokoro82M:
+                return "Preferred downloadable voice asset for future native MLX speech synthesis. Today, dictation and spoken replies run through Apple's on-device speech services."
+            }
+        }
+    }
+
+    enum VoicePreset: String, Codable, Hashable, CaseIterable {
+        case balanced = "Balanced"
+        case warm = "Warm"
+        case clear = "Clear"
+        case energetic = "Energetic"
+
+        var description: String {
+            switch self {
+            case .balanced:
+                return "Neutral voice for everyday replies"
+            case .warm:
+                return "Softer tone for conversational answers"
+            case .clear:
+                return "Sharper articulation for facts and instructions"
+            case .energetic:
+                return "More lively delivery for interactive use"
+            }
+        }
+    }
 
     enum WebSearchProvider: String, Codable, Hashable, CaseIterable {
         case none = "None"
@@ -50,6 +92,10 @@ struct AppSettings: Codable, Hashable {
         privacyModeEnabled: true,
         useSearchByDefault: false,
         voiceModeEnabled: false,
+        voiceModel: .kokoro82M,
+        voicePreset: .balanced,
+        autoPlayVoiceResponses: false,
+        voiceResponseRate: 1.0,
         webSearchProvider: .none,
         webSearchAPIKey: "",
         huggingFaceToken: ""

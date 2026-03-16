@@ -16,7 +16,15 @@ struct LocalLlamaInferenceService: InferenceService {
             throw InferenceServiceError.missingLocalModelFile
         }
 
-        let renderedPrompt = PromptRenderer.render(
+        let chatTurns = PromptRenderer.buildChatTurns(
+            systemPrompt: systemPrompt,
+            conversation: conversation,
+            searchContext: searchContext,
+            latestPrompt: prompt,
+            modelName: model.catalogItem.displayName
+        )
+
+        let fallbackPrompt = PromptRenderer.render(
             systemPrompt: systemPrompt,
             conversation: conversation,
             searchContext: searchContext,
@@ -25,7 +33,11 @@ struct LocalLlamaInferenceService: InferenceService {
         )
 
         do {
-            let response = try await LocalLlamaRuntime.shared.generate(prompt: renderedPrompt, using: modelPath)
+            let response = try await LocalLlamaRuntime.shared.generate(
+                chat: chatTurns,
+                fallbackPrompt: fallbackPrompt,
+                using: modelPath
+            )
             return ChatMessage(
                 role: .assistant,
                 text: response.isEmpty ? "The model finished without returning text. Try a shorter prompt or another model." : response,
@@ -51,7 +63,15 @@ struct LocalLlamaInferenceService: InferenceService {
             throw InferenceServiceError.missingLocalModelFile
         }
 
-        let renderedPrompt = PromptRenderer.render(
+        let chatTurns = PromptRenderer.buildChatTurns(
+            systemPrompt: systemPrompt,
+            conversation: conversation,
+            searchContext: searchContext,
+            latestPrompt: prompt,
+            modelName: model.catalogItem.displayName
+        )
+
+        let fallbackPrompt = PromptRenderer.render(
             systemPrompt: systemPrompt,
             conversation: conversation,
             searchContext: searchContext,
@@ -61,15 +81,66 @@ struct LocalLlamaInferenceService: InferenceService {
 
         let messageID = UUID()
         let citations = searchContext?.citations ?? []
-        let stream = try await LocalLlamaRuntime.shared.generateStream(prompt: renderedPrompt, using: modelPath)
+        let stream = try await LocalLlamaRuntime.shared.generateStream(
+            chat: chatTurns,
+            fallbackPrompt: fallbackPrompt,
+            using: modelPath
+        )
         return (messageID, citations, stream)
     }
 }
 
 private enum PromptRenderer {
-    /// Approximate token budget: n_ctx (8192) minus generation reserve (1024) minus safety margin.
     static let maxPromptTokens = 6800
 
+    /// Build structured chat turns for use with `llama_chat_apply_template`.
+    static func buildChatTurns(
+        systemPrompt: String,
+        conversation: [ChatMessage],
+        searchContext: SearchContext?,
+        latestPrompt: String,
+        modelName: String
+    ) -> [LocalLlamaChatTurn] {
+        var systemContent = "\(systemPrompt)\nYou are running locally on-device using model \(modelName). Respond directly to the user's question. Do not hallucinate or fabricate information."
+
+        if let searchContext {
+            let snippets = searchSnippets(searchContext)
+            systemContent += "\n\nWeb Search Results:\n\(snippets)"
+        }
+
+        var turns: [LocalLlamaChatTurn] = []
+        turns.append(LocalLlamaChatTurn(role: "system", content: systemContent))
+
+        let fixedTokens = estimateTokens(systemContent) + estimateTokens(latestPrompt) + 200
+        let historyBudget = maxPromptTokens - fixedTokens
+
+        var eligibleMessages = conversation.filter { $0.role != .search }
+        if let last = eligibleMessages.last, last.role == .user, last.text == latestPrompt {
+            eligibleMessages.removeLast()
+        }
+
+        var historyTurns: [LocalLlamaChatTurn] = []
+        var usedTokens = 0
+
+        for message in eligibleMessages.reversed() {
+            let role: String
+            switch message.role {
+            case .assistant: role = "assistant"
+            case .user:      role = "user"
+            case .system, .search: continue
+            }
+            let cost = estimateTokens(message.text)
+            if usedTokens + cost > historyBudget { break }
+            historyTurns.insert(LocalLlamaChatTurn(role: role, content: message.text), at: 0)
+            usedTokens += cost
+        }
+
+        turns.append(contentsOf: historyTurns)
+        turns.append(LocalLlamaChatTurn(role: "user", content: latestPrompt))
+        return turns
+    }
+
+    /// Legacy raw-text fallback prompt for models without a chat template.
     static func render(
         systemPrompt: String,
         conversation: [ChatMessage],
@@ -77,29 +148,20 @@ private enum PromptRenderer {
         latestPrompt: String,
         modelName: String
     ) -> String {
-        // --- Fixed sections (always included) ---
-        let systemSection = "### System\n\(systemPrompt)\nYou are running locally on-device using model \(modelName). Respond directly to the user's question. Do not hallucinate or fabricate information."
+        var systemSection = "\(systemPrompt)\nYou are running locally on-device using model \(modelName). Respond directly to the user's question. Do not hallucinate or fabricate information."
 
-        var searchSection: String?
         if let searchContext {
-            let snippets = searchContext.snippets.prefix(3).enumerated().map { index, snippet in
-                let cleaned = Self.stripHTML(snippet)
-                let truncated = cleaned.count > 300 ? String(cleaned.prefix(300)) + "..." : cleaned
-                return "[\(index + 1)] \(truncated)"
-            }.joined(separator: "\n")
-            searchSection = "### Web Search Results\nAnswer the user's question using the search results below. Reference sources by number (e.g. [1], [2]) in your answer. If the results don't help, say so.\n\(snippets)"
+            let snippets = searchSnippets(searchContext)
+            systemSection += "\n\nWeb Search Results:\n\(snippets)"
         }
 
-        let userSection = "### Current User Request\nUser: \(latestPrompt)\nAssistant:"
-
-        // --- Calculate remaining budget for conversation history ---
-        let fixedTokens = estimateTokens(systemSection)
-            + estimateTokens(userSection)
-            + (searchSection.map { estimateTokens($0) } ?? 0)
+        let fixedTokens = estimateTokens(systemSection) + estimateTokens(latestPrompt) + 200
         let historyBudget = maxPromptTokens - fixedTokens
 
-        // --- Fill history newest-first up to budget ---
-        let eligibleMessages = conversation.filter { $0.role != .search }
+        var eligibleMessages = conversation.filter { $0.role != .search }
+        if let last = eligibleMessages.last, last.role == .user, last.text == latestPrompt {
+            eligibleMessages.removeLast()
+        }
         var historyLines: [String] = []
         var usedTokens = 0
 
@@ -108,8 +170,7 @@ private enum PromptRenderer {
             switch message.role {
             case .assistant: line = "Assistant: \(message.text)"
             case .user:      line = "User: \(message.text)"
-            case .system:    line = "System: \(message.text)"
-            case .search:    continue
+            case .system, .search: continue
             }
             let cost = estimateTokens(line)
             if usedTokens + cost > historyBudget { break }
@@ -117,17 +178,24 @@ private enum PromptRenderer {
             usedTokens += cost
         }
 
-        // --- Assemble ---
-        var sections: [String] = [systemSection]
-        if let s = searchSection { sections.append(s) }
+        var parts: [String] = [systemSection]
         if !historyLines.isEmpty {
-            sections.append("### Conversation\n\(historyLines.joined(separator: "\n\n"))")
+            parts.append(historyLines.joined(separator: "\n"))
         }
-        sections.append(userSection)
-        return sections.joined(separator: "\n\n")
+        parts.append("User: \(latestPrompt)\nAssistant:")
+        return parts.joined(separator: "\n\n")
     }
 
-    /// Rough token estimate: ~4 UTF-8 bytes per token for most LLMs.
+    // MARK: - Helpers
+
+    private static func searchSnippets(_ searchContext: SearchContext) -> String {
+        searchContext.snippets.prefix(3).enumerated().map { index, snippet in
+            let cleaned = stripHTML(snippet)
+            let truncated = cleaned.count > 300 ? String(cleaned.prefix(300)) + "..." : cleaned
+            return "[\(index + 1)] \(truncated)"
+        }.joined(separator: "\n")
+    }
+
     static func estimateTokens(_ text: String) -> Int {
         max(1, text.utf8.count / 4)
     }

@@ -2,6 +2,19 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppStateStore.self) private var store
+    @Environment(\.selectedTab) private var selectedTab
+
+    private var selectedVoiceAsset: InstalledModel? {
+        store.installedModels.first(where: {
+            $0.installState == .installed &&
+            $0.catalogItem.primaryUse == .voice &&
+            $0.catalogItem.displayName == store.settings.voiceModel.catalogDisplayName
+        })
+    }
+
+    private var isSelectedVoiceAssetInstalled: Bool {
+        selectedVoiceAsset != nil
+    }
 
     var body: some View {
         ZStack {
@@ -52,6 +65,7 @@ struct SettingsView: View {
                         set: { newValue in
                             store.settings.huggingFaceToken = newValue
                             HFTokenManager.token = newValue
+                            store.persistSettings()
                         }
                     )
                 )
@@ -88,7 +102,10 @@ struct SettingsView: View {
                 "Local-first privacy mode",
                 isOn: Binding(
                     get: { store.settings.privacyModeEnabled },
-                    set: { store.settings.privacyModeEnabled = $0 }
+                    set: {
+                        store.settings.privacyModeEnabled = $0
+                        store.persistSettings()
+                    }
                 )
             )
 
@@ -98,7 +115,10 @@ struct SettingsView: View {
                 "Enable Live Search by default",
                 isOn: Binding(
                     get: { store.settings.useSearchByDefault },
-                    set: { store.settings.useSearchByDefault = $0 }
+                    set: {
+                        store.settings.useSearchByDefault = $0
+                        store.persistSettings()
+                    }
                 )
             )
         }
@@ -113,7 +133,10 @@ struct SettingsView: View {
 
                 TextField("Custom system prompt…", text: Binding(
                     get: { store.settings.systemPrompt },
-                    set: { store.settings.systemPrompt = $0 }
+                    set: {
+                        store.settings.systemPrompt = $0
+                        store.persistSettings()
+                    }
                 ), axis: .vertical)
                 .font(.system(size: 14))
                 .lineLimit(3...6)
@@ -133,9 +156,133 @@ struct SettingsView: View {
                 "Voice mode",
                 isOn: Binding(
                     get: { store.settings.voiceModeEnabled },
-                    set: { store.settings.voiceModeEnabled = $0 }
+                    set: {
+                        store.settings.voiceModeEnabled = $0
+                        store.persistSettings()
+                    }
                 )
             )
+
+            if store.settings.voiceModeEnabled {
+                Divider().foregroundStyle(AppTheme.divider)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Voice Model")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppTheme.textSecondary)
+
+                    Picker("Voice Model", selection: Binding(
+                        get: { store.settings.voiceModel },
+                        set: {
+                            store.settings.voiceModel = $0
+                            store.persistSettings()
+                        }
+                    )) {
+                        ForEach(AppSettings.VoiceModel.allCases, id: \.self) { model in
+                            Text(model.rawValue).tag(model)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AppTheme.accent)
+
+                    Text(store.settings.voiceModel.description)
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.textTertiary)
+
+                    HStack(spacing: 6) {
+                        Image(systemName: isSelectedVoiceAssetInstalled ? "checkmark.circle.fill" : "arrow.down.circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(isSelectedVoiceAssetInstalled ? AppTheme.success : AppTheme.warning)
+
+                        Text(isSelectedVoiceAssetInstalled ? "Kokoro asset downloaded" : "Kokoro asset not downloaded yet")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(isSelectedVoiceAssetInstalled ? AppTheme.success : AppTheme.warning)
+
+                        Spacer()
+
+                        Button(isSelectedVoiceAssetInstalled ? "Library" : "Download") {
+                            selectedTab.wrappedValue = 1
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.accent)
+                    }
+
+                    Text("Voice chat already works on-device through Apple Speech: tap the mic in chat to dictate, and enable auto-play to hear replies. The Kokoro download is exposed here as the dedicated voice asset path for future native MLX synthesis.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+
+                Divider().foregroundStyle(AppTheme.divider)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Voice Preset")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppTheme.textSecondary)
+
+                    Picker("Voice Preset", selection: Binding(
+                        get: { store.settings.voicePreset },
+                        set: {
+                            store.settings.voicePreset = $0
+                            store.persistSettings()
+                        }
+                    )) {
+                        ForEach(AppSettings.VoicePreset.allCases, id: \.self) { preset in
+                            Text(preset.rawValue).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(store.settings.voicePreset.description)
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+
+                Divider().foregroundStyle(AppTheme.divider)
+
+                settingsToggle(
+                    "Auto-play spoken replies",
+                    isOn: Binding(
+                        get: { store.settings.autoPlayVoiceResponses },
+                        set: {
+                            store.settings.autoPlayVoiceResponses = $0
+                            store.persistSettings()
+                        }
+                    )
+                )
+
+                Divider().foregroundStyle(AppTheme.divider)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Reply Speed")
+                            .font(.system(size: 14))
+                            .foregroundStyle(AppTheme.textPrimary)
+
+                        Spacer()
+
+                        Text(String(format: "%.2fx", store.settings.voiceResponseRate))
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(AppTheme.textSecondary)
+                    }
+
+                    Slider(
+                        value: Binding(
+                            get: { store.settings.voiceResponseRate },
+                            set: {
+                                store.settings.voiceResponseRate = $0
+                                store.persistSettings()
+                            }
+                        ),
+                        in: 0.8...1.25,
+                        step: 0.05
+                    )
+                    .tint(AppTheme.accent)
+
+                    Text("Playback uses Apple's on-device speech voice today and applies your chosen pace and tone. Kokoro remains the downloadable voice asset selection in the library.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+            }
         }
     }
 
@@ -144,7 +291,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Picker("Provider", selection: Binding(
                     get: { store.settings.webSearchProvider },
-                    set: { store.settings.webSearchProvider = $0 }
+                    set: {
+                        store.settings.webSearchProvider = $0
+                        store.persistSettings()
+                    }
                 )) {
                     ForEach(AppSettings.WebSearchProvider.allCases, id: \.self) { provider in
                         Text(provider.rawValue).tag(provider)
@@ -163,7 +313,10 @@ struct SettingsView: View {
                             store.settings.webSearchProvider.placeholder,
                             text: Binding(
                                 get: { store.settings.webSearchAPIKey },
-                                set: { store.settings.webSearchAPIKey = $0 }
+                                set: {
+                                    store.settings.webSearchAPIKey = $0
+                                    store.persistSettings()
+                                }
                             )
                         )
                         .textContentType(.password)
@@ -208,7 +361,10 @@ struct SettingsView: View {
 
                 TextField("https://…", text: Binding(
                     get: { store.settings.searchGatewayURL?.absoluteString ?? "" },
-                    set: { store.settings.searchGatewayURL = URL(string: $0) }
+                    set: {
+                        store.settings.searchGatewayURL = URL(string: $0)
+                        store.persistSettings()
+                    }
                 ))
                 .font(.system(size: 14, design: .monospaced))
                 .foregroundStyle(AppTheme.textPrimary)

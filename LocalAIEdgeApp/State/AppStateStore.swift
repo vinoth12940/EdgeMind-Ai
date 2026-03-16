@@ -1,16 +1,22 @@
 import Foundation
 import Observation
 
+@MainActor
 @Observable
 final class AppStateStore {
     private(set) var catalog: [ModelCatalogItem]
     private(set) var installedModels: [InstalledModel]
     private(set) var chatSessions: [ChatSession]
-    var selectedSessionID: UUID?
+    var selectedSessionID: UUID? {
+        didSet { saveSelectedSessionID() }
+    }
     var settings: AppSettings
 
     private static let installedModelsKey = "persistedInstalledModels"
     private static let settingsKey = "persistedAppSettings"
+    private static let chatSessionsKey = "persistedChatSessions"
+    private static let selectedSessionIDKey = "persistedSelectedSessionID"
+    private static let placeholderSessionTitle = "New Chat"
 
     init(
         catalog: [ModelCatalogItem] = MockCatalogData.items,
@@ -19,8 +25,12 @@ final class AppStateStore {
         settings: AppSettings = .default
     ) {
         self.catalog = catalog
-        self.chatSessions = chatSessions
-        self.selectedSessionID = nil
+        if let savedSessions = Self.loadChatSessions(), !savedSessions.isEmpty {
+            self.chatSessions = savedSessions.map(Self.normalizedSessionTitle)
+        } else {
+            self.chatSessions = chatSessions.map(Self.normalizedSessionTitle)
+        }
+        self.selectedSessionID = Self.loadSelectedSessionID()
 
         // Restore persisted settings
         if let savedSettings = Self.loadSettings() {
@@ -39,24 +49,36 @@ final class AppStateStore {
 
     var selectedSession: ChatSession? {
         guard let selectedSessionID else { return chatSessions.first }
-        return chatSessions.first(where: { $0.id == selectedSessionID })
+        return chatSessions.first(where: { $0.id == selectedSessionID }) ?? chatSessions.first
     }
 
     var defaultModel: InstalledModel? {
         if let defaultModelID = settings.defaultModelID {
             return installedModels.first(where: {
-                $0.catalogItem.id == defaultModelID && $0.installState == .installed && ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil)
+                $0.catalogItem.id == defaultModelID &&
+                $0.catalogItem.primaryUse == .chat &&
+                $0.installState == .installed &&
+                ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil)
             })
         }
 
-        return installedModels.first(where: { $0.isDefault && $0.installState == .installed && ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil) })
+        return installedModels.first(where: {
+            $0.catalogItem.primaryUse == .chat &&
+            $0.isDefault &&
+            $0.installState == .installed &&
+            ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil)
+        })
     }
 
     func setDefaultModel(id: UUID) {
+        guard installedModels.contains(where: { $0.catalogItem.id == id && $0.catalogItem.primaryUse == .chat }) else {
+            return
+        }
+
         settings.defaultModelID = id
         installedModels = installedModels.map { model in
             var updated = model
-            updated.isDefault = model.catalogItem.id == id
+            updated.isDefault = model.catalogItem.primaryUse == .chat && model.catalogItem.id == id
             return updated
         }
         saveInstalledModels()
@@ -110,7 +132,7 @@ final class AppStateStore {
         existing.localPath = localPath
         existing.installedAt = .now
         existing.statusMessage = nil
-        if settings.defaultModelID == nil {
+        if item.primaryUse == .chat && settings.defaultModelID == nil {
             existing.isDefault = true
             settings.defaultModelID = item.id
             saveSettings()
@@ -139,34 +161,38 @@ final class AppStateStore {
     }
 
     func appendMessage(_ message: ChatMessage, to sessionID: UUID) {
-        chatSessions = chatSessions.map { session in
-            guard session.id == sessionID else { return session }
-            var updated = session
-            updated.messages.append(message)
-            updated.updatedAt = .now
-            return updated
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else {
+            return
         }
+
+        chatSessions[sessionIndex].messages.append(message)
+        chatSessions[sessionIndex].updatedAt = .now
+        chatSessions[sessionIndex] = Self.normalizedSessionTitle(chatSessions[sessionIndex])
+        saveChatSessions()
     }
 
     func updateMessageText(_ messageID: UUID, in sessionID: UUID, text: String) {
-        chatSessions = chatSessions.map { session in
-            guard session.id == sessionID else { return session }
-            var updated = session
-            if let idx = updated.messages.firstIndex(where: { $0.id == messageID }) {
-                updated.messages[idx].text = text
-            }
-            return updated
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else {
+            return
         }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else {
+            return
+        }
+
+        chatSessions[sessionIndex].messages[messageIndex].text = text
+        chatSessions[sessionIndex].updatedAt = .now
+        saveChatSessions()
     }
 
     func createSession(using modelID: UUID?) {
         let session = ChatSession(
-            title: "New Chat",
+            title: Self.placeholderSessionTitle,
             modelID: modelID,
             messages: []
         )
         chatSessions.insert(session, at: 0)
         selectedSessionID = session.id
+        saveChatSessions()
     }
 
     func renameSession(_ sessionID: UUID, title: String) {
@@ -176,11 +202,13 @@ final class AppStateStore {
             updated.title = title
             return updated
         }
+        saveChatSessions()
     }
 
     func deleteSession(_ sessionID: UUID) {
         chatSessions.removeAll(where: { $0.id == sessionID })
         selectedSessionID = chatSessions.first?.id
+        saveChatSessions()
     }
 
     func reconcileInstalledFiles() {
@@ -188,6 +216,10 @@ final class AppStateStore {
             guard let localPath = URLModelDownloadService.installedLocalPath(for: item) else { continue }
             markInstallCompleted(for: item, localPath: localPath)
         }
+    }
+
+    func persistSettings() {
+        saveSettings()
     }
 
     // MARK: - Persistence
@@ -214,5 +246,60 @@ final class AppStateStore {
     private static func loadSettings() -> AppSettings? {
         guard let data = UserDefaults.standard.data(forKey: settingsKey) else { return nil }
         return try? JSONDecoder().decode(AppSettings.self, from: data)
+    }
+
+    private func saveChatSessions() {
+        guard let data = try? JSONEncoder().encode(chatSessions) else { return }
+        UserDefaults.standard.set(data, forKey: Self.chatSessionsKey)
+    }
+
+    private static func loadChatSessions() -> [ChatSession]? {
+        guard let data = UserDefaults.standard.data(forKey: chatSessionsKey) else { return nil }
+        return try? JSONDecoder().decode([ChatSession].self, from: data)
+    }
+
+    private func saveSelectedSessionID() {
+        UserDefaults.standard.set(selectedSessionID?.uuidString, forKey: Self.selectedSessionIDKey)
+    }
+
+    private static func loadSelectedSessionID() -> UUID? {
+        guard let raw = UserDefaults.standard.string(forKey: selectedSessionIDKey) else { return nil }
+        return UUID(uuidString: raw)
+    }
+
+    private static func normalizedSessionTitle(_ session: ChatSession) -> ChatSession {
+        guard shouldAutoRename(session.title), let generatedTitle = generatedTitle(from: session.messages) else {
+            return session
+        }
+
+        var updated = session
+        updated.title = generatedTitle
+        return updated
+    }
+
+    private static func shouldAutoRename(_ title: String) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed.caseInsensitiveCompare(placeholderSessionTitle) == .orderedSame
+    }
+
+    private static func generatedTitle(from messages: [ChatMessage]) -> String? {
+        guard let firstUserMessage = messages.first(where: { $0.role == .user }) else { return nil }
+
+        let cleanedText = firstUserMessage.text
+            .components(separatedBy: .newlines)
+            .joined(separator: " ")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !cleanedText.isEmpty {
+            let preview = String(cleanedText.prefix(48))
+            return cleanedText.count > 48 ? preview + "..." : preview
+        }
+
+        if firstUserMessage.imageData != nil {
+            return "Image chat"
+        }
+
+        return nil
     }
 }

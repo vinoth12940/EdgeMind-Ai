@@ -15,6 +15,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         case openELM = "OpenELM"
         case tinyLlama = "TinyLlama"
         case lfm = "LFM"
+        case kokoro = "Kokoro"
 
         var lab: String {
             switch self {
@@ -29,6 +30,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             case .openELM: return "Apple"
             case .tinyLlama: return "StatNLP"
             case .lfm: return "Liquid AI"
+            case .kokoro: return "Hexgrad / MLX Community"
             }
         }
 
@@ -45,8 +47,14 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             case .openELM: return "apple.logo"
             case .tinyLlama: return "hare.fill"
             case .lfm: return "drop.fill"
+            case .kokoro: return "waveform.path"
             }
         }
+    }
+
+    enum PrimaryUse: String, Codable, Hashable {
+        case chat
+        case voice
     }
 
     enum SourceProvider: String, Codable, CaseIterable, Hashable {
@@ -88,11 +96,34 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     let downloadURL: URL?
     let runtimeType: RuntimeType
     let mlxModelID: String?
+    let primaryUse: PrimaryUse
     let supportsVision: Bool
     let supportsReasoning: Bool
     let supportsToolCalling: Bool
     let isThinkingModel: Bool
     let recommendedForIPhone: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case displayName
+        case family
+        case provider
+        case variant
+        case summary
+        case parameterSize
+        case quantization
+        case diskSize
+        case contextWindow
+        case downloadURL
+        case runtimeType
+        case mlxModelID
+        case primaryUse
+        case supportsVision
+        case supportsReasoning
+        case supportsToolCalling
+        case isThinkingModel
+        case recommendedForIPhone
+    }
 
     init(
         id: UUID? = nil,
@@ -108,6 +139,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         downloadURL: URL? = nil,
         runtimeType: RuntimeType = .gguf,
         mlxModelID: String? = nil,
+        primaryUse: PrimaryUse = .chat,
         supportsVision: Bool = false,
         supportsReasoning: Bool = false,
         supportsToolCalling: Bool = false,
@@ -127,11 +159,58 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         self.downloadURL = downloadURL
         self.runtimeType = runtimeType
         self.mlxModelID = mlxModelID
+        self.primaryUse = primaryUse
         self.supportsVision = supportsVision
         self.supportsReasoning = supportsReasoning
         self.supportsToolCalling = supportsToolCalling
         self.isThinkingModel = isThinkingModel
         self.recommendedForIPhone = recommendedForIPhone
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        family = try container.decode(ModelFamily.self, forKey: .family)
+        provider = try container.decode(SourceProvider.self, forKey: .provider)
+        variant = try container.decode(String.self, forKey: .variant)
+        summary = try container.decode(String.self, forKey: .summary)
+        parameterSize = try container.decode(String.self, forKey: .parameterSize)
+        quantization = try container.decode(String.self, forKey: .quantization)
+        diskSize = try container.decode(String.self, forKey: .diskSize)
+        contextWindow = try container.decode(String.self, forKey: .contextWindow)
+        downloadURL = try container.decodeIfPresent(URL.self, forKey: .downloadURL)
+        runtimeType = try container.decode(RuntimeType.self, forKey: .runtimeType)
+        mlxModelID = try container.decodeIfPresent(String.self, forKey: .mlxModelID)
+        primaryUse = try container.decodeIfPresent(PrimaryUse.self, forKey: .primaryUse) ?? .chat
+        supportsVision = try container.decode(Bool.self, forKey: .supportsVision)
+        supportsReasoning = try container.decode(Bool.self, forKey: .supportsReasoning)
+        supportsToolCalling = try container.decode(Bool.self, forKey: .supportsToolCalling)
+        isThinkingModel = try container.decode(Bool.self, forKey: .isThinkingModel)
+        recommendedForIPhone = try container.decode(Bool.self, forKey: .recommendedForIPhone)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(family, forKey: .family)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(variant, forKey: .variant)
+        try container.encode(summary, forKey: .summary)
+        try container.encode(parameterSize, forKey: .parameterSize)
+        try container.encode(quantization, forKey: .quantization)
+        try container.encode(diskSize, forKey: .diskSize)
+        try container.encode(contextWindow, forKey: .contextWindow)
+        try container.encodeIfPresent(downloadURL, forKey: .downloadURL)
+        try container.encode(runtimeType, forKey: .runtimeType)
+        try container.encodeIfPresent(mlxModelID, forKey: .mlxModelID)
+        try container.encode(primaryUse, forKey: .primaryUse)
+        try container.encode(supportsVision, forKey: .supportsVision)
+        try container.encode(supportsReasoning, forKey: .supportsReasoning)
+        try container.encode(supportsToolCalling, forKey: .supportsToolCalling)
+        try container.encode(isThinkingModel, forKey: .isThinkingModel)
+        try container.encode(recommendedForIPhone, forKey: .recommendedForIPhone)
     }
 
     var downloadFileName: String? {

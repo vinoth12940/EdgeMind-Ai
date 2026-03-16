@@ -30,6 +30,17 @@ enum LocalLlamaRuntimeError: LocalizedError {
 
 private let runtimeLogger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "LocalLlamaRuntime")
 
+struct LocalLlamaChatTurn: Sendable {
+    let role: String
+    let content: String
+}
+
+struct LocalLlamaPreparedPrompt {
+    let text: String
+    let addBOS: Bool
+    let parseSpecial: Bool
+}
+
 private func normalizedModelPath(from rawPath: String) -> String {
     if rawPath.hasPrefix("file://"), let fileURL = URL(string: rawPath), fileURL.isFileURL {
         return fileURL.path(percentEncoded: false)
@@ -157,7 +168,9 @@ actor LocalLlamaContext {
 
         llama_sampler_chain_add(sampling, llama_sampler_init_top_k(40))
         llama_sampler_chain_add(sampling, llama_sampler_init_top_p(0.9, 1))
+        llama_sampler_chain_add(sampling, llama_sampler_init_min_p(0.05, 1))
         llama_sampler_chain_add(sampling, llama_sampler_init_temp(0.7))
+        llama_sampler_chain_add(sampling, llama_sampler_init_penalties(64, 1.1, 0.0, 0.0))
         llama_sampler_chain_add(sampling, llama_sampler_init_dist(1234))
 
         let actualBatchCapacity = Int32(llama_n_batch(context))
@@ -175,9 +188,9 @@ actor LocalLlamaContext {
         )
     }
 
-    func generate(prompt: String) throws -> String {
+    func generate(prompt: String, addBOS: Bool = true, parseSpecial: Bool = false) throws -> String {
         clear()
-        promptTokens = tokenize(text: prompt, addBOS: true)
+        promptTokens = tokenize(text: prompt, addBOS: addBOS, parseSpecial: parseSpecial)
         guard !promptTokens.isEmpty else {
             throw LocalLlamaRuntimeError.tokenizationFailed
         }
@@ -202,9 +215,9 @@ actor LocalLlamaContext {
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func generateStream(prompt: String) throws -> AsyncStream<String> {
+    func generateStream(prompt: String, addBOS: Bool = true, parseSpecial: Bool = false) throws -> AsyncStream<String> {
         clear()
-        promptTokens = tokenize(text: prompt, addBOS: true)
+        promptTokens = tokenize(text: prompt, addBOS: addBOS, parseSpecial: parseSpecial)
         guard !promptTokens.isEmpty else {
             throw LocalLlamaRuntimeError.tokenizationFailed
         }
@@ -268,7 +281,7 @@ actor LocalLlamaContext {
     }
 
     private func generationStep() throws -> String {
-        let token = llama_sampler_sample(sampling, context, batch.n_tokens - 1)
+        let token = llama_sampler_sample(sampling, context, -1)
         llama_sampler_accept(sampling, token)
 
         if llama_vocab_is_eog(vocab, token) || generatedTokenCount >= maxGeneratedTokens {
@@ -307,28 +320,76 @@ actor LocalLlamaContext {
         llama_memory_clear(llama_get_memory(context), true)
     }
 
-    private func tokenize(text: String, addBOS: Bool) -> [llama_token] {
+    private func tokenize(text: String, addBOS: Bool, parseSpecial: Bool = false) -> [llama_token] {
         let utf8Count = text.utf8.count
         let capacity = utf8Count + (addBOS ? 1 : 0) + 1
         let tokenBuffer = UnsafeMutablePointer<llama_token>.allocate(capacity: capacity)
         defer { tokenBuffer.deallocate() }
 
-        let tokenCount = llama_tokenize(vocab, text, Int32(utf8Count), tokenBuffer, Int32(capacity), addBOS, false)
+        let tokenCount = llama_tokenize(vocab, text, Int32(utf8Count), tokenBuffer, Int32(capacity), addBOS, parseSpecial)
         guard tokenCount > 0 else { return [] }
         return (0 ..< Int(tokenCount)).map { tokenBuffer[$0] }
     }
 
     private func tokenToPiece(_ token: llama_token) -> [CChar] {
-        var result = [CChar](repeating: 0, count: 8)
-        var count = llama_token_to_piece(vocab, token, &result, Int32(result.count), 0, false)
+        var result = [CChar](repeating: 0, count: 256)
+        var count = llama_token_to_piece(vocab, token, &result, Int32(result.count), 0, true)
 
         if count < 0 {
             result = [CChar](repeating: 0, count: Int(-count))
-            count = llama_token_to_piece(vocab, token, &result, Int32(result.count), 0, false)
+            count = llama_token_to_piece(vocab, token, &result, Int32(result.count), 0, true)
         }
 
         guard count > 0 else { return [] }
         return Array(result.prefix(Int(count)))
+    }
+
+    func preparePrompt(chat: [LocalLlamaChatTurn], fallback fallbackPrompt: String) -> LocalLlamaPreparedPrompt {
+        guard let templatedPrompt = applyChatTemplate(chat: chat), !templatedPrompt.isEmpty else {
+            runtimeLogger.log("Using fallback raw-text prompt (no chat template in model)")
+            return LocalLlamaPreparedPrompt(text: fallbackPrompt, addBOS: true, parseSpecial: false)
+        }
+
+        runtimeLogger.log("Chat template applied successfully (\(templatedPrompt.count) chars)")
+        // addBOS: true — the built-in Gemma handler does NOT include <bos> in its
+        // output, so the tokenizer must prepend it. Matches official simple-chat example
+        // which always passes add_special=true for the first generation.
+        return LocalLlamaPreparedPrompt(text: templatedPrompt, addBOS: true, parseSpecial: true)
+    }
+
+    private func applyChatTemplate(chat: [LocalLlamaChatTurn]) -> String? {
+        guard !chat.isEmpty, let templatePointer = llama_model_chat_template(model, nil) else {
+            return nil
+        }
+
+        let rolePointers = chat.map { strdup($0.role) }
+        let contentPointers = chat.map { strdup($0.content) }
+        defer {
+            rolePointers.forEach { free($0) }
+            contentPointers.forEach { free($0) }
+        }
+
+        var messages = zip(rolePointers, contentPointers).map { rolePointer, contentPointer in
+            llama_chat_message(role: UnsafePointer(rolePointer), content: UnsafePointer(contentPointer))
+        }
+
+        let requiredLength = llama_chat_apply_template(templatePointer, &messages, messages.count, true, nil, 0)
+        guard requiredLength > 0 else {
+            runtimeLogger.warning("llama_chat_apply_template could not format chat; falling back to legacy prompt rendering")
+            return nil
+        }
+
+        let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: Int(requiredLength) + 1)
+        defer { buffer.deallocate() }
+        buffer.initialize(repeating: 0, count: Int(requiredLength) + 1)
+
+        let actualLength = llama_chat_apply_template(templatePointer, &messages, messages.count, true, buffer, requiredLength + 1)
+        guard actualLength > 0 else {
+            runtimeLogger.warning("llama_chat_apply_template failed on second pass; falling back to legacy prompt rendering")
+            return nil
+        }
+
+        return String(cString: buffer)
     }
 }
 
@@ -351,6 +412,20 @@ actor LocalLlamaRuntime {
         return try await activeContext.generate(prompt: prompt)
     }
 
+    func generate(chat: [LocalLlamaChatTurn], fallbackPrompt: String, using modelPath: String) async throws -> String {
+        if activeModelPath != modelPath || activeContext == nil {
+            activeContext = try LocalLlamaContext.create(modelPath: modelPath)
+            activeModelPath = modelPath
+        }
+
+        guard let activeContext else {
+            throw LocalLlamaRuntimeError.couldNotInitializeContext
+        }
+
+        let preparedPrompt = await activeContext.preparePrompt(chat: chat, fallback: fallbackPrompt)
+        return try await activeContext.generate(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
+    }
+
     func generateStream(prompt: String, using modelPath: String) async throws -> AsyncStream<String> {
         if activeModelPath != modelPath || activeContext == nil {
             activeContext = try LocalLlamaContext.create(modelPath: modelPath)
@@ -362,5 +437,19 @@ actor LocalLlamaRuntime {
         }
 
         return try await activeContext.generateStream(prompt: prompt)
+    }
+
+    func generateStream(chat: [LocalLlamaChatTurn], fallbackPrompt: String, using modelPath: String) async throws -> AsyncStream<String> {
+        if activeModelPath != modelPath || activeContext == nil {
+            activeContext = try LocalLlamaContext.create(modelPath: modelPath)
+            activeModelPath = modelPath
+        }
+
+        guard let activeContext else {
+            throw LocalLlamaRuntimeError.couldNotInitializeContext
+        }
+
+        let preparedPrompt = await activeContext.preparePrompt(chat: chat, fallback: fallbackPrompt)
+        return try await activeContext.generateStream(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
     }
 }

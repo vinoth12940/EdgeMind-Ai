@@ -61,6 +61,7 @@ enum AppTheme {
     static let labStability = Color(red: 0.67, green: 0.36, blue: 0.82)
     static let labApple = Color(red: 0.64, green: 0.67, blue: 0.68)
     static let labStatNLP = Color(red: 0.40, green: 0.73, blue: 0.42)
+    static let labKokoro = Color(red: 0.97, green: 0.46, blue: 0.62)
 
     // MARK: - Capability Colors
     static let capThinking = Color(red: 0.95, green: 0.45, blue: 0.95)
@@ -81,6 +82,7 @@ enum AppTheme {
         case .openELM: return labApple
         case .tinyLlama: return labStatNLP
         case .lfm: return Color(red: 0.0, green: 0.75, blue: 0.85) // Liquid AI teal
+        case .kokoro: return labKokoro
         }
     }
 
