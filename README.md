@@ -2,6 +2,8 @@
 
 A **privacy-first, on-device AI assistant** for iOS and iPadOS. All inference runs locally on Apple Silicon and no data leaves your device unless you explicitly enable live web search.
 
+Now includes a first-run authentication landing flow with **Sign in with Apple**, local credentials, device authentication (Face ID / Touch ID / passcode), and guest access.
+
 Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX** (MLX models), with a curated catalog of 43 models from 11 AI labs.
 
 ---
@@ -30,6 +32,14 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX**
 - **Default model selection**: Set any installed model as the default for chat
 - **HuggingFace authentication**: Store HF token in iOS Keychain for gated model access
 
+### Authentication & Profile
+- **Auth landing screen** before entering chat
+- **Sign in with Apple** (`AuthenticationServices`) for iCloud-backed identity
+- **Local credentials** (display name + optional email)
+- **Device authentication** using Face ID / Touch ID / passcode (`LocalAuthentication`)
+- **Guest mode** for quick offline usage
+- **Profile card in Settings** with sign-in method, last login, re-authenticate, and sign out
+
 ### Live Web Search (Optional)
 - **4 search providers**: Tavily, Brave Search, Serper (Google), or custom gateway
 - **On-device API key storage**: Configure API keys directly in Settings
@@ -42,6 +52,8 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX**
 - **Chat sessions**: Create, rename, delete conversations
 - **History view**: Browse past conversations, tap to resume
 - **Model picker sheet**: Switch between installed models mid-conversation
+- **Image attachments** from camera/photo library with downsampling and bounded JPEG encoding for memory-safe local vision prompts
+- **Streaming stability improvements**: stop/cancel safety and reduced write churn while tokens stream
 
 ### Design System
 - **Dark-mode-only** custom design system (`AppTheme`)
@@ -63,7 +75,7 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX**
 ```
 LocalAIEdgeApp/
 ├── App/
-│   ├── LocalAIEdgeApp.swift          # @main entry point, injects AppStateStore
+│   ├── LocalAIEdgeApp.swift          # @main entry point, auth gate + injects AppStateStore/AuthStateStore
 │   └── RootView.swift                # Tab navigation (Chat, Models, History, Settings)
 │
 ├── Models/                            # Data models (Codable structs)
@@ -76,6 +88,7 @@ LocalAIEdgeApp/
 │
 ├── State/
 │   ├── AppStateStore.swift            # @Observable central state (catalog, installed, sessions)
+│   ├── AuthStateStore.swift           # @Observable auth/session state for Apple ID/device/guest login
 │   └── MockCatalogData.swift          # 43 curated model entries with verified URLs
 │
 ├── Services/
@@ -97,6 +110,8 @@ LocalAIEdgeApp/
 │       └── SerperSearchGateway.swift  # Serper (Google) API integration
 │
 ├── Features/
+│   ├── Auth/
+│   │   └── AuthLandingView.swift      # First-run login/guest screen
 │   ├── Chat/
 │   │   ├── ChatView.swift             # Main chat interface with streaming
 │   │   ├── ChatComposerView.swift     # Input bar with search toggle
@@ -118,7 +133,7 @@ LocalAIEdgeApp/
 ```
 
 ### Key Patterns
-- **`@Observable` state**: `AppStateStore` is the single source of truth, injected via `.environment(store)`
+- **`@Observable` state**: `AppStateStore` + `AuthStateStore` injected via environment
 - **Protocol-oriented services**: `InferenceService`, `SearchGateway`, `ModelDownloadService` are all protocol-based for testability
 - **Actor isolation**: `LocalLlamaRuntime` and `MLXRuntime` are Swift actors for thread-safe C/MLX interop
 - **Environment-based navigation**: `SelectedTabKey` EnvironmentKey enables cross-tab navigation without tight coupling
@@ -160,6 +175,7 @@ All GGUF models use **Q4_K_M** quantization for optimal size/quality balance on 
 - **Xcode 16+** with iOS 17.0+ SDK
 - **Apple Silicon Mac** (for MLX model testing on device)
 - **Physical iOS/iPadOS device** recommended (MLX requires real Apple Silicon hardware, won't work in simulator)
+- **Apple Developer team/profile configured for your bundle ID**
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (optional, for regenerating project)
 
 ### Generate Xcode Project (Optional)
@@ -186,6 +202,20 @@ xcrun devicectl device install app \
   --device YOUR_DEVICE_UDID \
   ~/Library/Developer/Xcode/DerivedData/LocalAIEdgeApp-*/Build/Products/Debug-iphoneos/LocalAIEdgeApp.app
 ```
+
+### Sign in with Apple Capability (Required for Apple ID Login)
+
+This app now includes `com.apple.developer.applesignin` entitlement.
+
+If device build fails with provisioning errors like:
+- `doesn't include the Sign In with Apple capability`
+- `doesn't include the com.apple.developer.applesignin entitlement`
+
+Do this:
+1. Open Apple Developer portal → **Identifiers** → your App ID.
+2. Enable **Sign In with Apple**.
+3. Regenerate or refresh provisioning profiles.
+4. In Xcode target → **Signing & Capabilities**, confirm **Sign In with Apple** is present.
 
 ### Build for Simulator (GGUF only, no MLX)
 
@@ -235,6 +265,16 @@ Some models require authentication. Configure in **Settings → HuggingFace → 
 
 Customize the AI assistant's behavior in **Settings → Behavior → System Prompt**. Default prompt emphasizes concise, factual responses with web citation support.
 
+### Authentication
+
+On launch, users land on an auth screen with:
+- **Apple ID** (Sign in with Apple)
+- **Credentials** (local profile)
+- **Device auth** (Face ID / Touch ID / passcode)
+- **Guest**
+
+Profile details are shown in **Settings → Profile**. Session is persisted locally on-device.
+
 ---
 
 ## Technical Details
@@ -263,6 +303,7 @@ Customize the AI assistant's behavior in **Settings → Behavior → System Prom
 - Catalog, installed models, chat sessions, and settings in one store
 - Immutable model updates via `map` transforms on arrays
 - `reconcileInstalledFiles()` syncs filesystem state on launch
+- Image-bearing chat history is sanitized before persistence to avoid oversized `UserDefaults` writes
 
 ---
 

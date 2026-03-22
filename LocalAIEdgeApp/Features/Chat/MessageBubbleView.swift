@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 struct MessageBubbleView: View {
     let message: ChatMessage
@@ -17,7 +18,7 @@ struct MessageBubbleView: View {
                 // Bubble
                 VStack(alignment: .leading, spacing: 10) {
                     // Attached image
-                    if let imageData = message.imageData, let uiImage = UIImage(data: imageData) {
+                    if let imageData = message.imageData, let uiImage = previewImage(from: imageData) {
                         Image(uiImage: uiImage)
                             .resizable()
                             .scaledToFit()
@@ -170,5 +171,19 @@ struct MessageBubbleView: View {
                 }
             }
         }
+    }
+
+    private func previewImage(from data: Data) -> UIImage? {
+        let options = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 900
+        ] as CFDictionary
+
+        guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 }

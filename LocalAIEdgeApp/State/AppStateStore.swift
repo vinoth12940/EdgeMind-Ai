@@ -17,6 +17,7 @@ final class AppStateStore {
     private static let chatSessionsKey = "persistedChatSessions"
     private static let selectedSessionIDKey = "persistedSelectedSessionID"
     private static let placeholderSessionTitle = "New Chat"
+    private static let maxPersistedImageBytes = 600_000
 
     init(
         catalog: [ModelCatalogItem] = MockCatalogData.items,
@@ -26,7 +27,9 @@ final class AppStateStore {
     ) {
         self.catalog = catalog
         if let savedSessions = Self.loadChatSessions(), !savedSessions.isEmpty {
-            self.chatSessions = savedSessions.map(Self.normalizedSessionTitle)
+            self.chatSessions = savedSessions
+                .map(Self.sanitizedSessionForPersistence)
+                .map(Self.normalizedSessionTitle)
         } else {
             self.chatSessions = chatSessions.map(Self.normalizedSessionTitle)
         }
@@ -56,29 +59,27 @@ final class AppStateStore {
         if let defaultModelID = settings.defaultModelID {
             return installedModels.first(where: {
                 $0.catalogItem.id == defaultModelID &&
-                $0.catalogItem.primaryUse == .chat &&
-                $0.installState == .installed &&
-                ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil)
+                isReadyChatModel($0)
             })
         }
 
-        return installedModels.first(where: {
-            $0.catalogItem.primaryUse == .chat &&
-            $0.isDefault &&
-            $0.installState == .installed &&
-            ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil)
-        })
+        return installedModels.first(where: { $0.isDefault && isReadyChatModel($0) })
+            ?? installedModels.first(where: isReadyChatModel)
+    }
+
+    var availableChatModels: [InstalledModel] {
+        installedModels.filter(isReadyChatModel)
     }
 
     func setDefaultModel(id: UUID) {
-        guard installedModels.contains(where: { $0.catalogItem.id == id && $0.catalogItem.primaryUse == .chat }) else {
+        guard installedModels.contains(where: { $0.catalogItem.id == id && isReadyChatModel($0) }) else {
             return
         }
 
         settings.defaultModelID = id
         installedModels = installedModels.map { model in
             var updated = model
-            updated.isDefault = model.catalogItem.primaryUse == .chat && model.catalogItem.id == id
+            updated.isDefault = isReadyChatModel(model) && model.catalogItem.id == id
             return updated
         }
         saveInstalledModels()
@@ -171,7 +172,7 @@ final class AppStateStore {
         saveChatSessions()
     }
 
-    func updateMessageText(_ messageID: UUID, in sessionID: UUID, text: String) {
+    func updateMessageText(_ messageID: UUID, in sessionID: UUID, text: String, persist: Bool = true) {
         guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else {
             return
         }
@@ -181,7 +182,9 @@ final class AppStateStore {
 
         chatSessions[sessionIndex].messages[messageIndex].text = text
         chatSessions[sessionIndex].updatedAt = .now
-        saveChatSessions()
+        if persist {
+            saveChatSessions()
+        }
     }
 
     func createSession(using modelID: UUID?) {
@@ -249,13 +252,35 @@ final class AppStateStore {
     }
 
     private func saveChatSessions() {
-        guard let data = try? JSONEncoder().encode(chatSessions) else { return }
+        let sanitized = chatSessions.map(Self.sanitizedSessionForPersistence)
+        guard let data = try? JSONEncoder().encode(sanitized) else { return }
         UserDefaults.standard.set(data, forKey: Self.chatSessionsKey)
     }
 
     private static func loadChatSessions() -> [ChatSession]? {
         guard let data = UserDefaults.standard.data(forKey: chatSessionsKey) else { return nil }
         return try? JSONDecoder().decode([ChatSession].self, from: data)
+    }
+
+    private static func sanitizedSessionForPersistence(_ session: ChatSession) -> ChatSession {
+        var sanitized = session
+        sanitized.messages = session.messages.map(Self.sanitizedMessageForPersistence)
+        return sanitized
+    }
+
+    private static func sanitizedMessageForPersistence(_ message: ChatMessage) -> ChatMessage {
+        guard let imageData = message.imageData, imageData.count > maxPersistedImageBytes else {
+            return message
+        }
+
+        return ChatMessage(
+            id: message.id,
+            role: message.role,
+            text: message.text,
+            createdAt: message.createdAt,
+            citations: message.citations,
+            imageData: nil
+        )
     }
 
     private func saveSelectedSessionID() {
@@ -301,5 +326,23 @@ final class AppStateStore {
         }
 
         return nil
+    }
+
+    private func isReadyChatModel(_ model: InstalledModel) -> Bool {
+        guard model.catalogItem.primaryUse == .chat,
+              model.installState == .installed else {
+            return false
+        }
+
+        switch model.catalogItem.runtimeType {
+        case .gguf:
+            return model.fileURL != nil
+        case .mlx:
+#if canImport(MLXLLM) && !targetEnvironment(simulator)
+            return true
+#else
+            return false
+#endif
+        }
     }
 }

@@ -8,6 +8,7 @@ struct ChatView: View {
     @State private var isInputFocused = false
     @State private var isSending = false
     @State private var generationTask: Task<Void, Never>?
+    @State private var activeGenerationID: UUID?
     @State private var inferenceService: InferenceService = LocalLlamaInferenceService()
     @State private var mlxInferenceService: InferenceService = MLXInferenceService()
     @State private var showModelPicker = false
@@ -348,11 +349,7 @@ struct ChatView: View {
     private var modelPickerSheet: some View {
         NavigationStack {
             List {
-                let readyModels = store.installedModels.filter {
-                    $0.catalogItem.primaryUse == .chat &&
-                    $0.installState == .installed &&
-                    ($0.catalogItem.runtimeType == .mlx || $0.fileURL != nil)
-                }
+                let readyModels = store.availableChatModels
                 if readyModels.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "arrow.down.circle")
@@ -535,6 +532,7 @@ struct ChatView: View {
     private func stopGeneration() {
         generationTask?.cancel()
         generationTask = nil
+        activeGenerationID = nil
         isSending = false
     }
 
@@ -560,12 +558,35 @@ struct ChatView: View {
         AssistantResponseSanitizer.clean(text)
     }
 
+    private func encodedAttachmentData(from image: UIImage?) -> Data? {
+        guard let image else { return nil }
+
+        let maxBytes = 700_000
+        let qualitySteps: [CGFloat] = [0.75, 0.65, 0.55, 0.45, 0.35, 0.25]
+        for quality in qualitySteps {
+            guard let data = image.jpegData(compressionQuality: quality) else { continue }
+            if data.count <= maxBytes {
+                return data
+            }
+        }
+        return image.jpegData(compressionQuality: 0.25)
+    }
+
     @MainActor
-    private func updateStreamingMessage(_ text: String, messageID: UUID, sessionID: UUID) {
-        store.updateMessageText(messageID, in: sessionID, text: text)
+    private func updateStreamingMessage(_ text: String, messageID: UUID, sessionID: UUID, persist: Bool = false) {
+        store.updateMessageText(messageID, in: sessionID, text: text, persist: persist)
+    }
+
+    @MainActor
+    private func finishGenerationIfCurrent(_ taskID: UUID) {
+        guard activeGenerationID == taskID else { return }
+        isSending = false
+        generationTask = nil
+        activeGenerationID = nil
     }
 
     private func sendPrompt() {
+        guard !isSending else { return }
         voiceController.stopListening()
 
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -575,10 +596,16 @@ struct ChatView: View {
             store.createSession(using: store.defaultModel?.catalogItem.id)
         }
         guard let sessionID = store.selectedSession?.id else { return }
-        guard let model = store.defaultModel else { return }
+        guard let model = store.defaultModel else {
+            store.appendMessage(
+                ChatMessage(role: .assistant, text: InferenceServiceError.noModelInstalled.localizedDescription),
+                to: sessionID
+            )
+            return
+        }
 
-        // Compress image to JPEG for storage and inference
-        let jpegData = currentImage?.jpegData(compressionQuality: 0.7)
+        // Encode image at bounded size to avoid memory spikes during persistence/inference.
+        let jpegData = encodedAttachmentData(from: currentImage)
 
         let userMessage = ChatMessage(role: .user, text: trimmedPrompt, imageData: jpegData)
         store.appendMessage(userMessage, to: sessionID)
@@ -588,7 +615,10 @@ struct ChatView: View {
         attachedImage = nil
         isSending = true
 
-        generationTask = Task {
+        let taskID = UUID()
+        activeGenerationID = taskID
+
+        let task = Task {
             do {
                 let searchContext = try await resolveSearchContext(for: trimmedPrompt)
                 if let searchContext {
@@ -626,7 +656,7 @@ struct ChatView: View {
                     if Task.isCancelled {
                         accumulated += "\n\n*(Response stopped by user)*"
                         stoppedByUser = true
-                        await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
+                        await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID, persist: true)
                         break
                     }
 
@@ -649,9 +679,9 @@ struct ChatView: View {
                 let finalText = cleanedDisplayedAssistantText(accumulated)
                 if finalText.isEmpty {
                     let fallback = "The model finished without returning text. Try a shorter prompt or another model."
-                    await updateStreamingMessage(fallback, messageID: messageID, sessionID: sessionID)
+                    await updateStreamingMessage(fallback, messageID: messageID, sessionID: sessionID, persist: true)
                 } else {
-                    await updateStreamingMessage(finalText, messageID: messageID, sessionID: sessionID)
+                    await updateStreamingMessage(finalText, messageID: messageID, sessionID: sessionID, persist: true)
                 }
 
                 if !stoppedByUser,
@@ -664,8 +694,7 @@ struct ChatView: View {
                 }
 
                 await MainActor.run {
-                    isSending = false
-                    generationTask = nil
+                    finishGenerationIfCurrent(taskID)
                 }
             } catch {
                 if !Task.isCancelled {
@@ -675,11 +704,11 @@ struct ChatView: View {
                     }
                 }
                 await MainActor.run {
-                    isSending = false
-                    generationTask = nil
+                    finishGenerationIfCurrent(taskID)
                 }
             }
         }
+        generationTask = task
     }
 
     private func resolveSearchContext(for prompt: String) async throws -> SearchContext? {

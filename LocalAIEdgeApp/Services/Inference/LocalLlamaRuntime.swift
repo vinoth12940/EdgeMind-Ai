@@ -233,20 +233,30 @@ actor LocalLlamaContext {
         try prefillPrompt()
 
         return AsyncStream { continuation in
-            Task { [weak self] in
+            let producer = Task { [weak self] in
                 guard let self else { continuation.finish(); return }
                 while await !self.isDone {
+                    if Task.isCancelled {
+                        await self.cancelGeneration()
+                        break
+                    }
                     do {
                         let piece = try await self.generationStep()
                         if !piece.isEmpty {
                             continuation.yield(piece)
                         }
+                    } catch is CancellationError {
+                        await self.cancelGeneration()
+                        break
                     } catch {
                         runtimeLogger.error("Stream generation error: \(error.localizedDescription)")
                         break
                     }
                 }
                 continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                producer.cancel()
             }
         }
     }
@@ -281,6 +291,11 @@ actor LocalLlamaContext {
     }
 
     private func generationStep() throws -> String {
+        if Task.isCancelled {
+            isDone = true
+            throw CancellationError()
+        }
+
         let token = llama_sampler_sample(sampling, context, -1)
         llama_sampler_accept(sampling, token)
 
@@ -308,6 +323,11 @@ actor LocalLlamaContext {
         }
 
         return piece
+    }
+
+    private func cancelGeneration() {
+        isDone = true
+        partialUTF8Buffer.removeAll()
     }
 
     func clear() {

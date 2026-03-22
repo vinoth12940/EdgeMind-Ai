@@ -35,10 +35,12 @@ targets:
         codeSign: false
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: LocalAIEdgeApp/LocalAIEdgeApp.entitlements
         INFOPLIST_KEY_CFBundleName: LocalAIEdgeApp
         INFOPLIST_KEY_LSRequiresIPhoneOS: YES
         INFOPLIST_KEY_UIRequiresFullScreen: NO
         INFOPLIST_KEY_NSCameraUsageDescription: "Take a photo to ask AI about what you see"
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "Use Face ID to unlock your local profile"
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Use the microphone to dictate prompts for on-device voice chat"
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Attach a photo to ask AI about it"
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Convert your spoken prompts into text on-device"

@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import ImageIO
 
 struct ChatComposerView: View {
     @Binding var prompt: String
@@ -254,15 +255,20 @@ struct ChatComposerView: View {
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             Task {
-                if let newItem, let data = try? await newItem.loadTransferable(type: Data.self) {
-                    await MainActor.run {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            if let raw = UIImage(data: data) {
-                                attachedImage = Self.downsample(raw, maxDimension: 1024)
-                            }
-                        }
-                        selectedPhotoItem = nil
+                guard let newItem else { return }
+
+                let loadedImage: UIImage?
+                if let data = try? await newItem.loadTransferable(type: Data.self) {
+                    loadedImage = Self.downsample(data: data, maxPixelSize: 1024)
+                } else {
+                    loadedImage = nil
+                }
+
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        attachedImage = loadedImage
                     }
+                    selectedPhotoItem = nil
                 }
             }
         }
@@ -276,5 +282,20 @@ struct ChatComposerView: View {
         let newSize = CGSize(width: size.width * scale, height: size.height * scale)
         let renderer = UIGraphicsImageRenderer(size: newSize)
         return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
+    }
+
+    private static func downsample(data: Data, maxPixelSize: CGFloat) -> UIImage? {
+        let options = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(1, Int(maxPixelSize))
+        ] as CFDictionary
+
+        guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options) else {
+            return nil
+        }
+
+        return UIImage(cgImage: cgImage)
     }
 }

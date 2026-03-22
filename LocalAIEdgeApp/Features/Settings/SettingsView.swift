@@ -2,7 +2,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppStateStore.self) private var store
+    @Environment(AuthStateStore.self) private var authStore
     @Environment(\.selectedTab) private var selectedTab
+    @State private var isReauthenticating = false
 
     private var selectedVoiceAsset: InstalledModel? {
         store.installedModels.first(where: {
@@ -22,6 +24,7 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
+                    profileSection
                     privacySection
                     huggingFaceSection
                     behaviorSection
@@ -46,6 +49,104 @@ struct SettingsView: View {
     }
 
     // MARK: - Sections
+
+    private var profileSection: some View {
+        settingsSection(icon: "person.crop.circle.fill", title: "Profile", iconColor: AppTheme.accent) {
+            if let profile = authStore.profile {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(AppTheme.accent.opacity(0.2))
+                            .frame(width: 44, height: 44)
+                        Text(String(profile.displayName.prefix(1)).uppercased())
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(AppTheme.accent)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(profile.displayName)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+
+                        if let email = profile.email, !email.isEmpty {
+                            Text(email)
+                                .font(.system(size: 12))
+                                .foregroundStyle(AppTheme.textSecondary)
+                        } else {
+                            Text("No email linked")
+                                .font(.system(size: 12))
+                                .foregroundStyle(AppTheme.textTertiary)
+                        }
+                    }
+
+                    Spacer()
+                }
+
+                HStack {
+                    Text("Sign-in Method")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.textSecondary)
+                    Spacer()
+                    Text(profile.authMethod.rawValue)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                }
+
+                HStack {
+                    Text("Last Login")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.textSecondary)
+                    Spacer()
+                    Text(profile.lastLoginAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+
+                if authStore.canUseDeviceAuthentication {
+                    Divider().foregroundStyle(AppTheme.divider)
+
+                    Button {
+                        guard !isReauthenticating else { return }
+                        isReauthenticating = true
+                        Task {
+                            _ = await authStore.reauthenticateCurrentUser()
+                            await MainActor.run {
+                                isReauthenticating = false
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "checkmark.shield.fill")
+                            Text(isReauthenticating ? "Authenticating..." : "Re-authenticate with \(authStore.deviceAuthLabel)")
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.success)
+                    }
+                    .disabled(isReauthenticating)
+                }
+
+                Divider().foregroundStyle(AppTheme.divider)
+
+                Button(role: .destructive) {
+                    authStore.signOut()
+                } label: {
+                    HStack {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                        Text("Sign Out")
+                            .fontWeight(.semibold)
+                        Spacer()
+                    }
+                    .font(.system(size: 13))
+                }
+            } else {
+                Text("No profile available.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+        }
+    }
 
     private var huggingFaceSection: some View {
         settingsSection(icon: "face.smiling", title: "HuggingFace", iconColor: .yellow) {
