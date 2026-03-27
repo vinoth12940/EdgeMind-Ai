@@ -4,7 +4,7 @@ A **privacy-first, on-device AI assistant** for iOS and iPadOS. All inference ru
 
 Now includes a first-run authentication landing flow with **Sign in with Apple**, local credentials, device authentication (Face ID / Touch ID / passcode), and guest access.
 
-Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX** (MLX models), with a curated catalog of 43 models from 11 AI labs.
+Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX** (MLX models), with a curated catalog of 35 models from 4 AI labs.
 
 ---
 
@@ -13,14 +13,16 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX**
 ### On-Device Inference
 - **Dual runtime**: llama.cpp for GGUF models, Apple MLX for MLX-optimized models
 - **Streaming responses**: Token-by-token output via `AsyncStream`
-- **8192 context window** (`n_ctx=8192`) for long conversations
+- **Device-aware context window**: 2048 tokens on A14 (iPhone 12), 4096 on A15/A16, 8192 on A17/A18 and iPad — prevents KV cache OOM crashes
+- **Flash attention**: Automatically enabled on A15+ for ~20-30% speedup
 - **Configurable system prompt** for customizing assistant behavior
 - **Stop generation**: Cancel in-progress responses at any time
 
 ### Model Library
-- **43 models** from 11 labs: Google DeepMind, Meta, Alibaba Cloud, Microsoft, Mistral AI, DeepSeek, Hugging Face, Stability AI, Apple, StatNLP, Liquid AI
-- **32 GGUF models** (llama.cpp runtime) + **11 MLX models** (Apple MLX runtime)
+- **35 models** from 4 labs: Google DeepMind (Gemma), Alibaba Cloud (Qwen), Liquid AI (LFM), Hexgrad (Kokoro)
+- **17 GGUF models** (llama.cpp runtime) + **18 MLX models** (Apple MLX runtime, including voice assets)
 - Filter by lab, capability (Thinking, Vision, Tool Calling), runtime type, iPhone compatibility
+- Capability badges grounded in actual model card specs: native tool-call tokens, vision encoders in weights
 - Model specs: parameter count, context window, disk size, quantization level
 - Expandable cards with model descriptions and capability badges
 - All download URLs verified and working against HuggingFace
@@ -89,16 +91,17 @@ LocalAIEdgeApp/
 ├── State/
 │   ├── AppStateStore.swift            # @Observable central state (catalog, installed, sessions)
 │   ├── AuthStateStore.swift           # @Observable auth/session state for Apple ID/device/guest login
-│   └── MockCatalogData.swift          # 43 curated model entries with verified URLs
+│   └── MockCatalogData.swift          # 35 curated model entries with verified URLs and accurate capability flags
 │
 ├── Services/
 │   ├── HFTokenManager.swift           # Keychain-backed HuggingFace token storage
 │   ├── Inference/
-│   │   ├── InferenceService.swift     # Protocol: generateReply + generateStream
-│   │   ├── LocalLlamaInferenceService.swift  # llama.cpp bridge (GGUF)
-│   │   ├── LocalLlamaRuntime.swift    # Actor wrapping llama.cpp C API
-│   │   ├── MLXInferenceService.swift  # Apple MLX bridge (MLX models)
-│   │   └── MockInferenceService.swift # Test stub
+│   │   ├── InferenceService.swift          # Protocol: generateReply + generateStream
+│   │   ├── DeviceCapabilityService.swift   # Chip detection → n_ctx tier + flash attention
+│   │   ├── LocalLlamaInferenceService.swift  # llama.cpp bridge + PromptRenderer (GGUF)
+│   │   ├── LocalLlamaRuntime.swift         # Actor: isLoading guard, ensureContext(), device n_ctx
+│   │   ├── MLXInferenceService.swift       # Apple MLX bridge (MLX models)
+│   │   └── MockInferenceService.swift      # Test stub
 │   ├── Models/
 │   │   ├── ModelDownloadService.swift # URLSession download + file management
 │   │   └── ModelCatalogService.swift  # Catalog loading protocol
@@ -130,12 +133,17 @@ LocalAIEdgeApp/
 │   └── AppTheme.swift                 # Colors, gradients, shadows, view modifiers
 │
 └── Resources/                         # Assets, app icon
+
+LocalAIEdgeAppTests/
+├── DeviceCapabilityTests.swift        # n_ctx tier + flash attention for all device tiers
+└── PromptRendererTests.swift          # Token budget math, HTML stripping
 ```
 
 ### Key Patterns
 - **`@Observable` state**: `AppStateStore` + `AuthStateStore` injected via environment
 - **Protocol-oriented services**: `InferenceService`, `SearchGateway`, `ModelDownloadService` are all protocol-based for testability
 - **Actor isolation**: `LocalLlamaRuntime` and `MLXRuntime` are Swift actors for thread-safe C/MLX interop
+- **Device-aware inference**: `DeviceCapabilityService` reads `hw.machine` via `sysctlbyname` to select n_ctx (2048/4096/8192) and enable flash attention per chip generation
 - **Environment-based navigation**: `SelectedTabKey` EnvironmentKey enables cross-tab navigation without tight coupling
 
 ---
@@ -146,23 +154,16 @@ LocalAIEdgeApp/
 
 | Lab | Family | Models | Runtimes |
 |-----|--------|--------|----------|
-| Google DeepMind | Gemma | 7 | GGUF, MLX |
-| Alibaba Cloud | Qwen | 12 | GGUF, MLX |
-| Meta | Llama | 5 | GGUF, MLX |
-| Microsoft | Phi | 4 | GGUF, MLX |
-| Hugging Face | SmolLM / SmolVLM | 4 | GGUF, MLX |
-| Mistral AI | Mistral | 3 | GGUF |
-| DeepSeek | DeepSeek | 3 | GGUF |
-| Apple | OpenELM | 2 | GGUF |
-| Stability AI | StableLM | 1 | GGUF |
-| StatNLP | TinyLlama | 1 | GGUF |
-| Liquid AI | LFM | 1 | GGUF |
+| Google DeepMind | Gemma | 10 | GGUF, MLX |
+| Alibaba Cloud | Qwen | 18 | GGUF, MLX |
+| Liquid AI | LFM | 6 | GGUF, MLX |
+| Hexgrad / MLX Community | Kokoro | 1 | MLX (voice) |
 
 ### Capabilities
-- **Thinking**: Extended chain-of-thought reasoning (DeepSeek-R1, QwQ, Phi-4-mini-reasoning)
-- **Vision**: Image understanding (Gemma 3, SmolVLM, Qwen2.5-VL)
-- **Tool Calling**: Function/tool invocation support
-- **Reasoning**: Enhanced logical reasoning
+- **Thinking**: Native `/think` and `/no_think` soft switches (all Qwen 3 models). Produces `<think>...</think>` chain-of-thought blocks in the response.
+- **Vision**: Dedicated vision encoder in model weights. Gemma 3n (E2B/E4B): MatFormer multimodal (image + video + audio). Gemma 3 4B: SigLIP vision encoder (896×896). LFM2.5 VL 1.6B: multimodal vision-language.
+- **Tool Calling**: Native `<tool_call>` tokens in chat template (Qwen 3 all sizes, Qwen 2.5 3B+), or `<|tool_call_start|>` tokens (LFM2.5 1.2B). Reliable at 3B+.
+- **Reasoning**: Enhanced logical reasoning and instruction following
 
 ### Quantization
 All GGUF models use **Q4_K_M** quantization for optimal size/quality balance on mobile devices. MLX models use 4-bit or 8-bit quantization from `mlx-community`.
@@ -282,6 +283,9 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 ### llama.cpp Integration
 - Pre-built xcframework in `Vendor/build-apple/` (llama.cpp build b8354)
 - Direct C API access via Swift actors (`LocalLlamaRuntime`)
+- **Device-aware n_ctx**: `DeviceCapabilityService` reads `hw.machine` via `sysctlbyname` → 2048 (A14/iPhone 12), 4096 (A15/A16), 8192 (A17/A18/iPad/Simulator)
+- **Flash attention**: `LLAMA_FLASH_ATTN_TYPE_ENABLED` on A15+ for ~20-30% decode speedup
+- **Context reuse**: `ensureContext()` helper avoids reloading when model and `maxGeneratedTokens` are unchanged
 - Greedy/top-p sampling with temperature 0.7
 - Batch processing for prompt ingestion
 - UTF-8 safe token decoding with partial buffer handling
@@ -311,13 +315,14 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 
 | Metric | Value |
 |--------|-------|
-| Swift files | 33 |
-| Lines of code | ~5,400 |
-| Model catalog entries | 43 |
-| GGUF models | 32 |
-| MLX models | 11 |
-| AI Labs | 11 |
+| Swift files | ~36 |
+| Lines of code | ~6,000 |
+| Model catalog entries | 35 |
+| GGUF models | 17 |
+| MLX models | 18 |
+| AI Labs | 4 |
 | Search providers | 4 |
+| Unit tests | 14 (DeviceCapability + PromptRenderer) |
 | Bundle ID | `io.example.LocalAIEdgeApp` |
 | Min deployment target | iOS 17.0 |
 | Color scheme | Dark mode only |
