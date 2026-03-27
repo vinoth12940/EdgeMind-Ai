@@ -55,6 +55,7 @@ struct RootView: View {
         HStack(spacing: 0) {
             ForEach(0..<tabs.count, id: \.self) { index in
                 let isActive = selectedTab == index
+                let tab = tabs[index]
                 Button {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                         selectedTab = index
@@ -75,12 +76,14 @@ struct RootView: View {
                         }
                         .frame(width: 40, height: 40)
 
-                        Text(tabs[index].label)
-                            .font(.system(size: 10, weight: isActive ? .bold : .medium))
+                        Text(tab.label)
+                            .font(.system(size: 10, weight: isActive ? .bold : .medium, design: .rounded))
                             .foregroundStyle(isActive ? AppTheme.accent : AppTheme.textTertiary)
+                            .dynamicTypeSize(...DynamicTypeSize.large)
                     }
                     .frame(maxWidth: .infinity)
                 }
+                .accessibilityLabel(tab.label)
             }
         }
         .padding(.top, 8)
@@ -97,6 +100,7 @@ struct RootView: View {
                         .stroke(AppTheme.hairline, lineWidth: 1)
                 )
                 .shadow(color: AppTheme.softShadow, radius: 24, x: 0, y: -4)
+                .shadow(color: Color.black.opacity(0.08), radius: 32, x: 0, y: -8)
         )
         .padding(.horizontal, 12)
         .padding(.bottom, 2)

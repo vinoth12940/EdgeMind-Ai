@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(AuthStateStore.self) private var authStore
     @Environment(\.selectedTab) private var selectedTab
     @State private var isReauthenticating = false
+    @State private var hfTokenDraft = ""
+    @State private var tokenDebounceTask: Task<Void, Never>?
 
     private var selectedVoiceAsset: InstalledModel? {
         store.installedModels.first(where: {
@@ -46,6 +48,10 @@ struct SettingsView: View {
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
+        .onAppear {
+            // Initialize draft token value
+            hfTokenDraft = store.settings.huggingFaceToken
+        }
     }
 
     // MARK: - Sections
@@ -161,14 +167,7 @@ struct SettingsView: View {
 
                 SecureField(
                     "hf_xxxxxxxxxxxxxxxxxx",
-                    text: Binding(
-                        get: { store.settings.huggingFaceToken },
-                        set: { newValue in
-                            store.settings.huggingFaceToken = newValue
-                            HFTokenManager.token = newValue
-                            store.persistSettings()
-                        }
-                    )
+                    text: $hfTokenDraft
                 )
                 .textContentType(.password)
                 .autocorrectionDisabled()
@@ -182,6 +181,19 @@ struct SettingsView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(AppTheme.hairline, lineWidth: 1)
                 )
+                .onChange(of: hfTokenDraft) { _, newValue in
+                    // Debounce: cancel previous task and create new one
+                    tokenDebounceTask?.cancel()
+                    tokenDebounceTask = Task {
+                        try? await Task.sleep(for: .milliseconds(800))
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            store.settings.huggingFaceToken = newValue
+                            HFTokenManager.token = newValue
+                            store.persistSettings()
+                        }
+                    }
+                }
 
                 if HFTokenManager.hasToken {
                     HStack(spacing: 4) {

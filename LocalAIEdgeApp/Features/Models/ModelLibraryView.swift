@@ -22,6 +22,7 @@ struct ModelLibraryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     headerSection
+                    searchBar
                     labFilterBar
                     capabilityFilterBar
                     statsBar
@@ -33,8 +34,10 @@ struct ModelLibraryView: View {
                     catalogSection
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 72)
+                .padding(.top, 4)
+                .padding(.bottom, 90)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -45,7 +48,7 @@ struct ModelLibraryView: View {
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
-        .searchable(text: $searchText, prompt: "Search models, labs, capabilities...")
+        .scrollContentBackground(.hidden)
         .onAppear { store.reconcileInstalledFiles() }
         .alert("Delete Model", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) { modelToDelete = nil }
@@ -99,6 +102,46 @@ struct ModelLibraryView: View {
             guard let items = grouped[lab], !items.isEmpty else { return nil }
             return (lab: lab, items: items)
         }
+    }
+
+    // MARK: - Search Bar
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(searchText.isEmpty ? AppTheme.textTertiary : AppTheme.accent)
+                .animation(.easeOut(duration: 0.2), value: searchText.isEmpty)
+
+            TextField("Search models, labs…", text: $searchText)
+                .font(.system(size: 15))
+                .foregroundStyle(AppTheme.textPrimary)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+
+            if !searchText.isEmpty {
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { searchText = "" }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(AppTheme.panelRaised.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(
+                    searchText.isEmpty ? AppTheme.hairline : AppTheme.accent.opacity(0.35),
+                    lineWidth: 1
+                )
+        )
+        .animation(.easeOut(duration: 0.2), value: searchText.isEmpty)
     }
 
     // MARK: - Header
@@ -209,29 +252,35 @@ struct ModelLibraryView: View {
     // MARK: - Stats Bar
 
     private var statsBar: some View {
-        HStack(spacing: 16) {
-            statBadge(count: filteredCatalog.count, label: "Models", icon: "cube.fill")
-            statBadge(count: filteredCatalog.filter { $0.runtimeType == .mlx }.count, label: "MLX", icon: "apple.logo")
-            statBadge(count: filteredCatalog.filter(\.isThinkingModel).count, label: "Think", icon: "brain")
-            statBadge(count: filteredCatalog.filter(\.supportsVision).count, label: "Vision", icon: "eye.fill")
-            statBadge(count: filteredCatalog.filter(\.supportsToolCalling).count, label: "Tools", icon: "wrench.fill")
-            Spacer()
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                statBadge(count: filteredCatalog.count, icon: "cube.fill", color: AppTheme.accent)
+                statBadge(count: filteredCatalog.filter { $0.runtimeType == .mlx }.count, icon: "apple.logo", color: .orange)
+                statBadge(count: filteredCatalog.filter(\.isThinkingModel).count, icon: "brain", color: AppTheme.capThinking)
+                statBadge(count: filteredCatalog.filter(\.supportsVision).count, icon: "eye.fill", color: AppTheme.capVision)
+                statBadge(count: filteredCatalog.filter(\.supportsToolCalling).count, icon: "wrench.fill", color: AppTheme.capTools)
+            }
+            .padding(.vertical, 2)
         }
-        .padding(.horizontal, 4)
     }
 
-    private func statBadge(count: Int, label: String, icon: String) -> some View {
-        HStack(spacing: 4) {
+    private func statBadge(count: Int, icon: String, color: Color) -> some View {
+        HStack(spacing: 3) {
             Image(systemName: icon)
-                .font(.system(size: 9))
-                .foregroundStyle(AppTheme.textSecondary)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(color)
             Text("\(count)")
-                .font(.caption.weight(.bold).monospacedDigit())
+                .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                 .foregroundStyle(AppTheme.textPrimary)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(AppTheme.textSecondary)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.1))
+        .overlay(
+            Capsule()
+                .stroke(color.opacity(0.3), lineWidth: 1)
+        )
+        .clipShape(Capsule())
     }
 
     // MARK: - Installed Section

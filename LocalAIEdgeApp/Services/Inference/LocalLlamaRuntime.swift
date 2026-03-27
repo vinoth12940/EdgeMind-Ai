@@ -116,7 +116,7 @@ actor LocalLlamaContext {
         llama_backend_free()
     }
 
-    static func create(modelPath: String, maxGeneratedTokens: Int32 = 1024) throws -> LocalLlamaContext {
+    static func create(modelPath: String, maxGeneratedTokens: Int32 = 1024, nCtx: Int32 = 4096) throws -> LocalLlamaContext {
         let normalizedPath = normalizedModelPath(from: modelPath)
         guard FileManager.default.fileExists(atPath: normalizedPath) else {
             runtimeLogger.error("Model file missing. raw=\(modelPath, privacy: .public) normalized=\(normalizedPath, privacy: .public)")
@@ -144,12 +144,14 @@ actor LocalLlamaContext {
 
         let nThreads = max(1, min(8, ProcessInfo.processInfo.processorCount - 2))
         var contextParams = llama_context_default_params()
-        contextParams.n_ctx = 8192
+        contextParams.n_ctx = UInt32(nCtx)
         contextParams.n_batch = 512
         contextParams.n_ubatch = 512
         contextParams.n_threads = Int32(nThreads)
         contextParams.n_threads_batch = Int32(nThreads)
-        contextParams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED
+        contextParams.flash_attn_type = DeviceCapabilityService.supportsFlashAttention()
+            ? LLAMA_FLASH_ATTN_TYPE_ENABLED
+            : LLAMA_FLASH_ATTN_TYPE_DISABLED
         contextParams.offload_kqv = false
         contextParams.op_offload = false
         contextParams.no_perf = true
@@ -417,59 +419,54 @@ actor LocalLlamaRuntime {
     static let shared = LocalLlamaRuntime()
 
     private var activeModelPath: String?
+    private var activeMaxGeneratedTokens: Int32?
     private var activeContext: LocalLlamaContext?
+    private var isLoading = false
 
-    func generate(prompt: String, using modelPath: String) async throws -> String {
-        if activeModelPath != modelPath || activeContext == nil {
-            activeContext = try LocalLlamaContext.create(modelPath: modelPath)
+    /// Ensures a context is loaded for the given model path and token limits.
+    /// Reloads if the model path or maxGeneratedTokens changes.
+    /// Guards against concurrent loads with `isLoading`.
+    private func ensureContext(for modelPath: String, maxGeneratedTokens: Int32) throws -> LocalLlamaContext {
+        guard !isLoading else { throw LocalLlamaRuntimeError.couldNotInitializeContext }
+        let needsReload = activeModelPath != modelPath
+            || activeContext == nil
+            || activeMaxGeneratedTokens != maxGeneratedTokens
+        if needsReload {
+            isLoading = true
+            defer { isLoading = false }
+            activeContext = nil  // release before alloc to avoid peak RAM spike
+            let nCtx = DeviceCapabilityService.contextSize()
+            activeContext = try LocalLlamaContext.create(
+                modelPath: modelPath,
+                maxGeneratedTokens: maxGeneratedTokens,
+                nCtx: nCtx
+            )
             activeModelPath = modelPath
+            activeMaxGeneratedTokens = maxGeneratedTokens
         }
-
-        guard let activeContext else {
-            throw LocalLlamaRuntimeError.couldNotInitializeContext
-        }
-
-        return try await activeContext.generate(prompt: prompt)
+        guard let ctx = activeContext else { throw LocalLlamaRuntimeError.couldNotInitializeContext }
+        return ctx
     }
 
-    func generate(chat: [LocalLlamaChatTurn], fallbackPrompt: String, using modelPath: String) async throws -> String {
-        if activeModelPath != modelPath || activeContext == nil {
-            activeContext = try LocalLlamaContext.create(modelPath: modelPath)
-            activeModelPath = modelPath
-        }
-
-        guard let activeContext else {
-            throw LocalLlamaRuntimeError.couldNotInitializeContext
-        }
-
-        let preparedPrompt = await activeContext.preparePrompt(chat: chat, fallback: fallbackPrompt)
-        return try await activeContext.generate(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
+    func generate(prompt: String, using modelPath: String, maxGeneratedTokens: Int32 = 1024) async throws -> String {
+        let ctx = try ensureContext(for: modelPath, maxGeneratedTokens: maxGeneratedTokens)
+        return try await ctx.generate(prompt: prompt)
     }
 
-    func generateStream(prompt: String, using modelPath: String) async throws -> AsyncStream<String> {
-        if activeModelPath != modelPath || activeContext == nil {
-            activeContext = try LocalLlamaContext.create(modelPath: modelPath)
-            activeModelPath = modelPath
-        }
-
-        guard let activeContext else {
-            throw LocalLlamaRuntimeError.couldNotInitializeContext
-        }
-
-        return try await activeContext.generateStream(prompt: prompt)
+    func generate(chat: [LocalLlamaChatTurn], fallbackPrompt: String, using modelPath: String, maxGeneratedTokens: Int32 = 1024) async throws -> String {
+        let ctx = try ensureContext(for: modelPath, maxGeneratedTokens: maxGeneratedTokens)
+        let preparedPrompt = await ctx.preparePrompt(chat: chat, fallback: fallbackPrompt)
+        return try await ctx.generate(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
     }
 
-    func generateStream(chat: [LocalLlamaChatTurn], fallbackPrompt: String, using modelPath: String) async throws -> AsyncStream<String> {
-        if activeModelPath != modelPath || activeContext == nil {
-            activeContext = try LocalLlamaContext.create(modelPath: modelPath)
-            activeModelPath = modelPath
-        }
+    func generateStream(prompt: String, using modelPath: String, maxGeneratedTokens: Int32 = 1024) async throws -> AsyncStream<String> {
+        let ctx = try ensureContext(for: modelPath, maxGeneratedTokens: maxGeneratedTokens)
+        return try await ctx.generateStream(prompt: prompt)
+    }
 
-        guard let activeContext else {
-            throw LocalLlamaRuntimeError.couldNotInitializeContext
-        }
-
-        let preparedPrompt = await activeContext.preparePrompt(chat: chat, fallback: fallbackPrompt)
-        return try await activeContext.generateStream(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
+    func generateStream(chat: [LocalLlamaChatTurn], fallbackPrompt: String, using modelPath: String, maxGeneratedTokens: Int32 = 1024) async throws -> AsyncStream<String> {
+        let ctx = try ensureContext(for: modelPath, maxGeneratedTokens: maxGeneratedTokens)
+        let preparedPrompt = await ctx.preparePrompt(chat: chat, fallback: fallbackPrompt)
+        return try await ctx.generateStream(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
     }
 }

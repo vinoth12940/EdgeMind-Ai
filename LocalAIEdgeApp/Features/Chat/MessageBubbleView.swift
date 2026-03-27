@@ -32,12 +32,8 @@ struct MessageBubbleView: View {
                             .foregroundStyle(isUser ? .white : AppTheme.textPrimary)
                             .textSelection(.enabled)
                     } else {
-                        MarkdownTextView(text: message.text, isUser: false)
+                        MarkdownTextView(text: message.text, isUser: false, citations: message.citations)
                             .textSelection(.enabled)
-                    }
-
-                    if !message.citations.isEmpty {
-                        citationsView
                     }
                 }
                 .padding(.horizontal, 14)
@@ -46,7 +42,32 @@ struct MessageBubbleView: View {
                 .clipShape(bubbleShape)
                 .overlay(
                     bubbleShape
-                        .stroke(isUser ? Color.clear : AppTheme.hairline, lineWidth: 1)
+                        .stroke(
+                            isUser 
+                                ? LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.2),
+                                        Color.white.opacity(0.1)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                                : LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.08),
+                                        Color.white.opacity(0.05)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(
+                    color: isUser ? AppTheme.accent.opacity(0.25) : .black.opacity(0.15),
+                    radius: isUser ? 12 : 6,
+                    x: 0,
+                    y: isUser ? 4 : 2
                 )
 
                 // Timestamp
@@ -68,13 +89,54 @@ struct MessageBubbleView: View {
 
     private var roleAvatar: some View {
         ZStack {
+            // Glow effect
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            avatarGlowColor.opacity(0.4),
+                            avatarGlowColor.opacity(0.1),
+                            .clear
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 25
+                    )
+                )
+                .frame(width: 50, height: 50)
+                .blur(radius: 8)
+            
+            // Main circle
             Circle()
                 .fill(avatarBackground)
-                .frame(width: 30, height: 30)
+                .frame(width: 34, height: 34)
+                .overlay(
+                    Circle()
+                        .stroke(avatarBorderColor, lineWidth: 1.5)
+                )
 
             Image(systemName: avatarIcon)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(avatarForeground)
+                .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+        }
+    }
+    
+    private var avatarGlowColor: Color {
+        switch message.role {
+        case .user: return AppTheme.accent
+        case .assistant: return AppTheme.accentSoft
+        case .search: return AppTheme.warning
+        case .system: return Color.clear
+        }
+    }
+    
+    private var avatarBorderColor: Color {
+        switch message.role {
+        case .user: return AppTheme.accent.opacity(0.4)
+        case .assistant: return AppTheme.accentSoft.opacity(0.3)
+        case .search: return AppTheme.warning.opacity(0.3)
+        case .system: return Color.white.opacity(0.1)
         }
     }
 
@@ -89,10 +151,32 @@ struct MessageBubbleView: View {
 
     private var avatarBackground: some ShapeStyle {
         switch message.role {
-        case .user: return AnyShapeStyle(AppTheme.accent.opacity(0.15))
-        case .assistant: return AnyShapeStyle(AppTheme.accentSoft.opacity(0.12))
-        case .search: return AnyShapeStyle(AppTheme.warning.opacity(0.12))
-        case .system: return AnyShapeStyle(AppTheme.panel)
+        case .user: 
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [AppTheme.accent.opacity(0.25), AppTheme.accent.opacity(0.15)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        case .assistant: 
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [AppTheme.accentSoft.opacity(0.2), AppTheme.accentSoft.opacity(0.1)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        case .search: 
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [AppTheme.warning.opacity(0.2), AppTheme.warning.opacity(0.1)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        case .system: 
+            return AnyShapeStyle(Color(red: 0.10, green: 0.12, blue: 0.17))
         }
     }
 
@@ -124,53 +208,74 @@ struct MessageBubbleView: View {
     private var bubbleBackground: some ShapeStyle {
         switch message.role {
         case .user:
-            return AnyShapeStyle(AppTheme.userBubbleGradient)
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.20, green: 0.75, blue: 1.0),
+                        Color(red: 0.34, green: 0.44, blue: 0.98)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
         case .assistant:
-            return AnyShapeStyle(AppTheme.panel.opacity(0.9))
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.10, green: 0.12, blue: 0.18),
+                        Color(red: 0.08, green: 0.10, blue: 0.15)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
         case .search:
-            return AnyShapeStyle(AppTheme.panelRaised)
+            return AnyShapeStyle(
+                Color(red: 0.12, green: 0.14, blue: 0.20)
+            )
         case .system:
             return AnyShapeStyle(AppTheme.panel.opacity(0.6))
         }
     }
 
-    // MARK: - Citations
+    // MARK: - Citations (compact clickable pills)
 
-    private var citationsView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Image(systemName: "link")
-                    .font(.system(size: 10, weight: .semibold))
-                Text("Sources")
-                    .font(.system(size: 11, weight: .bold))
-            }
-            .foregroundStyle(AppTheme.textTertiary)
-
-            ForEach(message.citations) { citation in
+    private var compactCitationsView: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(Array(message.citations.enumerated()), id: \.element.id) { index, citation in
                 Link(destination: citation.url) {
-                    HStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(AppTheme.accent.opacity(0.4))
-                            .frame(width: 3, height: 28)
+                    HStack(spacing: 4) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .frame(width: 16, height: 16)
+                            .background(
+                                Circle()
+                                    .fill(AppTheme.accent.opacity(0.7))
+                            )
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(citation.title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(AppTheme.accent)
-                                .lineLimit(1)
-                            Text(citation.snippet)
-                                .font(.system(size: 11))
-                                .foregroundStyle(AppTheme.textSecondary)
-                                .lineLimit(2)
-                        }
+                        Text(citation.title)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.accent)
+                            .lineLimit(1)
                     }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppTheme.panelRaised.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(AppTheme.accent.opacity(0.08))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(AppTheme.accent.opacity(0.15), lineWidth: 0.5)
+                    )
                 }
             }
         }
+    }
+
+    private var citationsView: some View {
+        compactCitationsView
     }
 
     private func previewImage(from data: Data) -> UIImage? {
@@ -185,5 +290,49 @@ struct MessageBubbleView: View {
             return nil
         }
         return UIImage(cgImage: cgImage)
+    }
+}
+
+// MARK: - FlowLayout (wrapping horizontal layout)
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth, x > 0 {
+                y += rowHeight + spacing
+                x = 0
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        return CGSize(width: maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX {
+                y += rowHeight + spacing
+                x = bounds.minX
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: .unspecified)
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }

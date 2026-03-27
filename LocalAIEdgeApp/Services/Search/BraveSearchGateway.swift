@@ -5,7 +5,7 @@ struct BraveSearchGateway: SearchGateway {
 
     func search(query: String) async throws -> SearchContext {
         guard !apiKey.isEmpty else {
-            throw SearchGatewayError.endpointUnavailable
+            throw SearchGatewayError.invalidAPIKey(provider: "Brave Search")
         }
 
         var components = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")!
@@ -23,7 +23,8 @@ struct BraveSearchGateway: SearchGateway {
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            throw SearchGatewayError.endpointUnavailable
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw SearchGatewayError.httpError(statusCode: code, provider: "Brave Search")
         }
 
         let result = try JSONDecoder().decode(BraveResponse.self, from: data)

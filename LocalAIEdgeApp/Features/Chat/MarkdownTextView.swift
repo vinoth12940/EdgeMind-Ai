@@ -1,9 +1,16 @@
 import SwiftUI
 
-/// Renders LLM markdown output: headers, bold, italic, code, bullet/numbered lists, tables, citations [1].
+/// Renders LLM markdown output: headers, bold, italic, code, bullet/numbered lists, tables, inline citation pills.
 struct MarkdownTextView: View {
     let text: String
     let isUser: Bool
+    let citations: [SearchCitation]
+
+    init(text: String, isUser: Bool, citations: [SearchCitation] = []) {
+        self.text = text
+        self.isUser = isUser
+        self.citations = citations
+    }
 
     private var foreground: Color {
         isUser ? .white : AppTheme.textPrimary
@@ -14,10 +21,20 @@ struct MarkdownTextView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             let blocks = parseBlocks(text)
             ForEach(blocks.indices, id: \.self) { i in
                 renderBlock(blocks[i])
+            }
+            
+            // Show all citations at the end if any exist
+            if !citations.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
+                        citationPill(index: index + 1, citation: citation)
+                    }
+                }
+                .padding(.top, 8)
             }
         }
     }
@@ -166,80 +183,260 @@ struct MarkdownTextView: View {
     private func renderBlock(_ block: Block) -> some View {
         switch block {
         case .heading(let level, let text):
-            inlineMarkdown(text)
-                .font(.system(size: headingSize(level), weight: .bold, design: .rounded))
-                .foregroundStyle(foreground)
-                .padding(.top, level == 1 ? 8 : 4)
+            VStack(alignment: .leading, spacing: 4) {
+                inlineMarkdown(text)
+                    .font(.system(size: headingSize(level), weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: isUser 
+                                ? [.white, .white.opacity(0.9)]
+                                : [Color.white, Color.white.opacity(0.85)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                
+                // Accent underline for h1 and h2
+                if level <= 2 {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    AppTheme.accent,
+                                    AppTheme.accentSoft,
+                                    AppTheme.accent.opacity(0.5)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(height: level == 1 ? 3 : 2)
+                        .frame(maxWidth: level == 1 ? 60 : 40)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.top, level == 1 ? 16 : level == 2 ? 12 : 8)
+            .padding(.bottom, level == 1 ? 8 : 4)
 
         case .paragraph(let text):
             inlineMarkdown(text)
-                .font(.system(size: 15))
+                .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(foreground)
+                .lineSpacing(4)
+                .padding(.vertical, 2)
 
         case .bullet(let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("•")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(isUser ? .white.opacity(0.6) : AppTheme.accent.opacity(0.7))
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                ZStack {
+                    // Glow
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    AppTheme.accent.opacity(0.3),
+                                    .clear
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 8
+                            )
+                        )
+                        .frame(width: 16, height: 16)
+                        .blur(radius: 4)
+                    
+                    // Bullet
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: isUser 
+                                    ? [.white.opacity(0.8), .white.opacity(0.6)]
+                                    : [AppTheme.accent, AppTheme.accentSoft],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 7, height: 7)
+                        .shadow(color: AppTheme.accent.opacity(0.4), radius: 3, x: 0, y: 1)
+                }
+                .frame(width: 20, height: 20)
+                
                 inlineMarkdown(text)
-                    .font(.system(size: 15))
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(foreground)
+                    .lineSpacing(3)
             }
+            .padding(.vertical, 3)
 
         case .numbered(let idx, let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(idx).")
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(isUser ? .white.opacity(0.6) : AppTheme.accent.opacity(0.7))
-                    .frame(width: 22, alignment: .trailing)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                ZStack {
+                    // Glow
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    AppTheme.accent.opacity(0.3),
+                                    .clear
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 12
+                            )
+                        )
+                        .frame(width: 24, height: 24)
+                        .blur(radius: 4)
+                    
+                    // Number badge
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: isUser
+                                    ? [Color.white.opacity(0.15), Color.white.opacity(0.1)]
+                                    : [AppTheme.accent.opacity(0.2), AppTheme.accentSoft.opacity(0.15)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 26, height: 26)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: isUser
+                                            ? [.white.opacity(0.4), .white.opacity(0.2)]
+                                            : [AppTheme.accent.opacity(0.6), AppTheme.accentSoft.opacity(0.4)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                        )
+                    
+                    Text("\(idx)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: isUser
+                                    ? [.white, .white.opacity(0.9)]
+                                    : [AppTheme.accent, AppTheme.accentSoft],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                }
+                .frame(width: 32, alignment: .center)
+                
                 inlineMarkdown(text)
-                    .font(.system(size: 15))
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(foreground)
+                    .lineSpacing(3)
             }
+            .padding(.vertical, 4)
 
         case .codeBlock(let language, let code):
             VStack(alignment: .leading, spacing: 0) {
                 if !language.isEmpty {
-                    Text(language)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(AppTheme.accent.opacity(0.8))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(AppTheme.background.opacity(0.5))
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [AppTheme.accent, AppTheme.accentSoft],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        Text(language.uppercased())
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [AppTheme.accent, AppTheme.accentSoft],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                AppTheme.accent.opacity(0.12),
+                                AppTheme.accentSoft.opacity(0.08)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(code)
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundStyle(isUser ? .white.opacity(0.95) : AppTheme.textPrimary)
+                        .font(.system(size: 14, design: .monospaced))
+                        .foregroundStyle(isUser ? .white.opacity(0.95) : Color.white.opacity(0.9))
                         .textSelection(.enabled)
-                        .padding(10)
+                        .padding(14)
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isUser ? Color.white.opacity(0.1) : AppTheme.background.opacity(0.8))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: isUser 
+                                ? [Color.white.opacity(0.08), Color.white.opacity(0.05)]
+                                : [Color(red: 0.06, green: 0.08, blue: 0.12), Color(red: 0.04, green: 0.06, blue: 0.10)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isUser ? Color.white.opacity(0.15) : AppTheme.hairline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: isUser
+                                ? [Color.white.opacity(0.2), Color.white.opacity(0.1)]
+                                : [Color.white.opacity(0.1), Color.white.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .trailing
+                        ),
+                        lineWidth: 1
+                    )
             )
+            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 2)
+            .padding(.vertical, 4)
 
         case .table(let headers, let rows):
             tableView(headers: headers, rows: rows)
 
         case .divider:
-            Rectangle()
-                .fill(isUser ? Color.white.opacity(0.2) : AppTheme.hairline)
-                .frame(height: 1)
-                .padding(.vertical, 4)
+            HStack {
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                .clear,
+                                AppTheme.accent.opacity(0.3),
+                                AppTheme.accentSoft.opacity(0.3),
+                                .clear
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 2)
+            }
+            .padding(.vertical, 12)
         }
     }
 
     private func headingSize(_ level: Int) -> CGFloat {
         switch level {
-        case 1: return 20
-        case 2: return 17
-        default: return 15
+        case 1: return 28
+        case 2: return 22
+        case 3: return 19
+        default: return 17
         }
     }
 
@@ -252,40 +449,60 @@ struct MarkdownTextView: View {
                 HStack(spacing: 0) {
                     ForEach(headers.indices, id: \.self) { col in
                         Text(headers[col])
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(foreground)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .frame(minWidth: 80, alignment: .leading)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .frame(minWidth: 100, alignment: .leading)
+                            .background(
+                                LinearGradient(
+                                    colors: [
+                                        AppTheme.accent.opacity(0.25),
+                                        AppTheme.accentSoft.opacity(0.20)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                     }
                 }
-                .background(isUser ? Color.white.opacity(0.1) : AppTheme.panelRaised.opacity(0.6))
 
                 // Data rows
                 ForEach(rows.indices, id: \.self) { row in
                     HStack(spacing: 0) {
                         ForEach(0..<max(headers.count, rows[row].count), id: \.self) { col in
                             Text(col < rows[row].count ? rows[row][col] : "")
-                                .font(.system(size: 12))
-                                .foregroundStyle(foreground.opacity(0.9))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .frame(minWidth: 80, alignment: .leading)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(foreground.opacity(0.95))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .frame(minWidth: 100, alignment: .leading)
                         }
                     }
                     .background(
                         row % 2 == 0
-                            ? (isUser ? Color.white.opacity(0.04) : AppTheme.background.opacity(0.3))
-                            : Color.clear
+                            ? (isUser ? Color.white.opacity(0.06) : Color(red: 0.08, green: 0.10, blue: 0.14))
+                            : (isUser ? Color.white.opacity(0.03) : Color(red: 0.06, green: 0.08, blue: 0.12))
                     )
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(isUser ? Color.white.opacity(0.15) : AppTheme.hairline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: isUser
+                                ? [Color.white.opacity(0.2), Color.white.opacity(0.1)]
+                                : [Color.white.opacity(0.12), Color.white.opacity(0.06)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
             )
+            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 2)
         }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Inline Markdown (bold, italic, code, citation refs)
@@ -299,8 +516,8 @@ struct MarkdownTextView: View {
             if remaining.hasPrefix("`"), let end = remaining.dropFirst().firstIndex(of: "`") {
                 let code = remaining[remaining.index(after: remaining.startIndex)..<end]
                 result = result + Text(String(code))
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(isUser ? .white.opacity(0.95) : AppTheme.accent)
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundColor(isUser ? .white : AppTheme.accent)
                 remaining = remaining[remaining.index(after: end)...]
                 continue
             }
@@ -308,7 +525,9 @@ struct MarkdownTextView: View {
             // Bold **...**
             if remaining.hasPrefix("**"), let endRange = remaining.dropFirst(2).range(of: "**") {
                 let bold = remaining[remaining.index(remaining.startIndex, offsetBy: 2)..<endRange.lowerBound]
-                result = result + Text(String(bold)).bold()
+                result = result + Text(String(bold))
+                    .fontWeight(.bold)
+                    .foregroundColor(isUser ? .white : Color.white.opacity(0.95))
                 remaining = remaining[endRange.upperBound...]
                 continue
             }
@@ -317,19 +536,24 @@ struct MarkdownTextView: View {
             if remaining.hasPrefix("*"), !remaining.hasPrefix("**"),
                let end = remaining.dropFirst().firstIndex(of: "*") {
                 let italic = remaining[remaining.index(after: remaining.startIndex)..<end]
-                result = result + Text(String(italic)).italic()
+                result = result + Text(String(italic))
+                    .italic()
+                    .foregroundColor(isUser ? .white.opacity(0.95) : Color.white.opacity(0.85))
                 remaining = remaining[remaining.index(after: end)...]
                 continue
             }
 
-            // Citation reference [1], [2] etc.
+            // Citation reference [1], [2] etc. - render as inline badge
             if remaining.hasPrefix("["),
                let closeBracket = remaining.firstIndex(of: "]") {
                 let inside = remaining[remaining.index(after: remaining.startIndex)..<closeBracket]
-                if inside.allSatisfy({ $0.isNumber }) {
-                    result = result + Text("[\(inside)]")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(isUser ? .white.opacity(0.8) : AppTheme.accent)
+                if inside.allSatisfy({ $0.isNumber }), let citationIndex = Int(String(inside)), citationIndex > 0, citationIndex <= citations.count {
+                    // Inline badge - styled diamond symbol with number
+                    result = result + Text(" ") +
+                        Text("◆\(inside)")
+                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .foregroundColor(AppTheme.accent) +
+                        Text(" ")
                     remaining = remaining[remaining.index(after: closeBracket)...]
                     continue
                 }
@@ -341,5 +565,79 @@ struct MarkdownTextView: View {
         }
 
         return result
+    }
+
+    // MARK: - Citation Helpers
+
+    /// Extract all [1], [2] etc. references from text
+    private func extractCitationIndices(from text: String) -> [Int] {
+        var indices: [Int] = []
+        var remaining = text[text.startIndex...]
+        
+        while !remaining.isEmpty {
+            if remaining.hasPrefix("["),
+               let closeBracket = remaining.firstIndex(of: "]") {
+                let inside = remaining[remaining.index(after: remaining.startIndex)..<closeBracket]
+                if inside.allSatisfy({ $0.isNumber }), let citationIndex = Int(String(inside)) {
+                    if !indices.contains(citationIndex) {
+                        indices.append(citationIndex)
+                    }
+                }
+                remaining = remaining[remaining.index(after: closeBracket)...]
+            } else {
+                remaining = remaining.dropFirst()
+            }
+        }
+        
+        return indices.sorted()
+    }
+
+    /// Render a clickable citation pill
+    @ViewBuilder
+    private func citationPill(index: Int, citation: SearchCitation) -> some View {
+        Link(destination: citation.url) {
+            HStack(spacing: 4) {
+                Text("\(index)")
+                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                
+                Image(systemName: "link")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.9))
+                
+                Text(citation.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                AppTheme.accent,
+                                AppTheme.accentSoft
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                Capsule()
+                    .stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.35), .white.opacity(0.15)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.5
+                    )
+            )
+            .shadow(color: AppTheme.accent.opacity(0.5), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
     }
 }

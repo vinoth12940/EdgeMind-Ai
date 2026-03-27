@@ -50,4 +50,16 @@ targets:
         ENABLE_PREVIEWS: YES
     scheme:
       gatherCoverageData: false
-      testTargets: []
+      testTargets:
+        - LocalAIEdgeAppTests
+
+  LocalAIEdgeAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: LocalAIEdgeAppTests
+    dependencies:
+      - target: LocalAIEdgeApp
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES

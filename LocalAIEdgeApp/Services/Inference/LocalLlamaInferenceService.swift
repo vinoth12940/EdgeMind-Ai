@@ -12,6 +12,12 @@ struct LocalLlamaInferenceService: InferenceService {
         guard model.catalogItem.runtimeType == .gguf else {
             throw InferenceServiceError.runtimeUnavailable("This model requires the MLX runtime.")
         }
+        // GGUF runtime does not support vision — warn if user attached an image
+        if imageData != nil {
+            throw InferenceServiceError.runtimeUnavailable(
+                "The llama.cpp runtime does not support image input. Switch to an MLX vision model (e.g. Gemma 3n E2B MLX) for image understanding."
+            )
+        }
         guard let modelPath = model.localPath else {
             throw InferenceServiceError.missingLocalModelFile
         }
@@ -32,11 +38,13 @@ struct LocalLlamaInferenceService: InferenceService {
             modelName: model.catalogItem.displayName
         )
 
+        let maxGeneratedTokens: Int32 = searchContext != nil ? 2048 : 1024
         do {
             let response = try await LocalLlamaRuntime.shared.generate(
                 chat: chatTurns,
                 fallbackPrompt: fallbackPrompt,
-                using: modelPath
+                using: modelPath,
+                maxGeneratedTokens: maxGeneratedTokens
             )
             return ChatMessage(
                 role: .assistant,
@@ -59,6 +67,12 @@ struct LocalLlamaInferenceService: InferenceService {
         guard model.catalogItem.runtimeType == .gguf else {
             throw InferenceServiceError.runtimeUnavailable("This model requires the MLX runtime.")
         }
+        // GGUF runtime does not support vision — warn if user attached an image
+        if imageData != nil {
+            throw InferenceServiceError.runtimeUnavailable(
+                "The llama.cpp runtime does not support image input. Switch to an MLX vision model (e.g. Gemma 3n E2B MLX) for image understanding."
+            )
+        }
         guard let modelPath = model.localPath else {
             throw InferenceServiceError.missingLocalModelFile
         }
@@ -79,19 +93,20 @@ struct LocalLlamaInferenceService: InferenceService {
             modelName: model.catalogItem.displayName
         )
 
+        let maxGeneratedTokens: Int32 = searchContext != nil ? 2048 : 1024
         let messageID = UUID()
         let citations = searchContext?.citations ?? []
         let stream = try await LocalLlamaRuntime.shared.generateStream(
             chat: chatTurns,
             fallbackPrompt: fallbackPrompt,
-            using: modelPath
+            using: modelPath,
+            maxGeneratedTokens: maxGeneratedTokens
         )
         return (messageID, citations, stream)
     }
 }
 
-private enum PromptRenderer {
-    static let maxPromptTokens = 6800
+enum PromptRenderer {
 
     /// Build structured chat turns for use with `llama_chat_apply_template`.
     static func buildChatTurns(
@@ -111,6 +126,9 @@ private enum PromptRenderer {
         var turns: [LocalLlamaChatTurn] = []
         turns.append(LocalLlamaChatTurn(role: "system", content: systemContent))
 
+        let maxTokensForGeneration: Int32 = searchContext != nil ? 2048 : 1024
+        let nCtx = DeviceCapabilityService.contextSize()
+        let maxPromptTokens = max(256, Int(nCtx) - Int(maxTokensForGeneration) - 64)
         let fixedTokens = estimateTokens(systemContent) + estimateTokens(latestPrompt) + 200
         let historyBudget = maxPromptTokens - fixedTokens
 
@@ -155,6 +173,9 @@ private enum PromptRenderer {
             systemSection += "\n\nWeb Search Results:\n\(snippets)"
         }
 
+        let maxTokensForGeneration: Int32 = searchContext != nil ? 2048 : 1024
+        let nCtx = DeviceCapabilityService.contextSize()
+        let maxPromptTokens = max(256, Int(nCtx) - Int(maxTokensForGeneration) - 64)
         let fixedTokens = estimateTokens(systemSection) + estimateTokens(latestPrompt) + 200
         let historyBudget = maxPromptTokens - fixedTokens
 
@@ -189,7 +210,7 @@ private enum PromptRenderer {
     // MARK: - Helpers
 
     private static func searchSnippets(_ searchContext: SearchContext) -> String {
-        searchContext.snippets.prefix(3).enumerated().map { index, snippet in
+        searchContext.snippets.prefix(5).enumerated().map { index, snippet in
             let cleaned = stripHTML(snippet)
             let truncated = cleaned.count > 300 ? String(cleaned.prefix(300)) + "..." : cleaned
             return "[\(index + 1)] \(truncated)"

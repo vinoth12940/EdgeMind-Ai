@@ -5,7 +5,7 @@ struct TavilySearchGateway: SearchGateway {
 
     func search(query: String) async throws -> SearchContext {
         guard !apiKey.isEmpty else {
-            throw SearchGatewayError.endpointUnavailable
+            throw SearchGatewayError.invalidAPIKey(provider: "Tavily")
         }
 
         var request = URLRequest(url: URL(string: "https://api.tavily.com/search")!)
@@ -25,7 +25,8 @@ struct TavilySearchGateway: SearchGateway {
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            throw SearchGatewayError.endpointUnavailable
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw SearchGatewayError.httpError(statusCode: code, provider: "Tavily")
         }
 
         let result = try JSONDecoder().decode(TavilyResponse.self, from: data)

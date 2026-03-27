@@ -27,7 +27,9 @@ struct ChatView: View {
     }
 
     private var isVisionModel: Bool {
-        store.defaultModel?.catalogItem.supportsVision == true
+        guard let model = store.defaultModel else { return false }
+        // Only enable vision UI for MLX models — GGUF runtime has no image pipeline
+        return model.catalogItem.supportsVision && model.catalogItem.runtimeType == .mlx
     }
 
     private var lastAssistantResponseText: String? {
@@ -53,7 +55,12 @@ struct ChatView: View {
                     VStack {
                         Spacer(minLength: 0)
                         emptyState
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                            .transition(
+                                .asymmetric(
+                                    insertion: .scale(scale: 0.9).combined(with: .opacity),
+                                    removal: .scale(scale: 1.1).combined(with: .opacity)
+                                )
+                            )
                         Spacer(minLength: 0)
                     }
                 } else {
@@ -92,10 +99,6 @@ struct ChatView: View {
                         }
                         .scrollDismissesKeyboard(.interactively)
                         .defaultScrollAnchor(.bottom)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            isInputFocused = false
-                        }
                         .onAppear { scrollProxy = proxy }
                         .onChange(of: activeMessages.count) {
                             withAnimation(.easeOut(duration: 0.3)) {
@@ -115,10 +118,6 @@ struct ChatView: View {
                 }
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            isInputFocused = false
-        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -135,6 +134,7 @@ struct ChatView: View {
                         .background(AppTheme.panel.opacity(0.6))
                         .clipShape(Circle())
                 }
+                .accessibilityLabel("View chat history")
             }
             ToolbarItem(placement: .principal) {
                 Text("Chat")
@@ -153,16 +153,7 @@ struct ChatView: View {
                         .background(AppTheme.panel.opacity(0.6))
                         .clipShape(Circle())
                 }
-            }
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    isInputFocused = false
-                }
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(AppTheme.accent)
+                .accessibilityLabel("Start new chat")
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -177,6 +168,7 @@ struct ChatView: View {
                 voiceStatusMessage: voiceController.lastError,
                 isVisionModel: isVisionModel,
                 isSending: isSending,
+                isSearchConfigured: SearchGatewayFactory.make(settings: store.settings) != nil,
                 onSend: sendPrompt,
                 onToggleVoiceInput: toggleVoiceInput,
                 onStop: stopGeneration
@@ -214,106 +206,94 @@ struct ChatView: View {
     // MARK: - Header
 
     private var header: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                // Model selector
-                Button {
-                    showModelPicker = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "cpu")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(AppTheme.accent)
+        HStack(spacing: 10) {
+            // Model selector
+            Button {
+                showModelPicker = true
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "cpu")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.accent)
 
-                        Text(store.defaultModel?.catalogItem.displayName ?? "Select model")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(AppTheme.textPrimary)
-                            .lineLimit(1)
+                    Text(store.defaultModel?.catalogItem.displayName ?? "Select model")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .lineLimit(1)
 
-                        if let runtime = store.defaultModel?.catalogItem.runtimeType {
-                            Text(runtime.label)
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(runtime == .mlx ? .orange : AppTheme.textTertiary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(runtime == .mlx ? Color.orange.opacity(0.12) : AppTheme.panelRaised)
-                                .clipShape(Capsule())
-                        }
-
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(AppTheme.textTertiary)
+                    if let runtime = store.defaultModel?.catalogItem.runtimeType {
+                        Text(runtime.label)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(runtime == .mlx ? .orange : AppTheme.textTertiary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(runtime == .mlx ? Color.orange.opacity(0.12) : AppTheme.panelRaised)
+                            .clipShape(Capsule())
                     }
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(AppTheme.textTertiary)
                 }
-                .buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
 
-                Spacer()
+            Spacer()
 
-                // Status pill
+            // Capability pills — only when not compact
+            if !isCompactHeader, let model = store.defaultModel {
                 HStack(spacing: 4) {
-                    Circle()
-                        .fill(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
-                        .frame(width: 6, height: 6)
-                    Text(liveSearchEnabled ? "Search" : "Offline")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(AppTheme.panel.opacity(0.8))
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule().stroke(AppTheme.hairline, lineWidth: 1)
-                )
-
-                if store.settings.voiceModeEnabled, let lastAssistantResponseText, !lastAssistantResponseText.isEmpty {
-                    Button {
-                        replayLastAssistantResponse()
-                    } label: {
-                        Image(systemName: voiceController.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(voiceController.isSpeaking ? AppTheme.warning : AppTheme.accent)
-                            .padding(8)
-                            .background(AppTheme.panel.opacity(0.8))
-                            .clipShape(Circle())
-                            .overlay(
-                                Circle().stroke(AppTheme.hairline, lineWidth: 1)
-                            )
+                    if model.catalogItem.supportsVision {
+                        capabilityBadge(icon: "eye", label: "Vision", active: true, color: .purple)
+                    }
+                    if model.catalogItem.isThinkingModel {
+                        capabilityBadge(icon: "lightbulb.max", label: "Think", active: true, color: .yellow)
+                    }
+                    if model.catalogItem.supportsToolCalling {
+                        capabilityBadge(icon: "wrench.and.screwdriver", label: "Tools", active: true, color: .green)
                     }
                 }
             }
 
-            // Capability badges + model summary
-            if let model = store.defaultModel, !isCompactHeader {
-                VStack(spacing: 6) {
-                    // Capability badges
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            capabilityBadge(icon: "text.bubble", label: "Chat", active: true, color: AppTheme.accent)
+            // Status pill
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
+                    .frame(width: 5, height: 5)
+                    .animation(
+                        liveSearchEnabled
+                            ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true)
+                            : .default,
+                        value: liveSearchEnabled
+                    )
+                Text(liveSearchEnabled ? "Search" : "Offline")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(AppTheme.panel.opacity(0.8))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(AppTheme.hairline, lineWidth: 1))
 
-                            capabilityBadge(icon: "eye", label: "Vision", active: model.catalogItem.supportsVision, color: .purple)
-
-                            capabilityBadge(icon: "brain.head.profile", label: "Reasoning", active: model.catalogItem.supportsReasoning, color: .cyan)
-
-                            capabilityBadge(icon: "lightbulb.max", label: "Thinking", active: model.catalogItem.isThinkingModel, color: .yellow)
-
-                            capabilityBadge(icon: "wrench.and.screwdriver", label: "Tools", active: model.catalogItem.supportsToolCalling, color: .green)
-                        }
-                    }
-
-                    // Model summary
-                    Text(model.catalogItem.summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(AppTheme.textTertiary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            if store.settings.voiceModeEnabled, let lastAssistantResponseText, !lastAssistantResponseText.isEmpty {
+                Button {
+                    replayLastAssistantResponse()
+                } label: {
+                    Image(systemName: voiceController.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(voiceController.isSpeaking ? AppTheme.warning : AppTheme.accent)
+                        .padding(7)
+                        .background(AppTheme.panel.opacity(0.8))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(AppTheme.hairline, lineWidth: 1))
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, isCompactHeader ? 8 : 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .background(
-            AppTheme.background.opacity(0.7)
+            AppTheme.background.opacity(0.65)
                 .background(.ultraThinMaterial)
         )
         .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isCompactHeader)
@@ -476,30 +456,87 @@ struct ChatView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 28) {
             ZStack {
+                // Animated gradient glow
                 Circle()
-                    .fill(AppTheme.accent.opacity(0.06))
-                    .frame(width: 100, height: 100)
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                AppTheme.accent.opacity(0.3),
+                                AppTheme.accentSoft.opacity(0.2),
+                                .clear
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 80
+                        )
+                    )
+                    .frame(width: 160, height: 160)
+                    .blur(radius: 20)
+                
+                // Outer ring
                 Circle()
-                    .fill(AppTheme.accent.opacity(0.10))
-                    .frame(width: 68, height: 68)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                AppTheme.accent.opacity(0.5),
+                                AppTheme.accentSoft.opacity(0.3),
+                                AppTheme.accent.opacity(0.5)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2
+                    )
+                    .frame(width: 120, height: 120)
+                
+                // Inner circle with glassmorphism
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.15, green: 0.18, blue: 0.25).opacity(0.8),
+                                Color(red: 0.10, green: 0.12, blue: 0.20).opacity(0.8)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 96, height: 96)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+                
+                // Icon
                 Image(systemName: "brain.head.profile")
-                    .font(.system(size: 30, weight: .medium))
-                    .foregroundStyle(AppTheme.accent.opacity(0.7))
+                    .font(.system(size: 38, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                AppTheme.accent,
+                                AppTheme.accentSoft
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: AppTheme.accent.opacity(0.4), radius: 12, x: 0, y: 4)
             }
 
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 Text("Start a Conversation")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.textPrimary)
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
 
                 Text(store.defaultModel == nil
                      ? "Install a model from the library to begin"
                      : "Ask anything — everything runs on-device")
-                    .font(.system(size: 14))
-                    .foregroundStyle(AppTheme.textSecondary)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.65))
                     .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
             }
 
             if store.defaultModel == nil {
@@ -508,25 +545,55 @@ struct ChatView: View {
                         selectedTab.wrappedValue = 1
                     }
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Image(systemName: "square.stack.3d.up.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Browse Models")
                             .font(.system(size: 15, weight: .bold))
+                        Text("Browse Models")
+                            .font(.system(size: 16, weight: .bold))
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(AppTheme.accent.opacity(0.15))
-                    .foregroundStyle(AppTheme.accent)
-                    .clipShape(Capsule())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 16)
+                    .background(
+                        ZStack {
+                            // Glow
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            AppTheme.accent.opacity(0.4),
+                                            AppTheme.accentSoft.opacity(0.4)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .blur(radius: 10)
+                            
+                            // Main button
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            AppTheme.accent,
+                                            AppTheme.accentSoft
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        }
+                    )
                     .overlay(
                         Capsule()
-                            .stroke(AppTheme.accent.opacity(0.3), lineWidth: 1)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
                     )
+                    .shadow(color: AppTheme.accent.opacity(0.3), radius: 16, x: 0, y: 8)
                 }
+                .buttonStyle(.plain)
             }
         }
-        .padding(32)
+        .padding(40)
     }
 
     private func stopGeneration() {
@@ -620,16 +687,21 @@ struct ChatView: View {
 
         let task = Task {
             do {
-                let searchContext = try await resolveSearchContext(for: trimmedPrompt)
-                if let searchContext {
-                    let searchMessage = ChatMessage(
-                        role: .search,
-                        text: "Live Search returned \(searchContext.citations.count) sources.",
-                        citations: searchContext.citations
-                    )
-                    await MainActor.run {
-                        store.appendMessage(searchMessage, to: sessionID)
+                let searchContext: SearchContext?
+                if liveSearchEnabled || store.settings.useSearchByDefault,
+                   let gateway = SearchGatewayFactory.make(settings: store.settings) {
+                    do {
+                        searchContext = try await gateway.search(query: trimmedPrompt)
+                    } catch {
+                        // Search failed — show brief warning but continue with model
+                        let warning = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
+                        await MainActor.run {
+                            store.appendMessage(warning, to: sessionID)
+                        }
+                        searchContext = nil
                     }
+                } else {
+                    searchContext = nil
                 }
 
                 // Create a placeholder assistant message for streaming
@@ -711,9 +783,9 @@ struct ChatView: View {
         generationTask = task
     }
 
-    private func resolveSearchContext(for prompt: String) async throws -> SearchContext? {
+    private func resolveSearchContext(for prompt: String) async -> SearchContext? {
         guard liveSearchEnabled || store.settings.useSearchByDefault else { return nil }
         guard let gateway = SearchGatewayFactory.make(settings: store.settings) else { return nil }
-        return try await gateway.search(query: prompt)
+        return try? await gateway.search(query: prompt)
     }
 }

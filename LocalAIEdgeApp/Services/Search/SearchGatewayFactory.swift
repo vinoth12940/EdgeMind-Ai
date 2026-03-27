@@ -17,7 +17,8 @@ struct CustomSearchGateway: SearchGateway {
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            throw SearchGatewayError.endpointUnavailable
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw SearchGatewayError.httpError(statusCode: code, provider: "Custom Gateway")
         }
 
         return try JSONDecoder().decode(SearchContext.self, from: data)

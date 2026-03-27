@@ -12,6 +12,7 @@ struct ChatComposerView: View {
     let voiceStatusMessage: String?
     let isVisionModel: Bool
     let isSending: Bool
+    let isSearchConfigured: Bool
     let onSend: () -> Void
     let onToggleVoiceInput: () -> Void
     var onStop: (() -> Void)? = nil
@@ -20,6 +21,7 @@ struct ChatComposerView: View {
     @State private var showCamera = false
     @State private var showPhotoPicker = false
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var showSearchNotConfigured = false
 
     private var canSend: Bool {
         let hasText = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -28,68 +30,83 @@ struct ChatComposerView: View {
     }
 
     private var shouldShowUtilityRow: Bool {
-        !isFocused || attachedImage != nil || isVisionModel
+        !isFocused
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             if shouldShowUtilityRow {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    // Search toggle — compact icon when focused, labelled when not
                     Button {
+                        if !liveSearchEnabled && !isSearchConfigured {
+                            showSearchNotConfigured = true
+                            return
+                        }
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             liveSearchEnabled.toggle()
                         }
                     } label: {
-                        HStack(spacing: 5) {
+                        HStack(spacing: 4) {
                             Image(systemName: liveSearchEnabled ? "sparkle.magnifyingglass" : "magnifyingglass")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(liveSearchEnabled ? "Search On" : "Search")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: isFocused ? 14 : 12, weight: .semibold))
+                            if !isFocused {
+                                Text(liveSearchEnabled ? "Search On" : "Search")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
                         }
                         .foregroundStyle(liveSearchEnabled ? AppTheme.warning : AppTheme.textTertiary)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, isFocused ? 8 : 10)
                         .padding(.vertical, 6)
                         .background(
                             Capsule()
-                                .fill(liveSearchEnabled ? AppTheme.warning.opacity(0.12) : AppTheme.panelRaised)
+                                .fill(liveSearchEnabled ? AppTheme.warning.opacity(0.15) : AppTheme.panelRaised)
                         )
                         .overlay(
                             Capsule()
-                                .stroke(liveSearchEnabled ? AppTheme.warning.opacity(0.3) : Color.clear, lineWidth: 1)
+                                .stroke(liveSearchEnabled ? AppTheme.warning.opacity(0.4) : Color.clear, lineWidth: 1)
                         )
                     }
+                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: liveSearchEnabled)
 
                     if isVisionModel {
                         Menu {
-                            Button {
-                                showCamera = true
-                            } label: {
+                            Button { showCamera = true } label: {
                                 Label("Camera", systemImage: "camera")
                             }
-
-                            Button {
-                                showPhotoPicker = true
-                            } label: {
+                            Button { showPhotoPicker = true } label: {
                                 Label("Photo Library", systemImage: "photo.on.rectangle")
                             }
                         } label: {
-                            HStack(spacing: 5) {
+                            HStack(spacing: 4) {
                                 Image(systemName: attachedImage != nil ? "photo.badge.checkmark" : "photo.badge.plus")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text(attachedImage != nil ? "Image Ready" : "Add Photo")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.system(size: isFocused ? 14 : 12, weight: .semibold))
+                                if !isFocused {
+                                    Text(attachedImage != nil ? "Image Ready" : "Add Photo")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
                             }
                             .foregroundStyle(attachedImage != nil ? AppTheme.accent : AppTheme.textSecondary)
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, isFocused ? 8 : 10)
                             .padding(.vertical, 6)
                             .background(
                                 Capsule()
                                     .fill(attachedImage != nil ? AppTheme.accent.opacity(0.12) : AppTheme.panelRaised)
                             )
                         }
+                        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
                     }
 
                     Spacer()
+
+                    // Subtle hint when focused and has text
+                    if isFocused && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Label("Tap ↑ to send", systemImage: "")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(AppTheme.textTertiary.opacity(0.7))
+                            .transition(.opacity)
+                    }
                 }
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -138,23 +155,44 @@ struct ChatComposerView: View {
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("Ask anything…", text: $prompt, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 17, weight: .medium, design: .rounded))
                     .lineLimit(1...6)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .focused($isFocused)
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(AppTheme.panelRaised.opacity(0.7))
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(
-                                isFocused ? AppTheme.accent.opacity(0.4) : AppTheme.hairline,
-                                lineWidth: isFocused ? 1.5 : 1
-                            )
-                            .animation(.easeOut(duration: 0.2), value: isFocused)
+                    .foregroundStyle(.white)
+                    .tint(AppTheme.accent)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 13)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Color(red: 0.14, green: 0.16, blue: 0.22))
                     )
-                    .frame(minHeight: 52)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(
+                                isFocused 
+                                    ? LinearGradient(
+                                        colors: [AppTheme.accent.opacity(0.6), AppTheme.accentSoft.opacity(0.4)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                    : LinearGradient(
+                                        colors: [Color.white.opacity(0.12), Color.white.opacity(0.08)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                lineWidth: isFocused ? 2 : 1
+                            )
+                            .animation(.easeOut(duration: 0.25), value: isFocused)
+                    )
+                    .shadow(
+                        color: isFocused ? AppTheme.accent.opacity(0.3) : .clear,
+                        radius: isFocused ? 16 : 0,
+                        x: 0,
+                        y: isFocused ? 4 : 0
+                    )
+                    .animation(.easeOut(duration: 0.25), value: isFocused)
+                    .frame(minHeight: 54)
                     .submitLabel(.send)
                     .onSubmit {
                         if canSend {
@@ -175,6 +213,7 @@ struct ChatComposerView: View {
                             .scaleEffect(isListening ? 1.0 : 0.94)
                             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: isListening)
                     }
+                    .accessibilityLabel(isListening ? "Stop voice input" : "Start voice input")
                     .disabled(isSending)
                 }
 
@@ -191,19 +230,75 @@ struct ChatComposerView: View {
                             .scaleEffect(1.0)
                             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: isSending)
                     }
+                    .accessibilityLabel("Stop generation")
                 } else {
                     Button(action: onSend) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(canSend ? .white : AppTheme.textTertiary)
-                            .frame(width: 44, height: 44)
-                            .background(
+                        ZStack {
+                            if canSend {
+                                // Vibrant glow effect
                                 Circle()
-                                    .fill(canSend ? AppTheme.accent : AppTheme.panelRaised)
-                            )
-                            .scaleEffect(canSend ? 1.0 : 0.9)
-                            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: canSend)
+                                    .fill(
+                                        RadialGradient(
+                                            colors: [
+                                                AppTheme.accent.opacity(0.5),
+                                                AppTheme.accent.opacity(0.2),
+                                                .clear
+                                            ],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 35
+                                        )
+                                    )
+                                    .frame(width: 70, height: 70)
+                                    .blur(radius: 12)
+                            }
+                            
+                            // Main button
+                            Circle()
+                                .fill(
+                                    canSend
+                                    ? LinearGradient(
+                                        colors: [
+                                            Color(red: 0.20, green: 0.75, blue: 1.0),
+                                            Color(red: 0.34, green: 0.44, blue: 0.98)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                    : LinearGradient(
+                                        colors: [
+                                            Color(red: 0.10, green: 0.12, blue: 0.17),
+                                            Color(red: 0.10, green: 0.12, blue: 0.17)
+                                        ],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .frame(width: 54, height: 54)
+                                .overlay(
+                                    Circle()
+                                        .stroke(
+                                            canSend
+                                                ? Color.white.opacity(0.2)
+                                                : Color.white.opacity(0.05),
+                                            lineWidth: 1
+                                        )
+                                )
+                            
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(canSend ? .white : Color.white.opacity(0.25))
+                                .shadow(
+                                    color: canSend ? .black.opacity(0.2) : .clear,
+                                    radius: 4,
+                                    x: 0,
+                                    y: 2
+                                )
+                        }
+                        .scaleEffect(canSend ? 1.0 : 0.85)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: canSend)
                     }
+                    .accessibilityLabel("Send message")
                     .disabled(!canSend)
                 }
             }
@@ -222,24 +317,66 @@ struct ChatComposerView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(AppTheme.panel.opacity(0.6))
-                )
+            ZStack {
+                // Base blur layer
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                
+                // Solid overlay for better contrast
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.08, green: 0.09, blue: 0.13).opacity(0.95),
+                                Color(red: 0.06, green: 0.07, blue: 0.11).opacity(0.95)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(AppTheme.hairline, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: isFocused
+                            ? [
+                                AppTheme.accent.opacity(0.6),
+                                AppTheme.accentSoft.opacity(0.4),
+                                AppTheme.accent.opacity(0.6)
+                            ]
+                            : [
+                                Color.white.opacity(0.1),
+                                Color.white.opacity(0.05),
+                                Color.white.opacity(0.1)
+                            ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: isFocused ? 2 : 1.5
+                )
+                .animation(.easeOut(duration: 0.3), value: isFocused)
         )
-        .shadow(color: AppTheme.softShadow.opacity(0.35), radius: 18, x: 0, y: -6)
+        .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: -8)
+        .shadow(
+            color: isFocused ? AppTheme.accent.opacity(0.4) : .clear,
+            radius: isFocused ? 32 : 0,
+            x: 0,
+            y: isFocused ? -12 : 0
+        )
+        .animation(.easeOut(duration: 0.3), value: isFocused)
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(image: $attachedImage)
                 .ignoresSafeArea()
+        }
+        .alert("Search Not Configured", isPresented: $showSearchNotConfigured) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Go to Settings → Web Search API and select a provider with an API key.")
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared())
         .onAppear {

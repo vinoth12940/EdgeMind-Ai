@@ -48,6 +48,7 @@ struct AuthLandingView: View {
                 .font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary)
                 .multilineTextAlignment(.center)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
 
             Text("Sign in with Apple (iCloud), local credentials, or iPhone authentication to continue.")
                 .font(.system(size: 14))

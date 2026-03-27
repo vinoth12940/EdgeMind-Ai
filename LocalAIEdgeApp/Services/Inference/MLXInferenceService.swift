@@ -1,6 +1,7 @@
 import CoreImage
 import Foundation
 import OSLog
+import UIKit
 
 #if canImport(MLXLLM) && !targetEnvironment(simulator)
 import Hub
@@ -10,6 +11,13 @@ import MLXLMCommon
 import MLXVLM
 
 private let mlxLogger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "MLXRuntime")
+
+/// Builds an authenticated HubApi using the user's stored HF token (if any).
+private func authenticatedHubApi() -> HubApi {
+    let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    let token = HFTokenManager.token
+    return HubApi(downloadBase: base, hfToken: token)
+}
 
 actor MLXRuntime {
     static let shared = MLXRuntime()
@@ -28,17 +36,39 @@ actor MLXRuntime {
             }
 
             mlxLogger.log("Loading MLX model: \(modelID, privacy: .public) (vision: \(isVision))")
-            Memory.cacheLimit = 256 * 1024 * 1024
+            // Vision models need more GPU cache for the SigLIP vision tower + image tensors
+            Memory.cacheLimit = (isVision ? 768 : 512) * 1024 * 1024
+            let hub = authenticatedHubApi()
             let configuration = ModelConfiguration(id: modelID)
-            if isVision {
-                activeContainer = try await VLMModelFactory.shared.loadContainer(configuration: configuration) { progress in
-                    mlxLogger.log("MLX VLM model load progress: \(progress.fractionCompleted)")
-                }
-            } else {
-                activeContainer = try await LLMModelFactory.shared.loadContainer(configuration: configuration) { progress in
-                    mlxLogger.log("MLX LLM model load progress: \(progress.fractionCompleted)")
+
+            // Retry up to 2 times for transient failures (rate limits, network blips)
+            var lastError: Error?
+            for attempt in 1...3 {
+                do {
+                    if isVision {
+                        activeContainer = try await VLMModelFactory.shared.loadContainer(hub: hub, configuration: configuration) { progress in
+                            mlxLogger.log("MLX VLM model load progress: \(progress.fractionCompleted)")
+                        }
+                    } else {
+                        activeContainer = try await LLMModelFactory.shared.loadContainer(hub: hub, configuration: configuration) { progress in
+                            mlxLogger.log("MLX LLM model load progress: \(progress.fractionCompleted)")
+                        }
+                    }
+                    lastError = nil
+                    break
+                } catch {
+                    lastError = error
+                    mlxLogger.error("MLX model load attempt \(attempt)/3 failed: \(error.localizedDescription)")
+                    if attempt < 3 {
+                        // Exponential backoff: 2s, 4s
+                        try? await Task.sleep(for: .seconds(2 * attempt))
+                    }
                 }
             }
+            if let lastError {
+                throw lastError
+            }
+
             activeModelID = modelID
             activeIsVision = isVision
         }
@@ -49,19 +79,20 @@ actor MLXRuntime {
     }
 
     func generate(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false) async throws -> String {
+        // Clear GPU cache before vision to maximize available memory for the vision encoder
+        if isVision {
+            Memory.clearCache()
+        }
         let container = try await ensureModel(modelID, isVision: isVision)
 
         let parameters = GenerateParameters(maxTokens: maxTokens, temperature: 0.7, topP: 0.9)
-        var images: [UserInput.Image] = []
-        if let imageData, let ciImage = CIImage(data: imageData) {
-            images = [.ciImage(ciImage)]
-        }
+        let images = Self.ciImages(from: imageData)
         let chat: [Chat.Message] = [
             .system(systemPrompt),
             .user(prompt, images: images)
         ]
-        let processing: UserInput.Processing = images.isEmpty ? .init() : .init(resize: CGSize(width: 512, height: 512))
-        let userInput = UserInput(chat: chat, processing: processing)
+        // Let the VLM processor handle its own image sizing — don't force a resize
+        let userInput = UserInput(chat: chat)
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
         }
@@ -79,20 +110,35 @@ actor MLXRuntime {
         return finalText
     }
 
+    /// Convert JPEG Data to CIImage array, handling edge cases robustly.
+    private static func ciImages(from imageData: Data?) -> [UserInput.Image] {
+        guard let imageData else { return [] }
+        // CIImage(data:) can fail on certain JPEG encodings — fall back to UIImage path
+        if let ciImage = CIImage(data: imageData) {
+            return [.ciImage(ciImage)]
+        }
+        // Fallback: decode via UIImage → CGImage → CIImage
+        if let uiImage = UIImage(data: imageData), let cgImage = uiImage.cgImage {
+            return [.ciImage(CIImage(cgImage: cgImage))]
+        }
+        return []
+    }
+
     func generateStream(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false) async throws -> AsyncStream<String> {
+        // Clear GPU cache before vision to maximize available memory for the vision encoder
+        if isVision {
+            Memory.clearCache()
+        }
         let container = try await ensureModel(modelID, isVision: isVision)
 
         let parameters = GenerateParameters(maxTokens: maxTokens, temperature: 0.7, topP: 0.9)
-        var images: [UserInput.Image] = []
-        if let imageData, let ciImage = CIImage(data: imageData) {
-            images = [.ciImage(ciImage)]
-        }
+        let images = Self.ciImages(from: imageData)
         let chat: [Chat.Message] = [
             .system(systemPrompt),
             .user(prompt, images: images)
         ]
-        let processing: UserInput.Processing = images.isEmpty ? .init() : .init(resize: CGSize(width: 512, height: 512))
-        let userInput = UserInput(chat: chat, processing: processing)
+        // Let the VLM processor handle its own image sizing — don't force a resize
+        let userInput = UserInput(chat: chat)
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
         }
@@ -120,10 +166,11 @@ actor MLXRuntime {
     /// Downloads files to disk only — does NOT load weights into GPU memory.
     func preloadModel(_ modelID: String, isVision: Bool = false, progress: @escaping @Sendable (Double) -> Void) async throws {
         mlxLogger.log("Downloading MLX model (no GPU load): \(modelID, privacy: .public)")
+        let hub = authenticatedHubApi()
         let configuration = ModelConfiguration(id: modelID)
         // Use downloadModel() which only downloads files via hub.snapshot() —
         // does NOT load weights into GPU memory, avoiding OOM on 8GB devices.
-        _ = try await downloadModel(hub: defaultHubApi, configuration: configuration) { p in
+        _ = try await downloadModel(hub: hub, configuration: configuration) { p in
             let fraction = p.fractionCompleted
             mlxLogger.log("MLX download progress: \(fraction)")
             progress(fraction)
@@ -159,7 +206,9 @@ struct MLXInferenceService: InferenceService {
             throw InferenceServiceError.missingLocalModelFile
         }
 
-        let isVision = model.catalogItem.supportsVision
+        // Only use VLM path when an image is actually attached — avoids loading
+        // the ~500 MB SigLIP vision tower for text-only prompts, preventing OOM on 8 GB devices.
+        let isVision = model.catalogItem.supportsVision && imageData != nil
         let fullSystemPrompt = Self.buildSystemPrompt(systemPrompt: systemPrompt, searchContext: searchContext)
         let fullPrompt = Self.buildFullPrompt(conversation: conversation, prompt: prompt)
 
@@ -168,7 +217,7 @@ struct MLXInferenceService: InferenceService {
                 prompt: fullPrompt,
                 modelID: mlxModelID,
                 systemPrompt: fullSystemPrompt,
-                maxTokens: isVision ? 512 : 1024,
+                maxTokens: searchContext != nil ? 2048 : 1024,
                 imageData: imageData,
                 isVision: isVision
             )
@@ -178,7 +227,7 @@ struct MLXInferenceService: InferenceService {
                 citations: searchContext?.citations ?? []
             )
         } catch {
-            throw InferenceServiceError.runtimeUnavailable(error.localizedDescription)
+            throw InferenceServiceError.runtimeUnavailable(Self.friendlyMLXError(error))
         }
     }
 
@@ -194,27 +243,57 @@ struct MLXInferenceService: InferenceService {
             throw InferenceServiceError.missingLocalModelFile
         }
 
-        let isVision = model.catalogItem.supportsVision
+        // Only use VLM path when an image is actually attached — avoids loading
+        // the ~500 MB SigLIP vision tower for text-only prompts, preventing OOM on 8 GB devices.
+        let isVision = model.catalogItem.supportsVision && imageData != nil
         let fullSystemPrompt = Self.buildSystemPrompt(systemPrompt: systemPrompt, searchContext: searchContext)
         let fullPrompt = Self.buildFullPrompt(conversation: conversation, prompt: prompt)
 
         let messageID = UUID()
         let citations = searchContext?.citations ?? []
-        let stream = try await MLXRuntime.shared.generateStream(
-            prompt: fullPrompt,
-            modelID: mlxModelID,
-            systemPrompt: fullSystemPrompt,
-            maxTokens: isVision ? 512 : 1024,
-            imageData: imageData,
-            isVision: isVision
-        )
-        return (messageID, citations, stream)
+        do {
+            let stream = try await MLXRuntime.shared.generateStream(
+                prompt: fullPrompt,
+                modelID: mlxModelID,
+                systemPrompt: fullSystemPrompt,
+                maxTokens: searchContext != nil ? 2048 : 1024,
+                imageData: imageData,
+                isVision: isVision
+            )
+            return (messageID, citations, stream)
+        } catch {
+            throw InferenceServiceError.runtimeUnavailable(Self.friendlyMLXError(error))
+        }
+    }
+
+    /// Translate common MLX / Hub download errors into user-friendly messages.
+    private static func friendlyMLXError(_ error: Error) -> String {
+        let desc = error.localizedDescription
+        let nsError = error as NSError
+
+        // HuggingFace rate-limit (HTTP 429)
+        if desc.contains("429") || desc.lowercased().contains("rate limit") || desc.lowercased().contains("too many requests") {
+            return "HuggingFace rate limit reached. Add your HF token in Settings → HuggingFace to raise the limit, or try again in a few minutes."
+        }
+        // Auth required / forbidden (HTTP 401/403)
+        if desc.contains("401") || desc.contains("403") || desc.lowercased().contains("unauthorized") || desc.lowercased().contains("forbidden") {
+            return "HuggingFace authentication failed. Check your HF token in Settings → HuggingFace."
+        }
+        // Network / timeout
+        if nsError.domain == NSURLErrorDomain {
+            return "Network error while loading model. Check your connection and try again."
+        }
+        // Out of memory
+        if desc.lowercased().contains("memory") || desc.lowercased().contains("oom") {
+            return "Not enough memory to load this model. Try a smaller model or close other apps."
+        }
+        return desc
     }
 
     private static func buildSystemPrompt(systemPrompt: String, searchContext: SearchContext?) -> String {
         var result = "\(systemPrompt)\nYou are running locally on-device using MLX on Apple Silicon. Respond directly to the user's question. Do not hallucinate or fabricate information."
         if let searchContext {
-            let snippets = searchContext.snippets.prefix(3).enumerated().map { index, snippet in
+            let snippets = searchContext.snippets.prefix(5).enumerated().map { index, snippet in
                 let cleaned = stripHTML(snippet)
                 let truncated = cleaned.count > 300 ? String(cleaned.prefix(300)) + "..." : cleaned
                 return "[\(index + 1)] \(truncated)"

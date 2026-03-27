@@ -5,7 +5,7 @@ struct SerperSearchGateway: SearchGateway {
 
     func search(query: String) async throws -> SearchContext {
         guard !apiKey.isEmpty else {
-            throw SearchGatewayError.endpointUnavailable
+            throw SearchGatewayError.invalidAPIKey(provider: "Serper")
         }
 
         var request = URLRequest(url: URL(string: "https://google.serper.dev/search")!)
@@ -24,7 +24,8 @@ struct SerperSearchGateway: SearchGateway {
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            throw SearchGatewayError.endpointUnavailable
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw SearchGatewayError.httpError(statusCode: code, provider: "Serper")
         }
 
         let result = try JSONDecoder().decode(SerperResponse.self, from: data)
