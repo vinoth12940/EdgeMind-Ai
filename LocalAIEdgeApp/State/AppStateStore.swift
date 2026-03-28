@@ -187,6 +187,21 @@ final class AppStateStore {
         }
     }
 
+    func updateMessageThinking(
+        _ messageID: UUID,
+        in sessionID: UUID,
+        thinkingContent: String?,
+        thinkingDurationSeconds: Int? = nil,
+        persist: Bool = false
+    ) {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        chatSessions[sessionIndex].messages[messageIndex].thinkingContent = thinkingContent
+        chatSessions[sessionIndex].messages[messageIndex].thinkingDurationSeconds = thinkingDurationSeconds
+        chatSessions[sessionIndex].updatedAt = .now
+        if persist { saveChatSessions() }
+    }
+
     func createSession(using modelID: UUID?) {
         let session = ChatSession(
             title: Self.placeholderSessionTitle,
@@ -279,7 +294,9 @@ final class AppStateStore {
             text: message.text,
             createdAt: message.createdAt,
             citations: message.citations,
-            imageData: nil
+            imageData: nil,
+            thinkingContent: message.thinkingContent,
+            thinkingDurationSeconds: message.thinkingDurationSeconds
         )
     }
 
@@ -338,10 +355,10 @@ final class AppStateStore {
         case .gguf:
             return model.fileURL != nil
         case .mlx:
-#if canImport(MLXLLM) && !targetEnvironment(simulator)
-            return true
-#else
+#if targetEnvironment(simulator)
             return false
+#else
+            return true
 #endif
         }
     }

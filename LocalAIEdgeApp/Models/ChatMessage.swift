@@ -14,6 +14,12 @@ struct ChatMessage: Identifiable, Hashable, Codable {
     let createdAt: Date
     let citations: [SearchCitation]
     let imageData: Data?
+    /// Raw content of the <think>…</think> block. Updated token-by-token during streaming.
+    /// Nil for non-thinking models or when no thinking block is present.
+    var thinkingContent: String?
+    /// Seconds elapsed from <think> open to </think> close.
+    /// Nil while thinking is still in progress; set once </think> is detected.
+    var thinkingDurationSeconds: Int?
 
     init(
         id: UUID = UUID(),
@@ -21,7 +27,9 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         text: String,
         createdAt: Date = .now,
         citations: [SearchCitation] = [],
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        thinkingContent: String? = nil,
+        thinkingDurationSeconds: Int? = nil
     ) {
         self.id = id
         self.role = role
@@ -29,6 +37,8 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         self.createdAt = createdAt
         self.citations = citations
         self.imageData = imageData
+        self.thinkingContent = thinkingContent
+        self.thinkingDurationSeconds = thinkingDurationSeconds
     }
 }
 

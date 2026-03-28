@@ -27,15 +27,7 @@ struct MarkdownTextView: View {
                 renderBlock(blocks[i])
             }
             
-            // Show all citations at the end if any exist
-            if !citations.isEmpty {
-                FlowLayout(spacing: 6) {
-                    ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
-                        citationPill(index: index + 1, citation: citation)
-                    }
-                }
-                .padding(.top, 8)
-            }
+            // Citations are displayed via SearchDisclosureRow in MessageBubbleView
         }
     }
 

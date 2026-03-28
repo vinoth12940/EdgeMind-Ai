@@ -42,7 +42,7 @@ enum AssistantResponseSanitizer {
         var cleaned = text
 
         let globalPatterns = [
-            "(?is)<think>[\\s\\S]*?</think>",
+            // <think> blocks are now extracted live during streaming — not stripped here
             "(?i)<end_of_turn>",
             "(?i)<start_of_turn>\\s*(model|user|system)?",
             "(?i)<\\|eot_id\\|>",

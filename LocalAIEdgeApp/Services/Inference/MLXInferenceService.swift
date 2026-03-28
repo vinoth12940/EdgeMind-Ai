@@ -32,12 +32,12 @@ actor MLXRuntime {
             if activeContainer != nil {
                 mlxLogger.log("Unloading previous model before loading new one")
                 unload()
-                Memory.clearCache()
+                GPU.clearCache()
             }
 
             mlxLogger.log("Loading MLX model: \(modelID, privacy: .public) (vision: \(isVision))")
             // Vision models need more GPU cache for the SigLIP vision tower + image tensors
-            Memory.cacheLimit = (isVision ? 768 : 512) * 1024 * 1024
+            GPU.set(cacheLimit: (isVision ? 768 : 512) * 1024 * 1024)
             let hub = authenticatedHubApi()
             let configuration = ModelConfiguration(id: modelID)
 
@@ -81,7 +81,7 @@ actor MLXRuntime {
     func generate(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false) async throws -> String {
         // Clear GPU cache before vision to maximize available memory for the vision encoder
         if isVision {
-            Memory.clearCache()
+            GPU.clearCache()
         }
         let container = try await ensureModel(modelID, isVision: isVision)
 
@@ -97,15 +97,14 @@ actor MLXRuntime {
             try await context.processor.prepare(input: userInput)
         }
 
-        var output = ""
-        let stream = try await container.generate(input: input, parameters: parameters)
-        for await generation in stream {
-            if let chunk = generation.chunk {
-                output += chunk
-            }
+        let result: GenerateResult = try await container.perform { context in
+            let result: GenerateResult = try MLXLMCommon.generate(
+                input: input, parameters: parameters, context: context
+            ) { _ in .more }
+            return result
         }
 
-        let finalText = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalText = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         mlxLogger.log("MLX generation complete: generated \(finalText.count) chars")
         return finalText
     }
@@ -127,7 +126,7 @@ actor MLXRuntime {
     func generateStream(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false) async throws -> AsyncStream<String> {
         // Clear GPU cache before vision to maximize available memory for the vision encoder
         if isVision {
-            Memory.clearCache()
+            GPU.clearCache()
         }
         let container = try await ensureModel(modelID, isVision: isVision)
 
@@ -143,7 +142,9 @@ actor MLXRuntime {
             try await context.processor.prepare(input: userInput)
         }
 
-        let mlxStream = try await container.generate(input: input, parameters: parameters)
+        let mlxStream: AsyncStream<Generation> = try await container.perform { context in
+            try MLXLMCommon.generate(input: input, parameters: parameters, context: context)
+        }
         return AsyncStream<String> { continuation in
             Task {
                 for await generation in mlxStream {
@@ -350,10 +351,10 @@ struct MLXInferenceService: InferenceService {
 
 // Stub for simulator / when MLXLLM is not available
 enum MLXInferenceError: LocalizedError {
-    case simulatorNotSupported
+    case runtimeUnavailable
 
     var errorDescription: String? {
-        return "MLX models require a real device with Apple Silicon. They cannot run in the iOS Simulator."
+        return "MLX runtime is not available. Ensure the MLX Swift packages are linked in the build target."
     }
 }
 
@@ -366,7 +367,7 @@ struct MLXInferenceService: InferenceService {
         systemPrompt: String,
         imageData: Data? = nil
     ) async throws -> ChatMessage {
-        throw MLXInferenceError.simulatorNotSupported
+        throw MLXInferenceError.runtimeUnavailable
     }
 
     func generateStream(
@@ -377,7 +378,7 @@ struct MLXInferenceService: InferenceService {
         systemPrompt: String,
         imageData: Data? = nil
     ) async throws -> (messageID: UUID, citations: [SearchCitation], stream: AsyncStream<String>) {
-        throw MLXInferenceError.simulatorNotSupported
+        throw MLXInferenceError.runtimeUnavailable
     }
 }
 

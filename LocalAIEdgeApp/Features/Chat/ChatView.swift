@@ -206,87 +206,74 @@ struct ChatView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 10) {
-            // Model selector
-            Button {
-                showModelPicker = true
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "cpu")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.accent)
-
-                    Text(store.defaultModel?.catalogItem.displayName ?? "Select model")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary)
-                        .lineLimit(1)
-
-                    if let runtime = store.defaultModel?.catalogItem.runtimeType {
-                        Text(runtime.label)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(runtime == .mlx ? .orange : AppTheme.textTertiary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(runtime == .mlx ? Color.orange.opacity(0.12) : AppTheme.panelRaised)
-                            .clipShape(Capsule())
-                    }
-
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(AppTheme.textTertiary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            // Capability pills — only when not compact
-            if !isCompactHeader, let model = store.defaultModel {
-                HStack(spacing: 4) {
-                    if model.catalogItem.supportsVision {
-                        capabilityBadge(icon: "eye", label: "Vision", active: true, color: .purple)
-                    }
-                    if model.catalogItem.isThinkingModel {
-                        capabilityBadge(icon: "lightbulb.max", label: "Think", active: true, color: .yellow)
-                    }
-                    if model.catalogItem.supportsToolCalling {
-                        capabilityBadge(icon: "wrench.and.screwdriver", label: "Tools", active: true, color: .green)
-                    }
-                }
-            }
-
-            // Status pill
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
-                    .frame(width: 5, height: 5)
-                    .animation(
-                        liveSearchEnabled
-                            ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true)
-                            : .default,
-                        value: liveSearchEnabled
-                    )
-                Text(liveSearchEnabled ? "Search" : "Offline")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(AppTheme.panel.opacity(0.8))
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(AppTheme.hairline, lineWidth: 1))
-
-            if store.settings.voiceModeEnabled, let lastAssistantResponseText, !lastAssistantResponseText.isEmpty {
+        VStack(spacing: 6) {
+            // Top row: model name + status
+            HStack(spacing: 8) {
                 Button {
-                    replayLastAssistantResponse()
+                    showModelPicker = true
                 } label: {
-                    Image(systemName: voiceController.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(voiceController.isSpeaking ? AppTheme.warning : AppTheme.accent)
-                        .padding(7)
-                        .background(AppTheme.panel.opacity(0.8))
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(AppTheme.hairline, lineWidth: 1))
+                    HStack(spacing: 6) {
+                        Image(systemName: "cpu")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(AppTheme.accent)
+
+                        Text(store.defaultModel?.catalogItem.displayName ?? "Select model")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .lineLimit(1)
+
+                        if let runtime = store.defaultModel?.catalogItem.runtimeType {
+                            Text(runtime.label)
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(runtime == .mlx ? .orange : AppTheme.textTertiary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(runtime == .mlx ? Color.orange.opacity(0.12) : AppTheme.panelRaised)
+                                .clipShape(Capsule())
+                        }
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // Status pill
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
+                        .frame(width: 5, height: 5)
+                        .animation(
+                            liveSearchEnabled
+                                ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true)
+                                : .default,
+                            value: liveSearchEnabled
+                        )
+                    Text(liveSearchEnabled ? "Search" : "Offline")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(AppTheme.panel.opacity(0.8))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(AppTheme.hairline, lineWidth: 1))
+
+                if store.settings.voiceModeEnabled, let lastAssistantResponseText, !lastAssistantResponseText.isEmpty {
+                    Button {
+                        replayLastAssistantResponse()
+                    } label: {
+                        Image(systemName: voiceController.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(voiceController.isSpeaking ? AppTheme.warning : AppTheme.accent)
+                            .padding(7)
+                            .background(AppTheme.panel.opacity(0.8))
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(AppTheme.hairline, lineWidth: 1))
+                    }
                 }
             }
         }
@@ -304,128 +291,46 @@ struct ChatView: View {
         }
     }
 
-    private func capabilityBadge(icon: String, label: String, active: Bool, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .bold))
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-        }
-        .foregroundStyle(active ? color : AppTheme.textTertiary.opacity(0.5))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(active ? color.opacity(0.12) : AppTheme.panelRaised.opacity(0.5))
-        )
-        .overlay(
-            Capsule()
-                .stroke(active ? color.opacity(0.25) : Color.clear, lineWidth: 1)
-        )
-    }
-
     // MARK: - Model Picker Sheet
 
     private var modelPickerSheet: some View {
-        NavigationStack {
+        let chatCatalog = store.catalog.filter { $0.primaryUse == .chat }
+        let installedItems = chatCatalog.filter { item in
+            store.installedModels.contains(where: { $0.catalogItem.id == item.id && $0.installState == .installed })
+        }
+        let availableItems = chatCatalog.filter { item in
+            !store.installedModels.contains(where: { $0.catalogItem.id == item.id && $0.installState == .installed })
+        }
+
+        return NavigationStack {
             List {
-                let readyModels = store.availableChatModels
-                if readyModels.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.system(size: 28))
-                            .foregroundStyle(AppTheme.textTertiary)
-                        Text("No models installed")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(AppTheme.textSecondary)
-                        Text("Download a model from the Library tab")
-                            .font(.system(size: 13))
-                            .foregroundStyle(AppTheme.textTertiary)
-
-                        Button {
-                            showModelPicker = false
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                selectedTab.wrappedValue = 1
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "square.stack.3d.up.fill")
-                                    .font(.system(size: 12))
-                                Text("Go to Library")
-                                    .font(.system(size: 14, weight: .bold))
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(AppTheme.accent.opacity(0.15))
-                            .foregroundStyle(AppTheme.accent)
-                            .clipShape(Capsule())
+                if !installedItems.isEmpty {
+                    Section {
+                        ForEach(installedItems, id: \.id) { item in
+                            modelPickerRow(item: item, isInstalled: true)
                         }
-                        .padding(.top, 4)
+                    } header: {
+                        Label("Installed", systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(AppTheme.success)
+                            .textCase(nil)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 30)
-                    .listRowBackground(Color.clear)
-                } else {
-                    ForEach(readyModels, id: \.catalogItem.id) { model in
-                        let isSelected = store.defaultModel?.catalogItem.id == model.catalogItem.id
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 12) {
-                                Image(systemName: model.catalogItem.runtimeType.icon)
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(isSelected ? AppTheme.accent : AppTheme.textSecondary)
-                                    .frame(width: 32, height: 32)
-                                    .background(isSelected ? AppTheme.accent.opacity(0.15) : AppTheme.accent.opacity(0.06))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(model.catalogItem.displayName)
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundStyle(AppTheme.textPrimary)
-                                    Text("\(model.catalogItem.family.lab) \u{2022} \(model.catalogItem.runtimeType.label) \u{2022} \(model.catalogItem.parameterSize) \u{2022} \(model.catalogItem.diskSize)")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(AppTheme.textTertiary)
-                                }
-
-                                Spacer()
-
-                                if isSelected {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 18))
-                                        .foregroundStyle(AppTheme.accent)
-                                }
-                            }
-
-                            // Model summary
-                            Text(model.catalogItem.summary)
-                                .font(.system(size: 11))
-                                .foregroundStyle(AppTheme.textTertiary)
-                                .lineLimit(2)
-
-                            // Capability badges
-                            HStack(spacing: 4) {
-                                if model.catalogItem.supportsVision {
-                                    pickerBadge("eye", "Vision", .purple)
-                                }
-                                if model.catalogItem.supportsReasoning {
-                                    pickerBadge("brain.head.profile", "Reasoning", .cyan)
-                                }
-                                if model.catalogItem.isThinkingModel {
-                                    pickerBadge("lightbulb.max", "Thinking", .yellow)
-                                }
-                                if model.catalogItem.supportsToolCalling {
-                                    pickerBadge("wrench.and.screwdriver", "Tools", .green)
-                                }
-                            }
+                if !availableItems.isEmpty {
+                    Section {
+                        ForEach(availableItems, id: \.id) { item in
+                            modelPickerRow(item: item, isInstalled: false)
                         }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            store.setDefaultModel(id: model.catalogItem.id)
-                            showModelPicker = false
-                        }
+                    } header: {
+                        Label("Available to Download", systemImage: "arrow.down.circle")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(AppTheme.textTertiary)
+                            .textCase(nil)
                     }
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Select Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -439,18 +344,57 @@ struct ChatView: View {
         }
     }
 
-    private func pickerBadge(_ icon: String, _ label: String, _ color: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.system(size: 8, weight: .bold))
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
+    private func modelPickerRow(item: ModelCatalogItem, isInstalled: Bool) -> some View {
+        let isSelected = store.defaultModel?.catalogItem.id == item.id
+        return HStack(spacing: 12) {
+            Image(systemName: item.runtimeType.icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(isSelected ? AppTheme.accent : AppTheme.textSecondary)
+                .frame(width: 32, height: 32)
+                .background(isSelected ? AppTheme.accent.opacity(0.15) : AppTheme.accent.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.displayName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(isInstalled ? AppTheme.textPrimary : AppTheme.textTertiary)
+
+                HStack(spacing: 6) {
+                    Text(item.parameterSize)
+                    Text("\u{2022}")
+                    Text(item.runtimeType.label)
+                    Text("\u{2022}")
+                    Text(item.diskSize)
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AppTheme.textTertiary)
+            }
+
+            Spacer()
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(AppTheme.accent)
+            } else if !isInstalled {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(AppTheme.accent)
+            }
         }
-        .foregroundStyle(color)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(color.opacity(0.12))
-        .clipShape(Capsule())
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isInstalled {
+                store.setDefaultModel(id: item.id)
+                showModelPicker = false
+            } else {
+                showModelPicker = false
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    selectedTab.wrappedValue = 1
+                }
+            }
+        }
     }
 
     // MARK: - Empty State
@@ -724,6 +668,14 @@ struct ChatView: View {
                 var stoppedByUser = false
                 let clock = ContinuousClock()
                 var lastFlush = clock.now
+
+                // Thinking extraction state
+                var isInsideThink = false
+                var thinkingBuffer = ""
+                var thinkingStart: Date? = nil
+                // Raw buffer for tag boundary detection across token boundaries
+                var tagDetectionBuffer = ""
+
                 for await piece in stream {
                     if Task.isCancelled {
                         accumulated += "\n\n*(Response stopped by user)*"
@@ -732,18 +684,92 @@ struct ChatView: View {
                         break
                     }
 
-                    accumulated += piece
+                    // --- Think tag routing ---
+                    // We maintain a small lookahead buffer to detect tags that may
+                    // arrive split across token boundaries.
+                    tagDetectionBuffer += piece
+                    var outputPiece = ""
+                    var thinkingPiece = ""
 
-                    let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                        || piece.contains(where: \ .isNewline)
-                        || accumulated.count <= 48
-
-                    guard shouldFlush else {
-                        continue
+                    while !tagDetectionBuffer.isEmpty {
+                        if !isInsideThink {
+                            if let range = tagDetectionBuffer.range(of: "<think>", options: .caseInsensitive) {
+                                // Flush everything before the tag as answer text
+                                outputPiece += String(tagDetectionBuffer[tagDetectionBuffer.startIndex..<range.lowerBound])
+                                tagDetectionBuffer = String(tagDetectionBuffer[range.upperBound...])
+                                isInsideThink = true
+                                thinkingStart = Date()
+                                // Signal thinking started by setting content to empty string
+                                await MainActor.run {
+                                    store.updateMessageThinking(messageID, in: sessionID, thinkingContent: "")
+                                }
+                            } else if tagDetectionBuffer.lowercased().hasSuffix("<") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("<t") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("<th") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("<thi") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("<thin") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("<think") {
+                                // Partial tag at end — wait for more tokens
+                                break
+                            } else {
+                                outputPiece += tagDetectionBuffer
+                                tagDetectionBuffer = ""
+                            }
+                        } else {
+                            if let range = tagDetectionBuffer.range(of: "</think>", options: .caseInsensitive) {
+                                // Flush thinking content before close tag
+                                thinkingPiece += String(tagDetectionBuffer[tagDetectionBuffer.startIndex..<range.lowerBound])
+                                tagDetectionBuffer = String(tagDetectionBuffer[range.upperBound...])
+                                isInsideThink = false
+                                let duration = thinkingStart.map { Int(Date().timeIntervalSince($0)) } ?? 0
+                                let finalThinking = thinkingBuffer + thinkingPiece
+                                thinkingPiece = ""
+                                await MainActor.run {
+                                    store.updateMessageThinking(
+                                        messageID,
+                                        in: sessionID,
+                                        thinkingContent: finalThinking,
+                                        thinkingDurationSeconds: max(1, duration)
+                                    )
+                                }
+                                thinkingBuffer = finalThinking
+                            } else if tagDetectionBuffer.lowercased().hasSuffix("<") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("</") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("</t") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("</th") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("</thi") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("</thin") ||
+                                      tagDetectionBuffer.lowercased().hasSuffix("</think") {
+                                // Partial close tag — wait for more tokens
+                                break
+                            } else {
+                                thinkingPiece += tagDetectionBuffer
+                                tagDetectionBuffer = ""
+                            }
+                        }
                     }
 
-                    lastFlush = clock.now
-                    await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
+                    // Flush live thinking tokens so user can watch them stream if expanded
+                    if !thinkingPiece.isEmpty {
+                        thinkingBuffer += thinkingPiece
+                        let snapshot = thinkingBuffer
+                        await MainActor.run {
+                            store.updateMessageThinking(messageID, in: sessionID, thinkingContent: snapshot)
+                        }
+                    }
+
+                    accumulated += outputPiece
+
+                    let shouldFlush = !outputPiece.isEmpty && (
+                        clock.now - lastFlush >= streamUpdateInterval
+                        || outputPiece.contains(where: \.isNewline)
+                        || accumulated.count <= 48
+                    )
+
+                    if shouldFlush {
+                        lastFlush = clock.now
+                        await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
+                    }
                 }
 
                 // Sanitize the final text — this is what gets stored in conversation history,
@@ -754,6 +780,20 @@ struct ChatView: View {
                     await updateStreamingMessage(fallback, messageID: messageID, sessionID: sessionID, persist: true)
                 } else {
                     await updateStreamingMessage(finalText, messageID: messageID, sessionID: sessionID, persist: true)
+                }
+
+                // Persist the final thinking state (duration confirmed)
+                if thinkingBuffer != "" {
+                    let duration = thinkingStart.map { Int(Date().timeIntervalSince($0)) }
+                    await MainActor.run {
+                        store.updateMessageThinking(
+                            messageID,
+                            in: sessionID,
+                            thinkingContent: thinkingBuffer,
+                            thinkingDurationSeconds: duration ?? 1,
+                            persist: true
+                        )
+                    }
                 }
 
                 if !stoppedByUser,

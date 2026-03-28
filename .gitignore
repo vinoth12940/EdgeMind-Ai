@@ -19,3 +19,4 @@ plan-*.md
 **/*.pem
 **/*.key
 .gstack/
+.superpowers/

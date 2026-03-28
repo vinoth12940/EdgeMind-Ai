@@ -199,6 +199,18 @@ struct ChatComposerView: View {
                             onSend()
                         }
                     }
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button {
+                                isFocused = false
+                            } label: {
+                                Image(systemName: "keyboard.chevron.compact.down")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(AppTheme.accent)
+                            }
+                        }
+                    }
 
                 if voiceModeEnabled {
                     Button(action: onToggleVoiceInput) {

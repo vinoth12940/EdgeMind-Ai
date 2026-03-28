@@ -52,8 +52,21 @@ The Xcode project is generated from `project.yml` using XcodeGen. **Never edit `
 
 ```
 LocalAIEdgeApp/          # Main app target
+  App/                   # Entry point, RootView (tab nav)
+  Models/                # Codable data structs
+  State/                 # AppStateStore, AuthStateStore, MockCatalogData
+  Services/
+    Inference/           # InferenceService protocol + GGUF/MLX implementations
+    Models/              # ModelDownloadService, ModelCatalogService
+    Search/              # SearchGateway protocol + 4 implementations
+    Voice/               # VoiceInteractionController (STT/TTS)
+  Features/              # SwiftUI views by domain (Auth, Chat, Models, History, Settings)
+  DesignSystem/          # AppTheme — dark-mode-only colors, gradients, view modifiers
 LocalAIEdgeAppTests/     # Unit test target (XCTest)
+  DeviceCapabilityTests.swift
+  PromptRendererTests.swift
 Vendor/build-apple/      # Pre-built llama.cpp xcframework (b8354, arm64 only)
+backend/search-gateway/  # Optional Node.js/Express proxy (Tavily) for self-hosted search
 ```
 
 ## Architecture
@@ -84,13 +97,20 @@ Static array of `ModelCatalogItem` structs. 35 entries across 4 families: Gemma,
 
 Models with `primaryUse: .voice` (Kokoro, LFM2.5 Audio) are filtered out of the chat model picker but appear in the Model Library.
 
+### Voice layer (`Services/Voice/`)
+`VoiceInteractionController` is a `@MainActor ObservableObject` wrapping `SFSpeechRecognizer` (STT) and `AVSpeechSynthesizer` (TTS). It exposes `transcript`, `isListening`, and `isSpeaking` as `@Published` state. Requires microphone + speech recognition permissions at runtime. Voice models (Kokoro, LFM2.5 Audio) are separate from voice I/O — they are MLX inference models for on-device TTS, not used by `VoiceInteractionController`.
+
 ### Search layer (`Services/Search/`)
-`SearchGateway` protocol with four implementations: Tavily, Brave, Serper, and a passthrough custom gateway. `SearchGatewayFactory` picks the active provider from `AppSettings`. API keys are stored in app settings (not Keychain).
+`SearchGateway` protocol with four implementations: Tavily, Brave, Serper, and a passthrough custom gateway. `SearchGatewayFactory` picks the active provider from `AppSettings`. API keys are stored in app settings (not Keychain). The `backend/search-gateway/` directory is an optional Node.js/Express proxy that forwards to Tavily — used when `AppSettings.customGatewayURL` points at it.
+
+### HuggingFace token storage
+`HFTokenManager` stores the HF token in the iOS **Keychain** (not UserDefaults). Used by `ModelDownloadService` to add `Authorization: Bearer` headers for gated model downloads.
 
 ### Key wiring points
 - `LocalAIEdgeApp.swift` (@main): injects `AppStateStore` and `AuthStateStore` into the environment, gates `RootView` behind auth.
 - `ChatView.swift`: calls `AppStateStore` to append messages, drives the streaming loop via `Task { for await token in stream }`.
 - `ModelLibraryView.swift`: triggers downloads via `ModelDownloadService`, updates progress through `AppStateStore.updateInstallProgress()`.
+- Cross-tab navigation uses `SelectedTabKey` `EnvironmentKey` — inject `@Environment(\.selectedTab)` and write to switch tabs without tight coupling.
 
 ## Adding a New Model to the Catalog
 
@@ -103,6 +123,19 @@ Models with `primaryUse: .voice` (Kokoro, LFM2.5 Audio) are filtered out of the 
 
 The pre-built xcframework at `Vendor/build-apple/llama.xcframework` is Mach-O arm64 only. It will not link for x86_64 simulator targets. The `project.yml` sets `codeSign: false` and `embed: true` for this dependency. Do not replace or update the xcframework without rebuilding all test targets.
 
+## Backend Search Gateway (Optional)
+
+`backend/search-gateway/` is a TypeScript/Express app. To run locally:
+
+```bash
+cd backend/search-gateway
+npm install
+cp .env.example .env   # add TAVILY_API_KEY
+npm run dev            # default port 8787
+```
+
+Point `AppSettings.customGatewayURL` at `http://localhost:8787` in the app's Settings to use it.
+
 ## Gotchas
 
 - **`PromptRenderer` dynamic budget**: `maxPromptTokens = max(256, nCtx - maxGeneratedTokens - 64)`. On a 2048 n_ctx device in search mode, this floors at 256 tokens. Do not hardcode prompt limits.
@@ -110,3 +143,6 @@ The pre-built xcframework at `Vendor/build-apple/llama.xcframework` is Mach-O ar
 - **MLX on simulator**: `#if canImport(MLXLLM) && !targetEnvironment(simulator)` guards all MLX calls. GGUF models still work in simulator.
 - **Sign in with Apple**: `com.apple.developer.applesignin` entitlement is currently commented out in `.entitlements` to support free developer accounts. Re-enable it when targeting a paid team.
 - **`project.yml` is the source of truth**: Running `xcodegen generate` overwrites `.xcodeproj`. Stage `project.yml` changes before generating.
+- **Design system is dark-mode only**: `AppTheme` has no light-mode variants. Do not add `colorScheme`-conditional logic — the app enforces dark mode at the window level.
+- **`ChatMessage.Role.search` is deprecated**: Citations live on `ChatMessage.citations: [SearchCitation]`. The `.search` role creates orphaned messages if inference is cancelled. Render citations as a "Sources" footer on the assistant bubble instead (see `TODOS.md`).
+- **Image attachments are downsampled before inference**: `ChatComposerView` bounds JPEG encoding to prevent OOM. Do not pass raw `UIImage` to the inference service.

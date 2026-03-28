@@ -22,6 +22,12 @@ enum MockCatalogData {
     static let qwen25_7b_URL = URL(string: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf?download=true")
     static let qwen25_coder_1_5b_URL = URL(string: "https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf?download=true")
 
+    // Alibaba - Qwen 3.5
+    static let qwen35_0_8b_URL = URL(string: "https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/main/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf?download=true")
+    static let qwen35_2b_URL = URL(string: "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf?download=true")
+    static let qwen35_4b_URL = URL(string: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf?download=true")
+    static let qwen35_9b_URL = URL(string: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf?download=true")
+
     // Liquid AI - LFM
     static let lfm_1_2b_URL = URL(string: "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Q4_K_M.gguf?download=true")
     static let lfm_vl_1_6b_URL = URL(string: "https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF/resolve/main/LFM2.5-VL-1.6B-Q4_0.gguf?download=true")
@@ -169,6 +175,60 @@ enum MockCatalogData {
             supportsToolCalling: true,
             isThinkingModel: true
         ),
+        // Qwen 3.5: improved architecture with Gated Delta Networks + sparse MoE.
+        // Native multimodal, 201 languages, Apache 2.0.
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 0.8B",
+            family: .qwen,
+            variant: "Q4_K_M",
+            summary: "Ultra-tiny next-gen model with Gated Delta Net architecture. Great for edge deployment and rapid prototyping.",
+            parameterSize: "0.8B",
+            diskSize: "0.6 GB",
+            contextWindow: "32K",
+            downloadURL: qwen35_0_8b_URL,
+            supportsReasoning: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 2B",
+            family: .qwen,
+            variant: "Q4_K_M",
+            summary: "Compact next-gen model with improved architecture. Strong reasoning in a small footprint.",
+            parameterSize: "2B",
+            diskSize: "1.3 GB",
+            contextWindow: "32K",
+            downloadURL: qwen35_2b_URL,
+            supportsReasoning: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 4B",
+            family: .qwen,
+            variant: "Q4_K_M",
+            summary: "Sweet spot next-gen model. Gated Delta Net + sparse MoE deliver desktop-class reasoning on mobile.",
+            parameterSize: "4B",
+            diskSize: "2.6 GB",
+            contextWindow: "32K",
+            downloadURL: qwen35_4b_URL,
+            supportsReasoning: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 9B",
+            family: .qwen,
+            variant: "Q4_K_M",
+            summary: "Most intelligent sub-10B model available. Scores double the nearest competitor at its size. Requires 8 GB RAM.",
+            parameterSize: "9B",
+            diskSize: "5.5 GB",
+            contextWindow: "32K",
+            downloadURL: qwen35_9b_URL,
+            supportsReasoning: true,
+            isThinkingModel: true
+        ),
+
         // Qwen 2.5: tool calling reliable at 3B+, unreliable at 0.5B/1.5B.
         ModelCatalogItem(
             displayName: "Qwen 2.5 0.5B Instruct",
@@ -468,6 +528,67 @@ enum MockCatalogData {
             supportsToolCalling: true,
             isThinkingModel: true
         ),
+        // Qwen 3.5 MLX: next-gen architecture with Gated Delta Networks.
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 0.8B (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX",
+            summary: "Ultra-tiny next-gen Qwen 3.5 on Apple Silicon. Gated Delta Net architecture for edge inference.",
+            parameterSize: "0.8B",
+            quantization: "MLX 4-bit",
+            diskSize: "~0.5 GB",
+            contextWindow: "32K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3.5-0.8B-MLX-4bit",
+            supportsReasoning: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 2B (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX",
+            summary: "Compact next-gen Qwen 3.5 on Apple Silicon. Strong reasoning with improved architecture.",
+            parameterSize: "2B",
+            quantization: "MLX 4-bit",
+            diskSize: "~1.2 GB",
+            contextWindow: "32K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3.5-2B-MLX-4bit",
+            supportsReasoning: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 4B (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX",
+            summary: "Best value next-gen Qwen 3.5 on Apple Silicon. Desktop-class reasoning on mobile hardware.",
+            parameterSize: "4B",
+            quantization: "MLX 4-bit",
+            diskSize: "~2.5 GB",
+            contextWindow: "32K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3.5-4B-MLX-4bit",
+            supportsReasoning: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 9B (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX",
+            summary: "Most intelligent sub-10B model on Apple Silicon. Requires 8 GB RAM — best on iPhone 15 Pro Max or iPad Pro.",
+            parameterSize: "9B",
+            quantization: "MLX 4-bit",
+            diskSize: "~5.5 GB",
+            contextWindow: "32K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3.5-9B-MLX-4bit",
+            supportsReasoning: true,
+            isThinkingModel: true
+        ),
+
         ModelCatalogItem(
             displayName: "Qwen 2.5 0.5B Instruct (MLX)",
             family: .qwen,

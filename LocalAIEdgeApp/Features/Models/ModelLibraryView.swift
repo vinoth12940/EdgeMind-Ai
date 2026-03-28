@@ -313,20 +313,19 @@ struct ModelLibraryView: View {
                 .fill(labColor)
                 .frame(width: 4, height: 48)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(model.catalogItem.displayName)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(AppTheme.textPrimary)
-                HStack(spacing: 6) {
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                HStack(spacing: 4) {
                     Text(model.catalogItem.parameterSize)
-                        .font(.caption2.weight(.semibold).monospacedDigit())
-                    Text("•")
+                    Text("\u{2022}")
                     Text(model.catalogItem.contextWindow + " ctx")
-                        .font(.caption2.monospacedDigit())
-                    Text("•")
+                    Text("\u{2022}")
                     Text(model.catalogItem.diskSize)
-                        .font(.caption2.monospacedDigit())
-                    Text("•")
+                    Text("\u{2022}")
                     HStack(spacing: 2) {
                         Image(systemName: model.catalogItem.runtimeType.icon)
                             .font(.system(size: 8))
@@ -335,7 +334,10 @@ struct ModelLibraryView: View {
                     }
                     .foregroundStyle(model.catalogItem.runtimeType == .mlx ? .orange : AppTheme.textSecondary)
                 }
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(AppTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             }
 
             Spacer()
