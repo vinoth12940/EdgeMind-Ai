@@ -46,7 +46,7 @@ enum StreamEvent {
     case textDelta(String)                         // safe-to-render markdown chunk
     case thinkingDelta(String)                     // content inside a think block
     case thinkingDone(durationSeconds: Int)        // think block closed
-    case toolCall(name: String, argsJSON: String)  // tool invocation intercepted
+    case toolCall(name: String, argsJSON: String)  // tool invocation intercepted (fires at most once per stream)
     case done                                      // stream finished
 }
 ```
@@ -59,17 +59,23 @@ enum StreamEvent {
 - Emit `.textDelta` with complete, parseable chunks only.
 
 **Thinking extraction:**
-- On receiving an opening tag from the set `{<think>, <thinking>, <reasoning>}` (case-insensitive), enter thinking mode. Record start timestamp.
+- On receiving an opening tag, enter thinking mode and record a start timestamp. Explicit tag pairings:
+  - `<think>` → closes with `</think>`
+  - `<thinking>` → closes with `</thinking>`
+  - `<reasoning>` → closes with `</reasoning>`
+- All tags matched case-insensitively. A mismatched closing tag (e.g. `</thinking>` while open with `<think>`) is treated as plain text, not a close signal.
 - While in thinking mode, emit tokens as `.thinkingDelta` instead of `.textDelta`.
-- On receiving the matching closing tag, emit `.thinkingDone(durationSeconds)` and return to normal mode.
-- If the stream ends while still in thinking mode, emit `.thinkingDone(durationSeconds)` implicitly.
+- On receiving the exact matching closing tag, emit `.thinkingDone(durationSeconds)` and return to normal mode.
+- If the stream ends while still in thinking mode, emit `.thinkingDone(durationSeconds)` implicitly — do not leave the block open.
 - Think block content is never included in the answer text.
 
 **Tool call detection:**
-- On receiving `<tool_call>`, buffer all subsequent tokens until `</tool_call>`.
+- `StreamProcessor` tracks whether a `.toolCall` has already been emitted for the current stream. Only the **first** `<tool_call>` block is processed as a tool call. Any subsequent `<tool_call>` tags in the same stream are passed through as plain `.textDelta` to prevent infinite loops.
+- On receiving the first `<tool_call>`, buffer all subsequent tokens until `</tool_call>`.
+- If the stream ends before `</tool_call>` is received, flush the buffered content as `.textDelta` — do not emit a partial tool call.
 - Parse the buffered content as JSON: `{"name": "web_search", "query": "…"}`.
 - Emit `.toolCall(name:argsJSON:)` and pause — do not emit `.done` yet.
-- If JSON parse fails or name is unrecognised, discard silently and continue as text.
+- If JSON parse fails or name is unrecognised, flush the buffered content as `.textDelta` and continue.
 
 ### Interface Change
 
@@ -85,7 +91,9 @@ to:
 (messageID: UUID, stream: AsyncStream<StreamEvent>)
 ```
 
-`LocalLlamaInferenceService` and `MLXInferenceService` both wrap their existing raw token stream in `StreamProcessor` before returning. `MockInferenceService` gets a simple pass-through implementation for tests.
+**Citations:** The `citations: [SearchCitation]` field is removed from the return tuple. `StreamProcessor` only sees raw tokens and has no knowledge of `SearchContext` — citations never flow through `StreamEvent`. Instead, `ChatView` holds a local `var pendingCitations: [SearchCitation]` that it populates directly from `SearchContext.citations` before invoking `generateStream` (both for the manual-toggle path and after the agentic tool-call search returns). When `ChatView` calls `store.appendMessage` to commit the final assistant message, it passes `pendingCitations` as the `citations:` argument. `AppStateStore.appendMessage` remains the only write point for citations on a session.
+
+`LocalLlamaInferenceService` and `MLXInferenceService` both wrap their existing raw token stream in `StreamProcessor` before returning. `MockInferenceService` gets a stub that can emit configurable sequences of `StreamEvent` for testing `ChatView`'s tool-call loop and thinking display.
 
 ---
 
@@ -126,7 +134,7 @@ All current visual styling is preserved: gradient bullet dots, numbered circle b
 
 **Eligibility:** Only models with `catalogItem.supportsToolCalling == true` participate. All other models use the existing manual toggle path with zero changes.
 
-**System prompt injection** (in `LocalLlamaInferenceService.buildChatTurns` and `MLXInferenceService.buildSystemPrompt`):
+**System prompt injection** (in `LocalLlamaInferenceService.buildChatTurns` and `MLXInferenceService.buildSystemPrompt`). For MLX models without a chat template, the tool definition is appended to the fallback plain-text system section using the same `buildFullPrompt` concatenation path — tool-calling models in the catalog are expected to have a chat template, but the injection applies regardless:
 
 ```
 If you need current information to answer, call this tool:
@@ -171,7 +179,13 @@ receive .toolCall("web_search", argsJSON)
 - `PromptRendererTests.swift` — no changes needed (PromptRenderer is unaffected)
 - `DeviceCapabilityTests.swift` — no changes needed
 - New: `StreamProcessorTests.swift` — unit tests for each StreamEvent type:
-  - Partial inline span buffering (emits only on close)
-  - Think block open/close/auto-close
-  - Tool call JSON parse success and failure
+  - Partial inline span buffering (emits only on close; newline forces flush)
+  - Think block open/close (`<think>`, `<thinking>`, `<reasoning>`)
+  - Think block auto-close on stream end
+  - Mismatched think tag treated as plain text
+  - Tool call JSON parse success → `.toolCall` emitted
+  - Tool call JSON parse failure → content flushed as `.textDelta`
+  - Stream-end before `</tool_call>` → buffered content flushed as `.textDelta`
+  - Second `<tool_call>` in same stream treated as plain text (loop guard)
   - Pass-through for plain text (no regressions)
+- `MockInferenceService` exposes `var events: [StreamEvent]` so callers can inject sequences for unit-testing `ChatView`'s tool-call loop and thinking update paths
