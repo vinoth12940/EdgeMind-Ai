@@ -42,7 +42,8 @@ final class StreamProcessorTests: XCTestCase {
 
     func test_reasoningTag_extracted() async throws {
         let events = await process(tokens: ["<reasoning>logic</reasoning>result"])
-        XCTAssertTrue(events.contains { if case .thinkingDelta = $0 { return true }; return false })
+        let thinkText = events.compactMap { if case .thinkingDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertEqual(thinkText, "logic")
     }
 
     func test_thinkBlock_autoClosesOnStreamEnd() async throws {

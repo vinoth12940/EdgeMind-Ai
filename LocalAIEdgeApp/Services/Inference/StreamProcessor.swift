@@ -45,6 +45,9 @@ actor StreamProcessor {
                     }
                 }
 
+                // NOTE: Tags split across token boundaries (e.g. one token ends with "<thi"
+                // and the next starts with "nk>") are not detected. Models that stream
+                // at word/subword granularity rarely split XML tags, so this is accepted.
                 for await token in rawStream {
                     var remaining = token
 
@@ -58,6 +61,9 @@ actor StreamProcessor {
                                 toolCallBuffer = nil
                                 // Parse JSON — mark fired regardless so only one tool call per stream
                                 if !toolCallFired {
+                                    // Guard fires on first <tool_call> block regardless of JSON validity.
+                                    // This prevents infinite loops: if the model re-emits a tool call in the
+                                    // follow-up stream, it's treated as plain text even if the first was bad JSON.
                                     toolCallFired = true
                                     if let data = raw.data(using: .utf8),
                                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
@@ -143,14 +149,13 @@ actor StreamProcessor {
                 }
 
                 // Stream ended — flush residuals
-                if let openTag = thinkOpenTag {
+                if thinkOpenTag != nil {
                     // Auto-close unclosed think block
                     let duration = thinkStart.map { Int(Date().timeIntervalSince($0)) } ?? 0
                     if !thinkBuffer.isEmpty {
                         continuation.yield(.thinkingDelta(thinkBuffer))
                     }
                     continuation.yield(.thinkingDone(durationSeconds: max(1, duration)))
-                    _ = openTag
                 } else if let tb = toolCallBuffer {
                     // Stream ended before </tool_call> — flush as text
                     flush(tb)
