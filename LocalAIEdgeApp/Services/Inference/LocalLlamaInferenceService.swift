@@ -63,14 +63,14 @@ struct LocalLlamaInferenceService: InferenceService {
         searchContext: SearchContext?,
         systemPrompt: String,
         imageData: Data? = nil
-    ) async throws -> (messageID: UUID, citations: [SearchCitation], stream: AsyncStream<String>) {
+    ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         guard model.catalogItem.runtimeType == .gguf else {
             throw InferenceServiceError.runtimeUnavailable("This model requires the MLX runtime.")
         }
         // GGUF runtime does not support vision — warn if user attached an image
         if imageData != nil {
             throw InferenceServiceError.runtimeUnavailable(
-                "The llama.cpp runtime does not support image input. Switch to an MLX vision model (e.g. Gemma 3n E2B MLX) for image understanding."
+                "The llama.cpp runtime does not support image input. Switch to an MLX vision model for image understanding."
             )
         }
         guard let modelPath = model.localPath else {
@@ -78,7 +78,7 @@ struct LocalLlamaInferenceService: InferenceService {
         }
 
         let chatTurns = PromptRenderer.buildChatTurns(
-            systemPrompt: systemPrompt,
+            systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
@@ -86,7 +86,7 @@ struct LocalLlamaInferenceService: InferenceService {
         )
 
         let fallbackPrompt = PromptRenderer.render(
-            systemPrompt: systemPrompt,
+            systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
@@ -95,14 +95,25 @@ struct LocalLlamaInferenceService: InferenceService {
 
         let maxGeneratedTokens: Int32 = searchContext != nil ? 2048 : 1024
         let messageID = UUID()
-        let citations = searchContext?.citations ?? []
-        let stream = try await LocalLlamaRuntime.shared.generateStream(
+        let rawStream = try await LocalLlamaRuntime.shared.generateStream(
             chat: chatTurns,
             fallbackPrompt: fallbackPrompt,
             using: modelPath,
             maxGeneratedTokens: maxGeneratedTokens
         )
-        return (messageID, citations, stream)
+        let processor = StreamProcessor(rawStream: rawStream)
+        return (messageID: messageID, stream: processor.process())
+    }
+
+    /// Appends tool call definition to system prompt for tool-calling models.
+    private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
+        guard model.catalogItem.supportsToolCalling else { return base }
+        return base + """
+
+If you need current information to answer, call this tool:
+<tool_call>{"name":"web_search","query":"your search query here"}</tool_call>
+Only call it once. Do not call it for questions answerable from your training data.
+"""
     }
 }
 
