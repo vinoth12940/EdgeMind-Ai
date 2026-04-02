@@ -264,7 +264,7 @@ struct MLXInferenceService: InferenceService {
                 isVision: isVision
             )
             let processor = StreamProcessor(rawStream: rawStream)
-            return (messageID: messageID, stream: processor.process())
+            return (messageID: messageID, stream: await processor.process())
         } catch {
             throw InferenceServiceError.runtimeUnavailable(Self.friendlyMLXError(error))
         }

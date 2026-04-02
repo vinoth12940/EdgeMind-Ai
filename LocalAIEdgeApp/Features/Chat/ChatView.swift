@@ -650,7 +650,8 @@ struct ChatView: View {
 
                 // Create a placeholder assistant message for streaming
                 let service = inferenceServiceForModel(model)
-                let (messageID, citations, stream) = try await service.generateStream(
+                let pendingCitations = searchContext?.citations ?? []
+                let (messageID, stream) = try await service.generateStream(
                     prompt: trimmedPrompt,
                     model: model,
                     conversation: conversation,
@@ -659,24 +660,18 @@ struct ChatView: View {
                     imageData: jpegData
                 )
 
-                let placeholder = ChatMessage(id: messageID, role: .assistant, text: "", citations: citations)
+                let placeholder = ChatMessage(id: messageID, role: .assistant, text: "", citations: pendingCitations)
                 await MainActor.run {
                     store.appendMessage(placeholder, to: sessionID)
                 }
 
                 var accumulated = ""
+                var thinkingAccumulated = ""
                 var stoppedByUser = false
                 let clock = ContinuousClock()
                 var lastFlush = clock.now
 
-                // Thinking extraction state
-                var isInsideThink = false
-                var thinkingBuffer = ""
-                var thinkingStart: Date? = nil
-                // Raw buffer for tag boundary detection across token boundaries
-                var tagDetectionBuffer = ""
-
-                for await piece in stream {
+                for await event in stream {
                     if Task.isCancelled {
                         accumulated += "\n\n*(Response stopped by user)*"
                         stoppedByUser = true
@@ -684,91 +679,104 @@ struct ChatView: View {
                         break
                     }
 
-                    // --- Think tag routing ---
-                    // We maintain a small lookahead buffer to detect tags that may
-                    // arrive split across token boundaries.
-                    tagDetectionBuffer += piece
-                    var outputPiece = ""
-                    var thinkingPiece = ""
-
-                    while !tagDetectionBuffer.isEmpty {
-                        if !isInsideThink {
-                            if let range = tagDetectionBuffer.range(of: "<think>", options: .caseInsensitive) {
-                                // Flush everything before the tag as answer text
-                                outputPiece += String(tagDetectionBuffer[tagDetectionBuffer.startIndex..<range.lowerBound])
-                                tagDetectionBuffer = String(tagDetectionBuffer[range.upperBound...])
-                                isInsideThink = true
-                                thinkingStart = Date()
-                                // Signal thinking started by setting content to empty string
-                                await MainActor.run {
-                                    store.updateMessageThinking(messageID, in: sessionID, thinkingContent: "")
-                                }
-                            } else if tagDetectionBuffer.lowercased().hasSuffix("<") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("<t") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("<th") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("<thi") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("<thin") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("<think") {
-                                // Partial tag at end — wait for more tokens
-                                break
-                            } else {
-                                outputPiece += tagDetectionBuffer
-                                tagDetectionBuffer = ""
-                            }
-                        } else {
-                            if let range = tagDetectionBuffer.range(of: "</think>", options: .caseInsensitive) {
-                                // Flush thinking content before close tag
-                                thinkingPiece += String(tagDetectionBuffer[tagDetectionBuffer.startIndex..<range.lowerBound])
-                                tagDetectionBuffer = String(tagDetectionBuffer[range.upperBound...])
-                                isInsideThink = false
-                                let duration = thinkingStart.map { Int(Date().timeIntervalSince($0)) } ?? 0
-                                let finalThinking = thinkingBuffer + thinkingPiece
-                                thinkingPiece = ""
-                                await MainActor.run {
-                                    store.updateMessageThinking(
-                                        messageID,
-                                        in: sessionID,
-                                        thinkingContent: finalThinking,
-                                        thinkingDurationSeconds: max(1, duration)
-                                    )
-                                }
-                                thinkingBuffer = finalThinking
-                            } else if tagDetectionBuffer.lowercased().hasSuffix("<") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("</") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("</t") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("</th") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("</thi") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("</thin") ||
-                                      tagDetectionBuffer.lowercased().hasSuffix("</think") {
-                                // Partial close tag — wait for more tokens
-                                break
-                            } else {
-                                thinkingPiece += tagDetectionBuffer
-                                tagDetectionBuffer = ""
-                            }
+                    switch event {
+                    case .textDelta(let chunk):
+                        accumulated += chunk
+                        let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                            || chunk.contains(where: \.isNewline)
+                            || accumulated.count <= 48
+                        if shouldFlush {
+                            lastFlush = clock.now
+                            await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
                         }
-                    }
 
-                    // Flush live thinking tokens so user can watch them stream if expanded
-                    if !thinkingPiece.isEmpty {
-                        thinkingBuffer += thinkingPiece
-                        let snapshot = thinkingBuffer
+                    case .thinkingDelta(let chunk):
+                        thinkingAccumulated += chunk
+                        let snapshot = thinkingAccumulated
                         await MainActor.run {
                             store.updateMessageThinking(messageID, in: sessionID, thinkingContent: snapshot)
                         }
-                    }
 
-                    accumulated += outputPiece
+                    case .thinkingDone(let duration):
+                        let snapshot = thinkingAccumulated
+                        await MainActor.run {
+                            store.updateMessageThinking(
+                                messageID, in: sessionID,
+                                thinkingContent: snapshot,
+                                thinkingDurationSeconds: duration,
+                                persist: true
+                            )
+                        }
 
-                    let shouldFlush = !outputPiece.isEmpty && (
-                        clock.now - lastFlush >= streamUpdateInterval
-                        || outputPiece.contains(where: \.isNewline)
-                        || accumulated.count <= 48
-                    )
+                    case .toolCall(let name, let argsJSON):
+                        guard name == "web_search" else { break }
+                        guard let data = argsJSON.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+                              let query = json["query"], !query.isEmpty else { break }
 
-                    if shouldFlush {
-                        lastFlush = clock.now
-                        await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
+                        let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(query)…")
+                        await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
+
+                        var agenticSearchContext: SearchContext? = nil
+                        if let gateway = SearchGatewayFactory.make(settings: store.settings) {
+                            agenticSearchContext = try? await gateway.search(query: query)
+                        }
+                        if agenticSearchContext == nil {
+                            let unavailableMsg = ChatMessage(role: .system, text: "⚠️ Search unavailable — answering from local knowledge.")
+                            await MainActor.run { store.appendMessage(unavailableMsg, to: sessionID) }
+                        }
+
+                        let newPendingCitations = agenticSearchContext?.citations ?? []
+                        let (newMessageID, newStream) = try await service.generateStream(
+                            prompt: trimmedPrompt,
+                            model: model,
+                            conversation: conversation,
+                            searchContext: agenticSearchContext,
+                            systemPrompt: store.settings.systemPrompt,
+                            imageData: jpegData
+                        )
+                        let newPlaceholder = ChatMessage(id: newMessageID, role: .assistant, text: "", citations: newPendingCitations)
+                        await MainActor.run { store.appendMessage(newPlaceholder, to: sessionID) }
+
+                        accumulated = ""
+                        thinkingAccumulated = ""
+                        for await newEvent in newStream {
+                            if Task.isCancelled { break }
+                            switch newEvent {
+                            case .textDelta(let chunk):
+                                accumulated += chunk
+                                let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                                    || chunk.contains(where: \.isNewline)
+                                    || accumulated.count <= 48
+                                if shouldFlush {
+                                    lastFlush = clock.now
+                                    await updateStreamingMessage(accumulated, messageID: newMessageID, sessionID: sessionID)
+                                }
+                            case .thinkingDelta(let chunk):
+                                thinkingAccumulated += chunk
+                                let snapshot = thinkingAccumulated
+                                await MainActor.run {
+                                    store.updateMessageThinking(newMessageID, in: sessionID, thinkingContent: snapshot)
+                                }
+                            case .thinkingDone(let dur):
+                                let snapshot = thinkingAccumulated
+                                await MainActor.run {
+                                    store.updateMessageThinking(newMessageID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
+                                }
+                            case .toolCall, .done:
+                                break
+                            }
+                        }
+                        let finalText2 = cleanedDisplayedAssistantText(accumulated)
+                        await updateStreamingMessage(
+                            finalText2.isEmpty ? "The model finished without returning text." : finalText2,
+                            messageID: newMessageID, sessionID: sessionID, persist: true
+                        )
+                        await MainActor.run { finishGenerationIfCurrent(taskID) }
+                        return
+
+                    case .done:
+                        break
                     }
                 }
 
@@ -780,20 +788,6 @@ struct ChatView: View {
                     await updateStreamingMessage(fallback, messageID: messageID, sessionID: sessionID, persist: true)
                 } else {
                     await updateStreamingMessage(finalText, messageID: messageID, sessionID: sessionID, persist: true)
-                }
-
-                // Persist the final thinking state (duration confirmed)
-                if thinkingBuffer != "" {
-                    let duration = thinkingStart.map { Int(Date().timeIntervalSince($0)) }
-                    await MainActor.run {
-                        store.updateMessageThinking(
-                            messageID,
-                            in: sessionID,
-                            thinkingContent: thinkingBuffer,
-                            thinkingDurationSeconds: duration ?? 1,
-                            persist: true
-                        )
-                    }
                 }
 
                 if !stoppedByUser,

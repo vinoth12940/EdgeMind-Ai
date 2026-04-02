@@ -102,7 +102,7 @@ struct LocalLlamaInferenceService: InferenceService {
             maxGeneratedTokens: maxGeneratedTokens
         )
         let processor = StreamProcessor(rawStream: rawStream)
-        return (messageID: messageID, stream: processor.process())
+        return (messageID: messageID, stream: await processor.process())
     }
 
     /// Appends tool call definition to system prompt for tool-calling models.
