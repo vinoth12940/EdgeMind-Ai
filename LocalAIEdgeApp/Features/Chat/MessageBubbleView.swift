@@ -29,9 +29,7 @@ struct MessageBubbleView: View {
                                 .frame(maxWidth: 220, maxHeight: 220)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
-                        Text(message.text)
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundStyle(isUser ? .white : AppTheme.textPrimary)
+                        MarkdownTextView(text: message.text, isUser: isUser)
                             .textSelection(.enabled)
                     }
                     .padding(.horizontal, 14)
