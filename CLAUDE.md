@@ -74,15 +74,19 @@ backend/search-gateway/  # Optional Node.js/Express proxy (Tavily) for self-host
 ### State layer (`State/`)
 `AppStateStore` is an `@Observable` class injected at the SwiftUI root and holds all runtime state: catalog, installed models, chat sessions, settings. All mutations go through its `func` methods (not direct property writes). `AuthStateStore` is a separate `@Observable` for auth state (Apple ID / local / guest / device biometrics).
 
-Persistence uses `UserDefaults` via JSON encoding. Images in chat history are sanitized before persistence (`sanitizedSessionForPersistence`) to avoid oversized writes.
+Persistence uses `UserDefaults` via JSON encoding. Images in chat history are sanitized before persistence (`sanitizedSessionForPersistence`) to avoid oversized writes (threshold: 600 KB per image).
+
+`AppStateStore.reconcileInstalledFiles()` is called at launch to reconcile GGUF files present on disk with persisted `InstalledModel` records — it scans the models directory and calls `markInstallCompleted` for any matching files.
 
 ### Inference layer (`Services/Inference/`)
 Two concrete inference backends behind the `InferenceService` protocol:
 
-- **`LocalLlamaInferenceService`** — GGUF models via llama.cpp C API. Contains the `PromptRenderer` enum (token budget calculation, HTML stripping, chat-turn assembly). `PromptRenderer` is `internal` for testability.
-- **`MLXInferenceService`** — MLX models via `mlx-swift-examples` (MLXLLM, VLMModelFactory). Falls back to a plain prompt string for models without a chat template.
+- **`LocalLlamaInferenceService`** — GGUF models via llama.cpp C API. Contains the `PromptRenderer` enum (token budget calculation, HTML stripping, chat-turn assembly). `PromptRenderer` is `internal` for testability. Does **not** support image input — throws if `imageData != nil`.
+- **`MLXInferenceService`** — MLX models via `mlx-swift-examples` (MLXLLM, VLMModelFactory). Falls back to a plain prompt string for models without a chat template. Only loads the SigLIP vision tower when `imageData != nil && supportsVision` to prevent OOM on 8 GB devices.
 
 Both backends use **singleton actors** (`LocalLlamaRuntime.shared`, `MLXRuntime.shared`) for thread-safe C/MLX interop. The actors hold the loaded model context and reuse it across calls when model path and `maxGeneratedTokens` are unchanged.
+
+`ChatView` holds two `@State` inference service instances and selects between them at call time via `inferenceServiceForModel(_:)` which checks `runtimeType == .mlx`.
 
 **`DeviceCapabilityService`** reads `hw.machine` via `sysctlbyname` to select:
 - `n_ctx`: 2048 (A14/iPhone 12), 4096 (A15/A16), 8192 (A17/A18/iPad/Simulator)
@@ -90,12 +94,23 @@ Both backends use **singleton actors** (`LocalLlamaRuntime.shared`, `MLXRuntime.
 
 `maxGeneratedTokens` is 1024 for chat and 2048 when a `SearchContext` is present.
 
-`AssistantResponseSanitizer.clean()` (in `InferenceService.swift`) strips model-specific tokens (`<think>`, `<|im_end|>`, `[INST]`, etc.) from streamed output before display.
+`AssistantResponseSanitizer.clean()` (in `InferenceService.swift`) strips model-specific tokens (`<think>`, `<|im_end|>`, `[INST]`, etc.) from streamed output before display. Note: `<think>` blocks are **extracted live during streaming** by `ChatView` (via `updateMessageThinking`) and stored in `ChatMessage.thinkingContent` — they are not stripped here.
+
+`MockInferenceService` (in `Services/Inference/`) provides a stub for SwiftUI previews and unit tests.
 
 ### Model catalog (`State/MockCatalogData.swift`)
-Static array of `ModelCatalogItem` structs. 35 entries across 4 families: Gemma, Qwen, LFM, Kokoro. Capability flags (`supportsVision`, `supportsToolCalling`, `isThinkingModel`) reflect actual model card specs — only set when the model has native tokens in its chat template or vision encoder in its weights. Do not add flags speculatively.
+Static array of `ModelCatalogItem` structs. 35 entries across 4 families: Gemma, Qwen, LFM, Kokoro. Capability flags (`supportsVision`, `supportsToolCalling`, `isThinkingModel`, `supportsReasoning`) reflect actual model card specs — only set when the model has native tokens in its chat template or vision encoder in its weights. Do not add flags speculatively.
+
+`supportsReasoning` and `isThinkingModel` are distinct flags: `isThinkingModel` means the model uses a native `<think>…</think>` streaming block (e.g. Qwen 3); `supportsReasoning` is a softer capability label.
 
 Models with `primaryUse: .voice` (Kokoro, LFM2.5 Audio) are filtered out of the chat model picker but appear in the Model Library.
+
+### GGUF vs MLX model storage
+- **GGUF** models are downloaded to the app's Documents directory via `URLModelDownloadService`. `InstalledModel.localPath` (and `fileURL`) points to the `.gguf` file on disk.
+- **MLX** models are downloaded to the system caches directory by the HuggingFace Hub library. `InstalledModel.localPath` is not used; the runtime loads from `ModelCatalogItem.mlxModelID` (a HF repo ID string like `"mlx-community/gemma-3n-E2B-it-bf16"`).
+
+### Model catalog IDs are deterministic
+`ModelCatalogItem.id` is a UUID v5 derived from `"\(displayName)::\(variant)"`. **Do not rename `displayName` or `variant` of an existing catalog entry** — doing so generates a new UUID, orphaning any persisted `InstalledModel` records that reference the old ID.
 
 ### Voice layer (`Services/Voice/`)
 `VoiceInteractionController` is a `@MainActor ObservableObject` wrapping `SFSpeechRecognizer` (STT) and `AVSpeechSynthesizer` (TTS). It exposes `transcript`, `isListening`, and `isSpeaking` as `@Published` state. Requires microphone + speech recognition permissions at runtime. Voice models (Kokoro, LFM2.5 Audio) are separate from voice I/O — they are MLX inference models for on-device TTS, not used by `VoiceInteractionController`.
@@ -104,11 +119,11 @@ Models with `primaryUse: .voice` (Kokoro, LFM2.5 Audio) are filtered out of the 
 `SearchGateway` protocol with four implementations: Tavily, Brave, Serper, and a passthrough custom gateway. `SearchGatewayFactory` picks the active provider from `AppSettings`. API keys are stored in app settings (not Keychain). The `backend/search-gateway/` directory is an optional Node.js/Express proxy that forwards to Tavily — used when `AppSettings.customGatewayURL` points at it.
 
 ### HuggingFace token storage
-`HFTokenManager` stores the HF token in the iOS **Keychain** (not UserDefaults). Used by `ModelDownloadService` to add `Authorization: Bearer` headers for gated model downloads.
+`HFTokenManager` stores the HF token in the iOS **Keychain** (not UserDefaults). Used by `ModelDownloadService` to add `Authorization: Bearer` headers for gated model downloads, and by `MLXRuntime` when building the `HubApi` for MLX model loading.
 
 ### Key wiring points
 - `LocalAIEdgeApp.swift` (@main): injects `AppStateStore` and `AuthStateStore` into the environment, gates `RootView` behind auth.
-- `ChatView.swift`: calls `AppStateStore` to append messages, drives the streaming loop via `Task { for await token in stream }`.
+- `ChatView.swift`: selects inference backend per model, drives the streaming loop via `Task { for await token in stream }` with 80 ms batched UI updates, and extracts `<think>` blocks live via `store.updateMessageThinking(...)`.
 - `ModelLibraryView.swift`: triggers downloads via `ModelDownloadService`, updates progress through `AppStateStore.updateInstallProgress()`.
 - Cross-tab navigation uses `SelectedTabKey` `EnvironmentKey` — inject `@Environment(\.selectedTab)` and write to switch tabs without tight coupling.
 
@@ -118,6 +133,7 @@ Models with `primaryUse: .voice` (Kokoro, LFM2.5 Audio) are filtered out of the 
 2. Add a `ModelCatalogItem(...)` entry in `items`. Use `supportsVision: true` only if the model has a vision encoder in its weights. Use `supportsToolCalling: true` only if the model has native `<tool_call>` or equivalent tokens in its chat template (not just prompt-level function calling).
 3. Qwen 3 models always get `isThinkingModel: true` (native `/think`/`/no_think` switches).
 4. Models over ~4 GB should not set `recommendedForIPhone: true`.
+5. MLX models require `runtimeType: .mlx` and a `mlxModelID` string (HF repo ID). GGUF models require `runtimeType: .gguf` and a `downloadURL`.
 
 ## llama.cpp xcframework
 
@@ -146,3 +162,4 @@ Point `AppSettings.customGatewayURL` at `http://localhost:8787` in the app's Set
 - **Design system is dark-mode only**: `AppTheme` has no light-mode variants. Do not add `colorScheme`-conditional logic — the app enforces dark mode at the window level.
 - **`ChatMessage.Role.search` is deprecated**: Citations live on `ChatMessage.citations: [SearchCitation]`. The `.search` role creates orphaned messages if inference is cancelled. Render citations as a "Sources" footer on the assistant bubble instead (see `TODOS.md`).
 - **Image attachments are downsampled before inference**: `ChatComposerView` bounds JPEG encoding to prevent OOM. Do not pass raw `UIImage` to the inference service.
+- **MLX GPU cache**: `MLXRuntime` unloads the previous model and calls `GPU.clearCache()` before loading a new one. Vision models get a larger cache limit (768 MB vs 512 MB) to accommodate the SigLIP tower.
