@@ -17,7 +17,7 @@ protocol InferenceService {
         searchContext: SearchContext?,
         systemPrompt: String,
         imageData: Data?
-    ) async throws -> (messageID: UUID, citations: [SearchCitation], stream: AsyncStream<String>)
+    ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>)
 }
 
 enum InferenceServiceError: LocalizedError {

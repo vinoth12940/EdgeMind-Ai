@@ -1,6 +1,8 @@
 import Foundation
 
 struct MockInferenceService: InferenceService {
+    var events: [StreamEvent] = []
+
     func generateReply(
         prompt: String,
         model: InstalledModel,
@@ -29,18 +31,15 @@ struct MockInferenceService: InferenceService {
         searchContext: SearchContext?,
         systemPrompt: String,
         imageData: Data? = nil
-    ) async throws -> (messageID: UUID, citations: [SearchCitation], stream: AsyncStream<String>) {
-        let message = try await generateReply(
-            prompt: prompt,
-            model: model,
-            conversation: conversation,
-            searchContext: searchContext,
-            systemPrompt: systemPrompt
-        )
-        let stream = AsyncStream<String> { continuation in
-            continuation.yield(message.text)
+    ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
+        let messageID = UUID()
+        let eventsToEmit: [StreamEvent] = events.isEmpty
+            ? [.textDelta("Mock response for: \(prompt)"), .done]
+            : events
+        let stream = AsyncStream<StreamEvent> { continuation in
+            for event in eventsToEmit { continuation.yield(event) }
             continuation.finish()
         }
-        return (messageID: message.id, citations: message.citations, stream: stream)
+        return (messageID: messageID, stream: stream)
     }
 }
