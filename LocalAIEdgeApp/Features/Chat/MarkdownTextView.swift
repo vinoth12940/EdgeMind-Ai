@@ -36,8 +36,9 @@ struct MarkdownTextView: View {
     private enum Block {
         case heading(level: Int, text: String)
         case paragraph(String)
-        case bullet(String)
-        case numbered(index: String, text: String)
+        case blockquote(String)
+        case bullet(String, depth: Int)
+        case numbered(index: String, text: String, depth: Int)
         case codeBlock(language: String, code: String)
         case table(headers: [String], rows: [[String]])
         case divider
@@ -100,18 +101,30 @@ struct MarkdownTextView: View {
                 continue
             }
 
+            // Blockquote
+            if trimmed.hasPrefix("> ") || trimmed == ">" {
+                let content = trimmed.hasPrefix("> ") ? String(trimmed.dropFirst(2)) : ""
+                blocks.append(.blockquote(content))
+                i += 1
+                continue
+            }
+
             // Bullet
             if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
-                blocks.append(.bullet(String(trimmed.dropFirst(2))))
+                let leadingSpaces = line.prefix(while: { $0 == " " }).count
+                let depth = leadingSpaces / 2
+                blocks.append(.bullet(String(trimmed.dropFirst(2)), depth: depth))
                 i += 1
                 continue
             }
 
             // Numbered list
             if let match = trimmed.range(of: #"^(\d+)[.)]\s+"#, options: .regularExpression) {
+                let leadingSpaces = line.prefix(while: { $0 == " " }).count
+                let depth = leadingSpaces / 2
                 let idx = String(trimmed[match].dropLast(1)).trimmingCharacters(in: .whitespaces)
                 let rest = String(trimmed[match.upperBound...])
-                blocks.append(.numbered(index: idx, text: rest))
+                blocks.append(.numbered(index: idx, text: rest, depth: depth))
                 i += 1
                 continue
             }
@@ -126,7 +139,7 @@ struct MarkdownTextView: View {
             var paraLines: [String] = []
             while i < lines.count {
                 let pl = lines[i].trimmingCharacters(in: .whitespaces)
-                if pl.isEmpty || pl.hasPrefix("#") || pl.hasPrefix("```") || pl.hasPrefix("- ") || pl.hasPrefix("* ") || pl.hasPrefix("• ") || pl.hasPrefix("|") || pl == "---" || pl == "***" {
+                if pl.isEmpty || pl.hasPrefix("#") || pl.hasPrefix("```") || pl.hasPrefix("- ") || pl.hasPrefix("* ") || pl.hasPrefix("• ") || pl.hasPrefix("|") || pl.hasPrefix("> ") || pl == ">" || pl == "---" || pl == "***" {
                     break
                 }
                 if pl.range(of: #"^\d+[.)]\s+"#, options: .regularExpression) != nil {
@@ -212,13 +225,24 @@ struct MarkdownTextView: View {
             .padding(.bottom, level == 1 ? 8 : 4)
 
         case .paragraph(let text):
-            inlineMarkdown(text)
-                .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(foreground)
-                .lineSpacing(4)
+            paragraphView(text)
                 .padding(.vertical, 2)
 
-        case .bullet(let text):
+        case .blockquote(let text):
+            HStack(alignment: .top, spacing: 0) {
+                Rectangle()
+                    .fill(AppTheme.accentSoft.opacity(0.4))
+                    .frame(width: 2)
+                inlineMarkdown(text)
+                    .font(.system(size: 15, weight: .regular).italic())
+                    .foregroundStyle(foreground.opacity(0.75))
+                    .lineSpacing(3)
+                    .padding(.leading, 12)
+                    .padding(.vertical, 4)
+            }
+            .padding(.vertical, 2)
+
+        case .bullet(let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 ZStack {
                     // Glow
@@ -236,12 +260,12 @@ struct MarkdownTextView: View {
                         )
                         .frame(width: 16, height: 16)
                         .blur(radius: 4)
-                    
+
                     // Bullet
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: isUser 
+                                colors: isUser
                                     ? [.white.opacity(0.8), .white.opacity(0.6)]
                                     : [AppTheme.accent, AppTheme.accentSoft],
                                 startPoint: .topLeading,
@@ -252,15 +276,16 @@ struct MarkdownTextView: View {
                         .shadow(color: AppTheme.accent.opacity(0.4), radius: 3, x: 0, y: 1)
                 }
                 .frame(width: 20, height: 20)
-                
+
                 inlineMarkdown(text)
                     .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(foreground)
                     .lineSpacing(3)
             }
+            .padding(.leading, CGFloat(depth) * 16)
             .padding(.vertical, 3)
 
-        case .numbered(let idx, let text):
+        case .numbered(let idx, let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 ZStack {
                     // Glow
@@ -325,6 +350,7 @@ struct MarkdownTextView: View {
                     .foregroundStyle(foreground)
                     .lineSpacing(3)
             }
+            .padding(.leading, CGFloat(depth) * 16)
             .padding(.vertical, 4)
 
         case .codeBlock(let language, let code):
@@ -420,6 +446,39 @@ struct MarkdownTextView: View {
                     .frame(height: 2)
             }
             .padding(.vertical, 12)
+        }
+    }
+
+    @ViewBuilder
+    private func paragraphView(_ text: String) -> some View {
+        // If paragraph contains a bare URL, split around it to render a tappable Link
+        if let urlRange = text.range(of: #"https?://[^\s]+"#, options: .regularExpression),
+           let url = URL(string: String(text[urlRange])) {
+            let before = String(text[..<urlRange.lowerBound])
+            let after = String(text[urlRange.upperBound...])
+            VStack(alignment: .leading, spacing: 0) {
+                if !before.isEmpty {
+                    inlineMarkdown(before)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(foreground)
+                        .lineSpacing(4)
+                }
+                Link(String(text[urlRange]), destination: url)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(isUser ? Color.white.opacity(0.9) : AppTheme.accent)
+                    .underline()
+                if !after.isEmpty {
+                    inlineMarkdown(after.trimmingCharacters(in: .whitespaces))
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(foreground)
+                        .lineSpacing(4)
+                }
+            }
+        } else {
+            inlineMarkdown(text)
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(foreground)
+                .lineSpacing(4)
         }
     }
 
@@ -535,6 +594,37 @@ struct MarkdownTextView: View {
                 continue
             }
 
+            // Strikethrough ~~...~~
+            if remaining.hasPrefix("~~"),
+               let endRange = remaining.dropFirst(2).range(of: "~~") {
+                let strike = remaining[remaining.index(remaining.startIndex, offsetBy: 2)..<endRange.lowerBound]
+                result = result + Text(String(strike))
+                    .strikethrough()
+                    .foregroundColor(isUser ? .white.opacity(0.7) : AppTheme.textSecondary)
+                remaining = remaining[endRange.upperBound...]
+                continue
+            }
+
+            // Inline link [text](url)
+            if remaining.hasPrefix("[") {
+                let afterBracket = remaining.index(after: remaining.startIndex)
+                if let closeBracket = remaining[afterBracket...].firstIndex(of: "]") {
+                    let linkText = String(remaining[afterBracket..<closeBracket])
+                    let afterClose = remaining.index(after: closeBracket)
+                    if afterClose < remaining.endIndex && remaining[afterClose] == "(",
+                       let closeParen = remaining[afterClose...].firstIndex(of: ")") {
+                        let urlString = String(remaining[remaining.index(after: afterClose)..<closeParen])
+                        if URL(string: urlString) != nil {
+                            result = result + Text(linkText)
+                                .underline()
+                                .foregroundColor(isUser ? .white : AppTheme.accent)
+                            remaining = remaining[remaining.index(after: closeParen)...]
+                            continue
+                        }
+                    }
+                }
+            }
+
             // Citation reference [1], [2] etc. - render as inline badge
             if remaining.hasPrefix("["),
                let closeBracket = remaining.firstIndex(of: "]") {
@@ -551,9 +641,11 @@ struct MarkdownTextView: View {
                 }
             }
 
-            // Plain character
-            result = result + Text(String(remaining.prefix(1)))
-            remaining = remaining.dropFirst()
+            // Plain character — advance by one Unicode Character (emoji-safe)
+            if let ch = remaining.first {
+                result = result + Text(String(ch))
+                remaining = remaining[remaining.index(after: remaining.startIndex)...]
+            }
         }
 
         return result
