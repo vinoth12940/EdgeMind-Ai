@@ -632,7 +632,11 @@ struct ChatView: View {
         let task = Task {
             do {
                 let searchContext: SearchContext?
-                if liveSearchEnabled || store.settings.useSearchByDefault,
+                // Tool-calling models use the agentic path: they think first and decide
+                // whether to search via <tool_call>. Force-searching before inference
+                // breaks the think-first order, so we skip it for these models.
+                let useAgenticSearch = model.catalogItem.supportsToolCalling
+                if !useAgenticSearch && (liveSearchEnabled || store.settings.useSearchByDefault),
                    let gateway = SearchGatewayFactory.make(settings: store.settings) {
                     do {
                         searchContext = try await gateway.search(query: trimmedPrompt)
