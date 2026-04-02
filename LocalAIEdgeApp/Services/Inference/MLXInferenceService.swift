@@ -239,7 +239,7 @@ struct MLXInferenceService: InferenceService {
         searchContext: SearchContext?,
         systemPrompt: String,
         imageData: Data? = nil
-    ) async throws -> (messageID: UUID, citations: [SearchCitation], stream: AsyncStream<String>) {
+    ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         guard let mlxModelID = model.catalogItem.mlxModelID else {
             throw InferenceServiceError.missingLocalModelFile
         }
@@ -247,13 +247,15 @@ struct MLXInferenceService: InferenceService {
         // Only use VLM path when an image is actually attached — avoids loading
         // the ~500 MB SigLIP vision tower for text-only prompts, preventing OOM on 8 GB devices.
         let isVision = model.catalogItem.supportsVision && imageData != nil
-        let fullSystemPrompt = Self.buildSystemPrompt(systemPrompt: systemPrompt, searchContext: searchContext)
+        let fullSystemPrompt = Self.buildSystemPrompt(
+            systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
+            searchContext: searchContext
+        )
         let fullPrompt = Self.buildFullPrompt(conversation: conversation, prompt: prompt)
 
         let messageID = UUID()
-        let citations = searchContext?.citations ?? []
         do {
-            let stream = try await MLXRuntime.shared.generateStream(
+            let rawStream = try await MLXRuntime.shared.generateStream(
                 prompt: fullPrompt,
                 modelID: mlxModelID,
                 systemPrompt: fullSystemPrompt,
@@ -261,10 +263,22 @@ struct MLXInferenceService: InferenceService {
                 imageData: imageData,
                 isVision: isVision
             )
-            return (messageID, citations, stream)
+            let processor = StreamProcessor(rawStream: rawStream)
+            return (messageID: messageID, stream: processor.process())
         } catch {
             throw InferenceServiceError.runtimeUnavailable(Self.friendlyMLXError(error))
         }
+    }
+
+    /// Appends tool call definition to system prompt for tool-calling models.
+    private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
+        guard model.catalogItem.supportsToolCalling else { return base }
+        return base + """
+
+If you need current information to answer, call this tool:
+<tool_call>{"name":"web_search","query":"your search query here"}</tool_call>
+Only call it once. Do not call it for questions answerable from your training data.
+"""
     }
 
     /// Translate common MLX / Hub download errors into user-friendly messages.
@@ -377,7 +391,7 @@ struct MLXInferenceService: InferenceService {
         searchContext: SearchContext?,
         systemPrompt: String,
         imageData: Data? = nil
-    ) async throws -> (messageID: UUID, citations: [SearchCitation], stream: AsyncStream<String>) {
+    ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         throw MLXInferenceError.runtimeUnavailable
     }
 }
