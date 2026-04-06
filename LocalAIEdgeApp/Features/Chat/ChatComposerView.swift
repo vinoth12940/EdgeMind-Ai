@@ -35,81 +35,7 @@ struct ChatComposerView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            if shouldShowUtilityRow {
-                HStack(spacing: 6) {
-                    // Search toggle — compact icon when focused, labelled when not
-                    Button {
-                        if !liveSearchEnabled && !isSearchConfigured {
-                            showSearchNotConfigured = true
-                            return
-                        }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            liveSearchEnabled.toggle()
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: liveSearchEnabled ? "sparkle.magnifyingglass" : "magnifyingglass")
-                                .font(.system(size: isFocused ? 14 : 12, weight: .semibold))
-                            if !isFocused {
-                                Text(liveSearchEnabled ? "Search On" : "Search")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                        }
-                        .foregroundStyle(liveSearchEnabled ? AppTheme.warning : AppTheme.textTertiary)
-                        .padding(.horizontal, isFocused ? 8 : 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(liveSearchEnabled ? AppTheme.warning.opacity(0.15) : AppTheme.panelRaised)
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(liveSearchEnabled ? AppTheme.warning.opacity(0.4) : Color.clear, lineWidth: 1)
-                        )
-                    }
-                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: liveSearchEnabled)
 
-                    if isVisionModel {
-                        Menu {
-                            Button { showCamera = true } label: {
-                                Label("Camera", systemImage: "camera")
-                            }
-                            Button { showPhotoPicker = true } label: {
-                                Label("Photo Library", systemImage: "photo.on.rectangle")
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: attachedImage != nil ? "photo.badge.checkmark" : "photo.badge.plus")
-                                    .font(.system(size: isFocused ? 14 : 12, weight: .semibold))
-                                if !isFocused {
-                                    Text(attachedImage != nil ? "Image Ready" : "Add Photo")
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                            }
-                            .foregroundStyle(attachedImage != nil ? AppTheme.accent : AppTheme.textSecondary)
-                            .padding(.horizontal, isFocused ? 8 : 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule()
-                                    .fill(attachedImage != nil ? AppTheme.accent.opacity(0.12) : AppTheme.panelRaised)
-                            )
-                        }
-                        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
-                    }
-
-                    Spacer()
-
-                    // Subtle hint when focused and has text
-                    if isFocused && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Label("Tap ↑ to send", systemImage: "")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(AppTheme.textTertiary.opacity(0.7))
-                            .transition(.opacity)
-                    }
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
 
             // Attached image preview
             if let image = attachedImage {
@@ -153,6 +79,75 @@ struct ChatComposerView: View {
 
             // Input bar
             HStack(alignment: .bottom, spacing: 10) {
+                if isVisionModel {
+                    Menu {
+                        Button(action: {}) {
+                            Label("Attach file", systemImage: "folder")
+                        }
+                        Button { showCamera = true } label: {
+                            Label("Take photo", systemImage: "camera")
+                        }
+                        Button { showPhotoPicker = true } label: {
+                            Label("Attach photo", systemImage: "photo.on.rectangle")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 20, weight: .regular))
+                            .foregroundStyle(attachedImage != nil ? AppTheme.accent : .white)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Circle()
+                                    .fill(attachedImage != nil ? AppTheme.accent.opacity(0.12) : Color(red: 0.14, green: 0.16, blue: 0.22))
+                            )
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        attachedImage != nil
+                                        ? LinearGradient(colors: [AppTheme.accent.opacity(0.4)], startPoint: .top, endPoint: .bottom)
+                                        : LinearGradient(
+                                            colors: [Color.white.opacity(0.12), Color.white.opacity(0.08)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+                    }
+                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: attachedImage != nil)
+                }
+
+                Button {
+                    if !liveSearchEnabled && !isSearchConfigured {
+                        showSearchNotConfigured = true
+                        return
+                    }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        liveSearchEnabled.toggle()
+                    }
+                } label: {
+                    Image(systemName: "lightbulb")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(liveSearchEnabled ? AppTheme.warning : .white)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Circle()
+                                .fill(liveSearchEnabled ? AppTheme.warning.opacity(0.15) : Color(red: 0.14, green: 0.16, blue: 0.22))
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    liveSearchEnabled
+                                    ? LinearGradient(colors: [AppTheme.warning.opacity(0.4)], startPoint: .top, endPoint: .bottom)
+                                    : LinearGradient(
+                                        colors: [Color.white.opacity(0.12), Color.white.opacity(0.08)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                }
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: liveSearchEnabled)
                 TextField("Ask anything…", text: $prompt, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 17, weight: .medium, design: .rounded))

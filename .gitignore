@@ -20,3 +20,6 @@ plan-*.md
 **/*.key
 .gstack/
 .superpowers/
+Vendor/build-apple/
+Vendor/llama.cpp/
+build/

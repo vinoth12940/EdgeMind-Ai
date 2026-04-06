@@ -78,7 +78,7 @@ actor MLXRuntime {
         return container
     }
 
-    func generate(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false) async throws -> String {
+    func generate(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false, chatHistory: [Chat.Message] = []) async throws -> String {
         // Clear GPU cache before vision to maximize available memory for the vision encoder
         if isVision {
             GPU.clearCache()
@@ -87,10 +87,10 @@ actor MLXRuntime {
 
         let parameters = GenerateParameters(maxTokens: maxTokens, temperature: 0.7, topP: 0.9)
         let images = Self.ciImages(from: imageData)
-        let chat: [Chat.Message] = [
-            .system(systemPrompt),
-            .user(prompt, images: images)
-        ]
+        // Build proper multi-turn chat: system + history + current user message
+        var chat: [Chat.Message] = [.system(systemPrompt)]
+        chat.append(contentsOf: chatHistory)
+        chat.append(.user(prompt, images: images))
         // Let the VLM processor handle its own image sizing — don't force a resize
         let userInput = UserInput(chat: chat)
         let input = try await container.perform { context in
@@ -123,7 +123,7 @@ actor MLXRuntime {
         return []
     }
 
-    func generateStream(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false) async throws -> AsyncStream<String> {
+    func generateStream(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false, chatHistory: [Chat.Message] = []) async throws -> AsyncStream<String> {
         // Clear GPU cache before vision to maximize available memory for the vision encoder
         if isVision {
             GPU.clearCache()
@@ -132,10 +132,10 @@ actor MLXRuntime {
 
         let parameters = GenerateParameters(maxTokens: maxTokens, temperature: 0.7, topP: 0.9)
         let images = Self.ciImages(from: imageData)
-        let chat: [Chat.Message] = [
-            .system(systemPrompt),
-            .user(prompt, images: images)
-        ]
+        // Build proper multi-turn chat: system + history + current user message
+        var chat: [Chat.Message] = [.system(systemPrompt)]
+        chat.append(contentsOf: chatHistory)
+        chat.append(.user(prompt, images: images))
         // Let the VLM processor handle its own image sizing — don't force a resize
         let userInput = UserInput(chat: chat)
         let input = try await container.perform { context in
@@ -161,6 +161,19 @@ actor MLXRuntime {
         activeContainer = nil
         activeModelID = nil
         activeIsVision = false
+    }
+
+    /// Delete the on-disk Hub snapshot cache for a downloaded MLX model.
+    /// The cache lives at `<CachesDir>/huggingface/hub/models--<org>--<repo>/`.
+    func removeModelCache(for modelID: String) {
+        guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
+        let dirName = "models--" + modelID.replacingOccurrences(of: "/", with: "--")
+        let cacheDir = base
+            .appending(path: "huggingface", directoryHint: .isDirectory)
+            .appending(path: "hub", directoryHint: .isDirectory)
+            .appending(path: dirName, directoryHint: .isDirectory)
+        try? FileManager.default.removeItem(at: cacheDir)
+        mlxLogger.log("MLX Hub cache removed for: \(modelID, privacy: .public)")
     }
 
     /// Pre-download an MLX model with progress reporting.
@@ -210,17 +223,21 @@ struct MLXInferenceService: InferenceService {
         // Only use VLM path when an image is actually attached — avoids loading
         // the ~500 MB SigLIP vision tower for text-only prompts, preventing OOM on 8 GB devices.
         let isVision = model.catalogItem.supportsVision && imageData != nil
-        let fullSystemPrompt = Self.buildSystemPrompt(systemPrompt: systemPrompt, searchContext: searchContext)
-        let fullPrompt = Self.buildFullPrompt(conversation: conversation, prompt: prompt)
+        let fullSystemPrompt = Self.buildSystemPrompt(
+            systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
+            searchContext: searchContext
+        )
+        let history = Self.buildChatHistory(conversation: conversation)
 
         do {
             let response = try await MLXRuntime.shared.generate(
-                prompt: fullPrompt,
+                prompt: prompt,
                 modelID: mlxModelID,
                 systemPrompt: fullSystemPrompt,
                 maxTokens: searchContext != nil ? 2048 : 1024,
                 imageData: imageData,
-                isVision: isVision
+                isVision: isVision,
+                chatHistory: history
             )
             return ChatMessage(
                 role: .assistant,
@@ -251,17 +268,18 @@ struct MLXInferenceService: InferenceService {
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             searchContext: searchContext
         )
-        let fullPrompt = Self.buildFullPrompt(conversation: conversation, prompt: prompt)
+        let history = Self.buildChatHistory(conversation: conversation)
 
         let messageID = UUID()
         do {
             let rawStream = try await MLXRuntime.shared.generateStream(
-                prompt: fullPrompt,
+                prompt: prompt,
                 modelID: mlxModelID,
                 systemPrompt: fullSystemPrompt,
                 maxTokens: searchContext != nil ? 2048 : 1024,
                 imageData: imageData,
-                isVision: isVision
+                isVision: isVision,
+                chatHistory: history
             )
             let processor = StreamProcessor(rawStream: rawStream)
             return (messageID: messageID, stream: await processor.process())
@@ -275,9 +293,20 @@ struct MLXInferenceService: InferenceService {
         guard model.catalogItem.supportsToolCalling else { return base }
         return base + """
 
-If you need current information to answer, call this tool:
-<tool_call>{"name":"web_search","query":"your search query here"}</tool_call>
-Only call it once. Do not call it for questions answerable from your training data.
+# Tools
+
+You have access to the following tool. Call it when you need current or real-time information (news, scores, weather, prices, recent events).
+
+## web_search
+Search the web for up-to-date information.
+Parameters: query (string) — the search query
+
+To call it, output ONLY this block (no other text before the closing tag):
+<tool_call>
+{"name": "web_search", "arguments": {"query": "your search query here"}}
+</tool_call>
+
+Call it at most once. Do not call it for questions you can answer from your training data.
 """
     }
 
@@ -318,34 +347,30 @@ Only call it once. Do not call it for questions answerable from your training da
         return result
     }
 
-    private static func buildFullPrompt(conversation: [ChatMessage], prompt: String) -> String {
-        let eligibleMessages = conversation.filter { $0.role != .search }
-        let maxPromptTokens = 6800
-        let fixedTokens = max(1, prompt.utf8.count / 4) + 200
-        let historyBudget = maxPromptTokens - fixedTokens
-        var historyLines: [String] = []
+    /// Build structured multi-turn chat history for MLX chat template application.
+    /// Conversation is the prior history — the current user prompt is NOT included here;
+    /// it is appended separately in MLXRuntime (where images can also be attached).
+    /// Trims oldest turns first when history exceeds the token budget.
+    private static func buildChatHistory(conversation: [ChatMessage]) -> [Chat.Message] {
+        let historyBudget = 6800
+        var turns: [Chat.Message] = []
         var usedTokens = 0
 
-        for message in eligibleMessages.reversed() {
-            let line: String
+        for message in conversation.reversed() {
             switch message.role {
-            case .assistant: line = "Assistant: \(message.text)"
-            case .user: line = "User: \(message.text)"
-            case .system: line = "System: \(message.text)"
-            case .search: continue
+            case .user, .assistant: break
+            default: continue  // skip system/search messages
             }
-            let cost = max(1, line.utf8.count / 4)
+            let cost = max(1, message.text.utf8.count / 4)
             if usedTokens + cost > historyBudget { break }
-            historyLines.insert(line, at: 0)
+            switch message.role {
+            case .assistant: turns.insert(.assistant(message.text), at: 0)
+            case .user:      turns.insert(.user(message.text), at: 0)
+            default:         break
+            }
             usedTokens += cost
         }
-
-        var fullPrompt = ""
-        if !historyLines.isEmpty {
-            fullPrompt += historyLines.joined(separator: "\n\n") + "\n\n"
-        }
-        fullPrompt += prompt
-        return fullPrompt
+        return turns
     }
 
     private static func stripHTML(_ text: String) -> String {

@@ -97,6 +97,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     let runtimeType: RuntimeType
     let mlxModelID: String?
     let primaryUse: PrimaryUse
+    let sourceSupportsVision: Bool
     let supportsVision: Bool
     let supportsReasoning: Bool
     let supportsToolCalling: Bool
@@ -118,6 +119,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         case runtimeType
         case mlxModelID
         case primaryUse
+        case sourceSupportsVision
         case supportsVision
         case supportsReasoning
         case supportsToolCalling
@@ -140,6 +142,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         runtimeType: RuntimeType = .gguf,
         mlxModelID: String? = nil,
         primaryUse: PrimaryUse = .chat,
+        sourceSupportsVision: Bool? = nil,
         supportsVision: Bool = false,
         supportsReasoning: Bool = false,
         supportsToolCalling: Bool = false,
@@ -160,6 +163,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         self.runtimeType = runtimeType
         self.mlxModelID = mlxModelID
         self.primaryUse = primaryUse
+        self.sourceSupportsVision = sourceSupportsVision ?? supportsVision
         self.supportsVision = supportsVision
         self.supportsReasoning = supportsReasoning
         self.supportsToolCalling = supportsToolCalling
@@ -183,6 +187,11 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         runtimeType = try container.decode(RuntimeType.self, forKey: .runtimeType)
         mlxModelID = try container.decodeIfPresent(String.self, forKey: .mlxModelID)
         primaryUse = try container.decodeIfPresent(PrimaryUse.self, forKey: .primaryUse) ?? .chat
+        if let sourceVision = try container.decodeIfPresent(Bool.self, forKey: .sourceSupportsVision) {
+            sourceSupportsVision = sourceVision
+        } else {
+            sourceSupportsVision = try container.decode(Bool.self, forKey: .supportsVision)
+        }
         supportsVision = try container.decode(Bool.self, forKey: .supportsVision)
         supportsReasoning = try container.decode(Bool.self, forKey: .supportsReasoning)
         supportsToolCalling = try container.decode(Bool.self, forKey: .supportsToolCalling)
@@ -206,6 +215,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         try container.encode(runtimeType, forKey: .runtimeType)
         try container.encodeIfPresent(mlxModelID, forKey: .mlxModelID)
         try container.encode(primaryUse, forKey: .primaryUse)
+        try container.encode(sourceSupportsVision, forKey: .sourceSupportsVision)
         try container.encode(supportsVision, forKey: .supportsVision)
         try container.encode(supportsReasoning, forKey: .supportsReasoning)
         try container.encode(supportsToolCalling, forKey: .supportsToolCalling)
@@ -268,5 +278,47 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             case .reasoning: return "lightbulb.fill"
             }
         }
+    }
+
+    enum InputCategory: String, CaseIterable, Hashable {
+        case text = "Text"
+        case image = "Image"
+        case audio = "Audio"
+
+        var icon: String {
+            switch self {
+            case .text: return "text.alignleft"
+            case .image: return "photo"
+            case .audio: return "waveform"
+            }
+        }
+    }
+
+    /// Inputs the upstream model family supports (from source/model card intent).
+    var sourceInputCategories: [InputCategory] {
+        if primaryUse == .voice {
+            return [.audio]
+        }
+        var result: [InputCategory] = [.text]
+        if sourceSupportsVision {
+            result.append(.image)
+        }
+        return result
+    }
+
+    /// Inputs this app runtime currently accepts for this model.
+    var runtimeInputCategories: [InputCategory] {
+        if primaryUse == .voice {
+            return [.audio]
+        }
+        // In this app, image input is available only for MLX vision models.
+        if runtimeType == .mlx && supportsVision {
+            return [.text, .image]
+        }
+        return [.text]
+    }
+
+    var inputCategoriesDifferByRuntime: Bool {
+        sourceInputCategories != runtimeInputCategories
     }
 }

@@ -65,7 +65,8 @@ LocalAIEdgeApp/          # Main app target
 LocalAIEdgeAppTests/     # Unit test target (XCTest)
   DeviceCapabilityTests.swift
   PromptRendererTests.swift
-Vendor/build-apple/      # Pre-built llama.cpp xcframework (b8354, arm64 only)
+  StreamProcessorTests.swift
+Vendor/build-apple/      # Pre-built llama.cpp xcframework (vendored in-repo)
 backend/search-gateway/  # Optional Node.js/Express proxy (Tavily) for self-hosted search
 ```
 
@@ -82,7 +83,7 @@ Persistence uses `UserDefaults` via JSON encoding. Images in chat history are sa
 Two concrete inference backends behind the `InferenceService` protocol:
 
 - **`LocalLlamaInferenceService`** — GGUF models via llama.cpp C API. Contains the `PromptRenderer` enum (token budget calculation, HTML stripping, chat-turn assembly). `PromptRenderer` is `internal` for testability. Does **not** support image input — throws if `imageData != nil`.
-- **`MLXInferenceService`** — MLX models via `mlx-swift-examples` (MLXLLM, VLMModelFactory). Falls back to a plain prompt string for models without a chat template. Only loads the SigLIP vision tower when `imageData != nil && supportsVision` to prevent OOM on 8 GB devices.
+- **`MLXInferenceService`** — MLX models via `mlx-swift-examples` (MLXLLM, VLMModelFactory). Falls back to a plain prompt string for models without a chat template. Only loads the SigLIP vision tower when `imageData != nil && supportsVision` to prevent OOM on 8 GB devices. Current integration is LLM/VLM (text + image); it does not include a dedicated MLX audio inference path.
 
 Both backends use **singleton actors** (`LocalLlamaRuntime.shared`, `MLXRuntime.shared`) for thread-safe C/MLX interop. The actors hold the loaded model context and reuse it across calls when model path and `maxGeneratedTokens` are unchanged.
 
@@ -94,36 +95,49 @@ Both backends use **singleton actors** (`LocalLlamaRuntime.shared`, `MLXRuntime.
 
 `maxGeneratedTokens` is 1024 for chat and 2048 when a `SearchContext` is present.
 
-`AssistantResponseSanitizer.clean()` (in `InferenceService.swift`) strips model-specific tokens (`<think>`, `<|im_end|>`, `[INST]`, etc.) from streamed output before display. Note: `<think>` blocks are **extracted live during streaming** by `ChatView` (via `updateMessageThinking`) and stored in `ChatMessage.thinkingContent` — they are not stripped here.
+`AssistantResponseSanitizer.clean()` (in `InferenceService.swift`) strips model-specific tokens (`<|im_end|>`, `[INST]`, etc.) from streamed output before display.
+
+### Stream processing (`Services/Inference/StreamProcessor.swift`)
+`StreamProcessor` is an `actor` that sits between the raw `AsyncStream<String>` from inference backends and the UI. It parses the token stream into typed `StreamEvent` values: `.textDelta`, `.thinkingDelta`, `.thinkingDone`, `.toolCall`, and `.done`. Both `LocalLlamaInferenceService` and `MLXInferenceService` wrap their raw streams through `StreamProcessor` before returning.
+
+Key behaviors:
+- **Think block extraction**: Detects `<think>`, `<thinking>`, `<reasoning>` tags (case-insensitive) and routes content to `.thinkingDelta`/`.thinkingDone` events. Auto-closes unclosed think blocks at stream end.
+- **Tool call parsing**: Detects `<tool_call>…</tool_call>` blocks, parses the JSON for a `name` field, and yields `.toolCall`. Only one tool call per stream is honored (`toolCallFired` guard) — subsequent `<tool_call>` blocks are flushed as plain text.
+- **Tag splitting caveat**: Tags split across token boundaries (e.g. `"<thi"` + `"nk>"`) are not detected. This is a known trade-off documented in the code.
 
 `MockInferenceService` (in `Services/Inference/`) provides a stub for SwiftUI previews and unit tests.
 
 ### Model catalog (`State/MockCatalogData.swift`)
-Static array of `ModelCatalogItem` structs. 35 entries across 4 families: Gemma, Qwen, LFM, Kokoro. Capability flags (`supportsVision`, `supportsToolCalling`, `isThinkingModel`, `supportsReasoning`) reflect actual model card specs — only set when the model has native tokens in its chat template or vision encoder in its weights. Do not add flags speculatively.
+Static array of `ModelCatalogItem` structs. Focused test set of 16 entries across 3 families: Gemma 4, Qwen 3.5, and LFM 2.5 (GGUF + MLX variants selected for iPhone edge testing). Capability flags (`supportsVision`, `supportsToolCalling`, `isThinkingModel`, `supportsReasoning`) should reflect runtime reality in this app, not only upstream model card claims.
+
+`ModelCatalogItem` also derives per-model input categories for UI disclosure: `sourceInputCategories` (what the upstream model supports) and `runtimeInputCategories` (what this app currently accepts). Example: GGUF vision-family entries may show source `Text + Image` but runtime `Text` when the current llama.cpp integration path is text-only.
 
 `supportsReasoning` and `isThinkingModel` are distinct flags: `isThinkingModel` means the model uses a native `<think>…</think>` streaming block (e.g. Qwen 3); `supportsReasoning` is a softer capability label.
 
-Models with `primaryUse: .voice` (Kokoro, LFM2.5 Audio) are filtered out of the chat model picker but appear in the Model Library.
+Voice models should only be cataloged when there is a fully wired inference/runtime path for them. `VoiceInteractionController` itself uses iOS STT/TTS and is independent from chat model inference.
 
 ### GGUF vs MLX model storage
 - **GGUF** models are downloaded to the app's Documents directory via `URLModelDownloadService`. `InstalledModel.localPath` (and `fileURL`) points to the `.gguf` file on disk.
-- **MLX** models are downloaded to the system caches directory by the HuggingFace Hub library. `InstalledModel.localPath` is not used; the runtime loads from `ModelCatalogItem.mlxModelID` (a HF repo ID string like `"mlx-community/gemma-3n-E2B-it-bf16"`).
+- **MLX** models are downloaded to the system caches directory by the HuggingFace Hub library. `InstalledModel.localPath` is not used; the runtime loads from `ModelCatalogItem.mlxModelID` (a HF repo ID string like `"mlx-community/gemma-4-e2b-it-4bit"`).
 
 ### Model catalog IDs are deterministic
 `ModelCatalogItem.id` is a UUID v5 derived from `"\(displayName)::\(variant)"`. **Do not rename `displayName` or `variant` of an existing catalog entry** — doing so generates a new UUID, orphaning any persisted `InstalledModel` records that reference the old ID.
 
 ### Voice layer (`Services/Voice/`)
-`VoiceInteractionController` is a `@MainActor ObservableObject` wrapping `SFSpeechRecognizer` (STT) and `AVSpeechSynthesizer` (TTS). It exposes `transcript`, `isListening`, and `isSpeaking` as `@Published` state. Requires microphone + speech recognition permissions at runtime. Voice models (Kokoro, LFM2.5 Audio) are separate from voice I/O — they are MLX inference models for on-device TTS, not used by `VoiceInteractionController`.
+`VoiceInteractionController` is a `@MainActor ObservableObject` wrapping `SFSpeechRecognizer` (STT) and `AVSpeechSynthesizer` (TTS). It exposes `transcript`, `isListening`, and `isSpeaking` as `@Published` state. Requires microphone + speech recognition permissions at runtime. This path is currently independent from GGUF/MLX chat inference models.
 
 ### Search layer (`Services/Search/`)
 `SearchGateway` protocol with four implementations: Tavily, Brave, Serper, and a passthrough custom gateway. `SearchGatewayFactory` picks the active provider from `AppSettings`. API keys are stored in app settings (not Keychain). The `backend/search-gateway/` directory is an optional Node.js/Express proxy that forwards to Tavily — used when `AppSettings.customGatewayURL` points at it.
+
+### Agentic search flow
+Tool-calling models (`supportsToolCalling`) use a two-pass inference loop: the model first receives the user message **without** search results and decides whether to emit a `<tool_call>` for `web_search`. If `StreamProcessor` yields a `.toolCall` event, `ChatView` executes the search via `SearchGateway`, then re-invokes inference with the search context injected. Non-tool-calling models fall back to upfront search (auto-detect or user toggle). The `liveSearchEnabled` toggle always forces upfront search regardless of model capabilities.
 
 ### HuggingFace token storage
 `HFTokenManager` stores the HF token in the iOS **Keychain** (not UserDefaults). Used by `ModelDownloadService` to add `Authorization: Bearer` headers for gated model downloads, and by `MLXRuntime` when building the `HubApi` for MLX model loading.
 
 ### Key wiring points
 - `LocalAIEdgeApp.swift` (@main): injects `AppStateStore` and `AuthStateStore` into the environment, gates `RootView` behind auth.
-- `ChatView.swift`: selects inference backend per model, drives the streaming loop via `Task { for await token in stream }` with 80 ms batched UI updates, and extracts `<think>` blocks live via `store.updateMessageThinking(...)`.
+- `ChatView.swift`: selects inference backend per model, drives the streaming loop by consuming `StreamEvent` values from `StreamProcessor`. Handles `.textDelta` (batched UI updates), `.thinkingDelta`/`.thinkingDone` (routed to `store.updateMessageThinking`), and `.toolCall` (triggers agentic search re-invocation).
 - `ModelLibraryView.swift`: triggers downloads via `ModelDownloadService`, updates progress through `AppStateStore.updateInstallProgress()`.
 - Cross-tab navigation uses `SelectedTabKey` `EnvironmentKey` — inject `@Environment(\.selectedTab)` and write to switch tabs without tight coupling.
 
@@ -137,7 +151,7 @@ Models with `primaryUse: .voice` (Kokoro, LFM2.5 Audio) are filtered out of the 
 
 ## llama.cpp xcframework
 
-The pre-built xcframework at `Vendor/build-apple/llama.xcframework` is Mach-O arm64 only. It will not link for x86_64 simulator targets. The `project.yml` sets `codeSign: false` and `embed: true` for this dependency. Do not replace or update the xcframework without rebuilding all test targets.
+The pre-built xcframework at `Vendor/build-apple/llama.xcframework` is vendored in-repo and linked directly via `project.yml` (`embed: true`, `codeSign: false`). Current `Info.plist` includes `ios-arm64` and `ios-arm64_x86_64-simulator` slices. Do not replace or update the xcframework without rebuilding all test targets.
 
 ## Backend Search Gateway (Optional)
 
@@ -154,6 +168,11 @@ Point `AppSettings.customGatewayURL` at `http://localhost:8787` in the app's Set
 
 ## Gotchas
 
+- **Gemma 4 thinking token format**: Gemma 4 models use `<|channel>thought\n...<channel|>` tokens for their thinking/reasoning block, NOT `<think>` tags. The app's `StreamProcessor` only detects `<think>`, `<thinking>`, `<reasoning>` tags. Therefore Gemma 4 thinking output renders as raw inline text — it is NOT routed to `.thinkingDelta` events. `isThinkingModel: false` is correct for Gemma 4 in the catalog. To fix this properly, add `<|channel>thought` / `<channel|>` detection to `StreamProcessor`.
+- **Qwen 3.5 models are VLMs**: All Qwen 3.5 sizes (0.8B–9B) have a vision encoder. They accept `image_url` inputs and report VideoMME benchmark scores. In the MLX app, image input works via `VLMModelFactory`. Context is 256K tokens (262,144), not 32K.
+- **Gemma 4 context**: Gemma 4 E2B and E4B support 128K tokens in context (not 32K as previously documented). The MLX runtime exposes the full context via the model weights.
+- **LFM2.5 VL tool calling is text-only**: Per the official docs, `LFM2.5-VL-1.6B` supports tool calling for text-only inputs. Tool calls will not fire when the message content includes an image.
+- **LFM2.5-1.2B-Thinking is a separate model**: The `LFM2.5-1.2B-Instruct` model does NOT have a thinking mode. Thinking is available only in `LFM2.5-1.2B-Thinking` (a distinct model variant not in the catalog). Do not set `isThinkingModel: true` for the Instruct variant.
 - **`PromptRenderer` dynamic budget**: `maxPromptTokens = max(256, nCtx - maxGeneratedTokens - 64)`. On a 2048 n_ctx device in search mode, this floors at 256 tokens. Do not hardcode prompt limits.
 - **Context reuse**: `LocalLlamaRuntime.ensureContext()` reloads when `maxGeneratedTokens` changes (search vs. chat mode). Switching between modes triggers a full model reload.
 - **MLX on simulator**: `#if canImport(MLXLLM) && !targetEnvironment(simulator)` guards all MLX calls. GGUF models still work in simulator.

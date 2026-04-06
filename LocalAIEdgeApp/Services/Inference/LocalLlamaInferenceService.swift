@@ -110,9 +110,20 @@ struct LocalLlamaInferenceService: InferenceService {
         guard model.catalogItem.supportsToolCalling else { return base }
         return base + """
 
-If you need current information to answer, call this tool:
-<tool_call>{"name":"web_search","query":"your search query here"}</tool_call>
-Only call it once. Do not call it for questions answerable from your training data.
+# Tools
+
+You have access to the following tool. Call it when you need current or real-time information (news, scores, weather, prices, recent events).
+
+## web_search
+Search the web for up-to-date information.
+Parameters: query (string) — the search query
+
+To call it, output ONLY this block (no other text before the closing tag):
+<tool_call>
+{"name": "web_search", "arguments": {"query": "your search query here"}}
+</tool_call>
+
+Call it at most once. Do not call it for questions you can answer from your training data.
 """
     }
 }
@@ -143,10 +154,8 @@ enum PromptRenderer {
         let fixedTokens = estimateTokens(systemContent) + estimateTokens(latestPrompt) + 200
         let historyBudget = maxPromptTokens - fixedTokens
 
-        var eligibleMessages = conversation.filter { $0.role != .search }
-        if let last = eligibleMessages.last, last.role == .user, last.text == latestPrompt {
-            eligibleMessages.removeLast()
-        }
+        // Conversation is prior history only — current user prompt is NOT included.
+        let eligibleMessages = conversation.filter { $0.role != .search && $0.role != .system }
 
         var historyTurns: [LocalLlamaChatTurn] = []
         var usedTokens = 0
@@ -190,10 +199,8 @@ enum PromptRenderer {
         let fixedTokens = estimateTokens(systemSection) + estimateTokens(latestPrompt) + 200
         let historyBudget = maxPromptTokens - fixedTokens
 
-        var eligibleMessages = conversation.filter { $0.role != .search }
-        if let last = eligibleMessages.last, last.role == .user, last.text == latestPrompt {
-            eligibleMessages.removeLast()
-        }
+        // Conversation is prior history only — current user prompt is NOT included.
+        let eligibleMessages = conversation.filter { $0.role != .search && $0.role != .system }
         var historyLines: [String] = []
         var usedTokens = 0
 

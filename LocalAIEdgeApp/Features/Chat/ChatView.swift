@@ -618,9 +618,11 @@ struct ChatView: View {
         // Encode image at bounded size to avoid memory spikes during persistence/inference.
         let jpegData = encodedAttachmentData(from: currentImage)
 
+        // Capture history BEFORE appending the current user message so inference
+        // services receive clean prior context without needing to deduplicate.
+        let conversation = store.selectedSession?.messages ?? []
         let userMessage = ChatMessage(role: .user, text: trimmedPrompt, imageData: jpegData)
         store.appendMessage(userMessage, to: sessionID)
-        let conversation = store.selectedSession?.messages ?? [userMessage]
         isInputFocused = false
         prompt = ""
         attachedImage = nil
@@ -632,11 +634,14 @@ struct ChatView: View {
         let task = Task {
             do {
                 let searchContext: SearchContext?
-                // Tool-calling models use the agentic path: they think first and decide
-                // whether to search via <tool_call>. Force-searching before inference
-                // breaks the think-first order, so we skip it for these models.
-                let useAgenticSearch = model.catalogItem.supportsToolCalling
-                if !useAgenticSearch && (liveSearchEnabled || store.settings.useSearchByDefault),
+                // Tool-calling models use the agentic path when the toggle is OFF:
+                // they think first and decide to search via <tool_call>.
+                // When the user explicitly enables the toggle, always search upfront.
+                // For all models, also auto-search when the question looks like it needs live data.
+                let agenticOnly = model.catalogItem.supportsToolCalling && !liveSearchEnabled && !store.settings.useSearchByDefault
+                let autoSearch = !agenticOnly && !liveSearchEnabled && !store.settings.useSearchByDefault
+                    && ChatView.looksLikeRealTimeQuery(trimmedPrompt)
+                if !agenticOnly && (liveSearchEnabled || store.settings.useSearchByDefault || autoSearch),
                    let gateway = SearchGatewayFactory.make(settings: store.settings) {
                     do {
                         searchContext = try await gateway.search(query: trimmedPrompt)
@@ -714,9 +719,13 @@ struct ChatView: View {
 
                     case .toolCall(let name, let argsJSON):
                         guard name == "web_search" else { break }
+                        // Parse query from either flat {"query":"..."} or Qwen3-style
+                        // {"name":"web_search","arguments":{"query":"..."}}
                         guard let data = argsJSON.data(using: .utf8),
-                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-                              let query = json["query"], !query.isEmpty else { break }
+                              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let query = (raw["query"] as? String)
+                                ?? ((raw["arguments"] as? [String: Any])?["query"] as? String),
+                              !query.isEmpty else { break }
 
                         let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(query)…")
                         await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
@@ -821,9 +830,40 @@ struct ChatView: View {
         generationTask = task
     }
 
-    private func resolveSearchContext(for prompt: String) async -> SearchContext? {
-        guard liveSearchEnabled || store.settings.useSearchByDefault else { return nil }
-        guard let gateway = SearchGatewayFactory.make(settings: store.settings) else { return nil }
-        return try? await gateway.search(query: prompt)
+    /// Heuristic: returns true when the question likely needs live/current data.
+    /// Uses whole-word matching to avoid false positives (e.g. "game" matching "gameplay").
+    static func looksLikeRealTimeQuery(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let wordCount = lower.split(separator: " ").count
+        // Very short messages or greetings — never auto-search
+        if wordCount <= 4 { return false }
+
+        // High-confidence multi-word signals — always search
+        let phrases = [
+            "right now", "latest news", "breaking news", "live score", "live update",
+            "today's news", "today's score", "today's match", "today's game", "today's weather",
+            "today's price", "current score", "current price", "current news",
+            "trending now", "what happened", "recent news", "latest update",
+            "stock price", "match result", "election result",
+            "who won", "who is winning", "what is the score", "weather today",
+            "news today", "cricket score", "football score", "nba score", "ipl score",
+            "ipl match", "ipl today"
+        ]
+        if phrases.contains(where: { lower.contains($0) }) { return true }
+
+        // Single-word signals — only when paired with a question indicator
+        let hasQuestion = lower.hasPrefix("what") || lower.hasPrefix("who") ||
+                          lower.hasPrefix("when") || lower.hasPrefix("where") ||
+                          lower.contains("?")
+        if !hasQuestion { return false }
+
+        // Whole-word check via regex word boundaries
+        let singleWordSignals = ["ipl", "cricket", "nba", "nfl", "premier league", "standings"]
+        for signal in singleWordSignals {
+            if let _ = lower.range(of: "\\b\(signal)\\b", options: .regularExpression) { return true }
+        }
+        // Year with question
+        if lower.contains("2025") || lower.contains("2026") { return true }
+        return false
     }
 }

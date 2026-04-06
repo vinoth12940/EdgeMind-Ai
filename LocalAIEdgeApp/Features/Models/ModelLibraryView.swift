@@ -157,7 +157,7 @@ struct ModelLibraryView: View {
                     .foregroundStyle(AppTheme.textPrimary)
             }
 
-            Text("\(store.catalog.count) chat models and voice assets from \(MockCatalogData.allLabs.count) labs — llama.cpp + MLX runtimes")
+            Text("\(store.catalog.count) chat models from \(MockCatalogData.allLabs.count) labs — Apple Silicon MLX")
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.textSecondary)
         }
@@ -494,7 +494,10 @@ struct ModelLibraryView: View {
                     capabilityBadges(item)
                 }
 
-                // Row 4: Summary (expandable)
+                // Row 4: Input categories (source vs app runtime)
+                inputCategoryRow(item)
+
+                // Row 5: Summary (expandable)
                 if isExpanded {
                     Text(item.summary)
                         .font(.caption)
@@ -503,7 +506,7 @@ struct ModelLibraryView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                // Row 5: Error message
+                // Row 6: Error message
                 if let msg = installed?.statusMessage, !msg.isEmpty {
                     Text(msg)
                         .font(.caption2)
@@ -511,7 +514,7 @@ struct ModelLibraryView: View {
                         .lineLimit(2)
                 }
 
-                // Row 6: Action buttons
+                // Row 7: Action buttons
                 actionRow(for: item, installed: installed)
             }
             .padding(14)
@@ -608,6 +611,52 @@ struct ModelLibraryView: View {
                 .padding(.vertical, 4)
                 .background(AppTheme.success.opacity(0.12))
                 .foregroundStyle(AppTheme.success)
+                .clipShape(Capsule())
+            }
+        }
+    }
+
+    // MARK: - Input Categories
+
+    private func inputCategoryRow(_ item: ModelCatalogItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            inputCategoryLine(
+                prefix: item.inputCategoriesDifferByRuntime ? "Input (Source)" : "Input",
+                categories: item.sourceInputCategories,
+                tint: AppTheme.textSecondary
+            )
+
+            if item.inputCategoriesDifferByRuntime {
+                inputCategoryLine(
+                    prefix: "Input (App)",
+                    categories: item.runtimeInputCategories,
+                    tint: AppTheme.accent
+                )
+            }
+        }
+    }
+
+    private func inputCategoryLine(
+        prefix: String,
+        categories: [ModelCatalogItem.InputCategory],
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(prefix)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(AppTheme.textSecondary)
+
+            ForEach(categories, id: \.self) { category in
+                HStack(spacing: 4) {
+                    Image(systemName: category.icon)
+                        .font(.system(size: 8, weight: .bold))
+                    Text(category.rawValue)
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(tint.opacity(0.12))
+                .foregroundStyle(tint)
                 .clipShape(Capsule())
             }
         }
@@ -839,14 +888,27 @@ struct ModelLibraryView: View {
         guard let model else { return }
 
         Task {
-            do {
-                try await downloadService.removeInstall(for: model)
+            if model.catalogItem.runtimeType == .mlx {
+                // MLX models: delete the HuggingFace Hub snapshot cache from disk.
+                // URLModelDownloadService does not manage Hub files — bypass it entirely.
+                #if canImport(MLXLLM) && !targetEnvironment(simulator)
+                if let mlxModelID = model.catalogItem.mlxModelID {
+                    await MLXRuntime.shared.removeModelCache(for: mlxModelID)
+                }
+                #endif
                 await MainActor.run {
                     store.removeInstalledModel(model.catalogItem)
                 }
-            } catch {
-                await MainActor.run {
-                    store.markInstallFailed(for: model.catalogItem, message: error.localizedDescription)
+            } else {
+                do {
+                    try await downloadService.removeInstall(for: model)
+                    await MainActor.run {
+                        store.removeInstalledModel(model.catalogItem)
+                    }
+                } catch {
+                    await MainActor.run {
+                        store.markInstallFailed(for: model.catalogItem, message: error.localizedDescription)
+                    }
                 }
             }
         }
