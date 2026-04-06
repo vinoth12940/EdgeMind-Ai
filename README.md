@@ -191,18 +191,29 @@ xcodegen generate
 ### Build for Device
 
 ```bash
-# Build for a connected device (replace device ID with yours)
-xcodebuild -project LocalAIEdgeApp.xcodeproj \
-  -scheme LocalAIEdgeApp \
-  -destination 'id=YOUR_DEVICE_UDID' \
-  -allowProvisioningUpdates \
-  build
+# Step 1: Build for physical iPhone (Apple Silicon MLX)
+xcodebuild -project LocalAIEdgeApp.xcodeproj -scheme LocalAIEdgeApp \
+  -destination 'generic/platform=iOS' build \
+  DEVELOPMENT_TEAM=43NV5DTHKG CODE_SIGN_STYLE=Automatic \
+  -allowProvisioningUpdates 2>&1 | tail -25
 
-# Install on device
-xcrun devicectl device install app \
-  --device YOUR_DEVICE_UDID \
-  ~/Library/Developer/Xcode/DerivedData/LocalAIEdgeApp-*/Build/Products/Debug-iphoneos/LocalAIEdgeApp.app
+# Step 2: Re-sign the vendored llama.framework + install on device
+APP_PATH="/Users/vinothrajalingam/Library/Developer/Xcode/DerivedData/LocalAIEdgeApp-gllewxtrntbibwghleczjzxazpss/Build/Products/Debug-iphoneos/LocalAIEdgeApp.app"
+codesign --force \
+  --sign "Apple Development: vinoth.rajalingam@icloud.com (3TUK6Q66NM)" \
+  --deep "$APP_PATH/Frameworks/llama.framework" && echo "Signed OK" \
+  && xcrun devicectl device install app \
+     --device 428A7E6B-8497-56D4-B7A2-02ABAD4FC996 "$APP_PATH"
 ```
+
+> **Key values (this repo)**
+> | Variable | Value |
+> |---|---|
+> | `DEVELOPMENT_TEAM` | `43NV5DTHKG` |
+> | Signing identity | `Apple Development: vinoth.rajalingam@icloud.com (3TUK6Q66NM)` |
+> | Device UUID ("Vinoths") | `428A7E6B-8497-56D4-B7A2-02ABAD4FC996` |
+> | DerivedData folder | `LocalAIEdgeApp-gllewxtrntbibwghleczjzxazpss` |
+> | Simulator destination | `platform=iOS Simulator,name=iPhone 16 Pro Test` |
 
 ### Sign in with Apple Capability (Required for Apple ID Login)
 
