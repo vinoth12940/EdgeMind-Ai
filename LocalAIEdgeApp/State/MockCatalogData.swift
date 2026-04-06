@@ -3,44 +3,46 @@ import Foundation
 enum MockCatalogData {
 
     // MARK: - Model Catalog
-    // MLX-only testing set: Gemma 3n, Qwen 3.5, LFM 2.5.
-    // All models use native Apple Silicon MLX runtime for best iPhone performance.
+    // Curated runnable set: Gemma 4 (GGUF) + Qwen 3.5 / LFM 2.5 (MLX).
+    // Capability flags reflect source vs runtime behavior in this app.
     // Capability flags reflect actual model card specs.
 
     static let items: [ModelCatalogItem] = [
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // GOOGLE DEEPMIND — Gemma 3n MLX
+        // GOOGLE DEEPMIND — Gemma 4 GGUF
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         ModelCatalogItem(
-            displayName: "Gemma 3n E2B (MLX)",
+            displayName: "Gemma 4 E2B (GGUF)",
             family: .gemma,
-            variant: "4-bit MLX",
-            summary: "Google Gemma 3n E2B on Apple Silicon. Native MLX multimodal model with text + image input and 32K context.",
+            variant: "Q4_K_M GGUF",
+            summary: "Google Gemma 4 E2B via llama.cpp GGUF runtime. Source model is multimodal, but current GGUF runtime path in this app is text-only.",
             parameterSize: "2B",
-            quantization: "MLX 4-bit",
-            diskSize: "~3.6 GB",
-            contextWindow: "32K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/gemma-3n-E2B-it-4bit",
-            supportsVision: true,
+            quantization: "GGUF Q4_K_M",
+            diskSize: "~1.6 GB",
+            contextWindow: "128K",
+            downloadURL: URL(string: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf?download=true"),
+            runtimeType: .gguf,
+            sourceSupportsVision: true,
+            supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: false,
             recommendedForIPhone: true
         ),
         ModelCatalogItem(
-            displayName: "Gemma 3n E4B (MLX)",
+            displayName: "Gemma 4 E4B (GGUF)",
             family: .gemma,
-            variant: "4-bit MLX",
-            summary: "Google Gemma 3n E4B on Apple Silicon. Higher-capacity multimodal model with text + image input and 32K context.",
+            variant: "Q4_K_M GGUF",
+            summary: "Google Gemma 4 E4B via llama.cpp GGUF runtime. Source model is multimodal, but current GGUF runtime path in this app is text-only.",
             parameterSize: "4B",
-            quantization: "MLX 4-bit",
-            diskSize: "~4.0 GB",
-            contextWindow: "32K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/gemma-3n-E4B-it-4bit",
-            supportsVision: true,
+            quantization: "GGUF Q4_K_M",
+            diskSize: "~2.6 GB",
+            contextWindow: "128K",
+            downloadURL: URL(string: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf?download=true"),
+            runtimeType: .gguf,
+            sourceSupportsVision: true,
+            supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: false,
             recommendedForIPhone: true
