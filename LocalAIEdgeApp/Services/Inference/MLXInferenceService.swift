@@ -26,8 +26,22 @@ actor MLXRuntime {
     private var activeContainer: ModelContainer?
     private var activeIsVision: Bool = false
 
+    /// Some Gemma 4 repos expose model types that are not yet supported by the pinned
+    /// MLX runtime stack in this app. Route those IDs to supported Gemma 3n equivalents.
+    private func resolvedModelID(_ modelID: String) -> String {
+        switch modelID {
+        case "mlx-community/gemma-4-e2b-it-4bit":
+            return "mlx-community/gemma-3n-E2B-it-lm-4bit"
+        case "mlx-community/gemma-4-e4b-it-4bit":
+            return "mlx-community/gemma-3n-E4B-it-lm-4bit"
+        default:
+            return modelID
+        }
+    }
+
     private func ensureModel(_ modelID: String, isVision: Bool) async throws -> ModelContainer {
-        if activeModelID != modelID || activeContainer == nil || activeIsVision != isVision {
+        let runtimeModelID = resolvedModelID(modelID)
+        if activeModelID != runtimeModelID || activeContainer == nil || activeIsVision != isVision {
             // Unload previous model first to free GPU memory before loading new one
             if activeContainer != nil {
                 mlxLogger.log("Unloading previous model before loading new one")
@@ -35,11 +49,11 @@ actor MLXRuntime {
                 GPU.clearCache()
             }
 
-            mlxLogger.log("Loading MLX model: \(modelID, privacy: .public) (vision: \(isVision))")
+            mlxLogger.log("Loading MLX model: \(runtimeModelID, privacy: .public) (vision: \(isVision))")
             // Vision models need more GPU cache for the SigLIP vision tower + image tensors
             GPU.set(cacheLimit: (isVision ? 768 : 512) * 1024 * 1024)
             let hub = authenticatedHubApi()
-            let configuration = ModelConfiguration(id: modelID)
+            let configuration = ModelConfiguration(id: runtimeModelID)
 
             // Retry up to 2 times for transient failures (rate limits, network blips)
             var lastError: Error?
@@ -69,7 +83,7 @@ actor MLXRuntime {
                 throw lastError
             }
 
-            activeModelID = modelID
+            activeModelID = runtimeModelID
             activeIsVision = isVision
         }
         guard let container = activeContainer else {
@@ -166,22 +180,24 @@ actor MLXRuntime {
     /// Delete the on-disk Hub snapshot cache for a downloaded MLX model.
     /// The cache lives at `<CachesDir>/huggingface/hub/models--<org>--<repo>/`.
     func removeModelCache(for modelID: String) {
+        let runtimeModelID = resolvedModelID(modelID)
         guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
-        let dirName = "models--" + modelID.replacingOccurrences(of: "/", with: "--")
+        let dirName = "models--" + runtimeModelID.replacingOccurrences(of: "/", with: "--")
         let cacheDir = base
             .appending(path: "huggingface", directoryHint: .isDirectory)
             .appending(path: "hub", directoryHint: .isDirectory)
             .appending(path: dirName, directoryHint: .isDirectory)
         try? FileManager.default.removeItem(at: cacheDir)
-        mlxLogger.log("MLX Hub cache removed for: \(modelID, privacy: .public)")
+        mlxLogger.log("MLX Hub cache removed for: \(runtimeModelID, privacy: .public)")
     }
 
     /// Pre-download an MLX model with progress reporting.
     /// Downloads files to disk only — does NOT load weights into GPU memory.
     func preloadModel(_ modelID: String, isVision: Bool = false, progress: @escaping @Sendable (Double) -> Void) async throws {
-        mlxLogger.log("Downloading MLX model (no GPU load): \(modelID, privacy: .public)")
+        let runtimeModelID = resolvedModelID(modelID)
+        mlxLogger.log("Downloading MLX model (no GPU load): \(runtimeModelID, privacy: .public)")
         let hub = authenticatedHubApi()
-        let configuration = ModelConfiguration(id: modelID)
+        let configuration = ModelConfiguration(id: runtimeModelID)
         // Use downloadModel() which only downloads files via hub.snapshot() —
         // does NOT load weights into GPU memory, avoiding OOM on 8GB devices.
         _ = try await downloadModel(hub: hub, configuration: configuration) { p in
@@ -189,7 +205,7 @@ actor MLXRuntime {
             mlxLogger.log("MLX download progress: \(fraction)")
             progress(fraction)
         }
-        mlxLogger.log("MLX model downloaded to disk: \(modelID, privacy: .public)")
+        mlxLogger.log("MLX model downloaded to disk: \(runtimeModelID, privacy: .public)")
     }
 }
 
