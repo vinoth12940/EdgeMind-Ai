@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import ImageIO
+import AVFoundation
 
 struct ChatComposerView: View {
     @Binding var prompt: String
@@ -20,7 +21,9 @@ struct ChatComposerView: View {
     @FocusState private var isFocused: Bool
     @State private var showCamera = false
     @State private var showPhotoPicker = false
+    @State private var showVideoPicker = false
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedVideoItem: PhotosPickerItem?
     @State private var showSearchNotConfigured = false
 
     private var canSend: Bool {
@@ -89,6 +92,9 @@ struct ChatComposerView: View {
                         }
                         Button { showPhotoPicker = true } label: {
                             Label("Attach photo", systemImage: "photo.on.rectangle")
+                        }
+                        Button { showVideoPicker = true } label: {
+                            Label("Attach video", systemImage: "video")
                         }
                     } label: {
                         Image(systemName: "plus")
@@ -386,6 +392,7 @@ struct ChatComposerView: View {
             Text("Go to Settings → Web Search API and select a provider with an API key.")
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared())
+        .photosPicker(isPresented: $showVideoPicker, selection: $selectedVideoItem, matching: .videos, photoLibrary: .shared())
         .onAppear {
             isFocused = isInputFocused
         }
@@ -416,6 +423,27 @@ struct ChatComposerView: View {
                 }
             }
         }
+        .onChange(of: selectedVideoItem) { _, newItem in
+            Task {
+                guard let newItem else { return }
+
+                let storyboard: UIImage?
+                if let movieURL = try? await newItem.loadTransferable(type: URL.self) {
+                    storyboard = await Task.detached(priority: .userInitiated) {
+                        Self.extractStoryboardImage(from: movieURL, frameCount: 4, maxDimension: 1024)
+                    }.value
+                } else {
+                    storyboard = nil
+                }
+
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        attachedImage = storyboard
+                    }
+                    selectedVideoItem = nil
+                }
+            }
+        }
     }
 
     private static func downsample(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
@@ -441,5 +469,65 @@ struct ChatComposerView: View {
         }
 
         return UIImage(cgImage: cgImage)
+    }
+
+    private static func extractStoryboardImage(from videoURL: URL, frameCount: Int, maxDimension: CGFloat) -> UIImage? {
+        let asset = AVURLAsset(url: videoURL)
+        let durationSeconds = max(0.1, CMTimeGetSeconds(asset.duration))
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+
+        let framePoints: [Double]
+        if frameCount <= 1 {
+            framePoints = [0.5]
+        } else {
+            framePoints = (0..<frameCount).map { idx in
+                0.1 + (0.8 * Double(idx) / Double(frameCount - 1))
+            }
+        }
+
+        var frames: [UIImage] = []
+        frames.reserveCapacity(frameCount)
+
+        for point in framePoints {
+            let t = CMTime(seconds: durationSeconds * point, preferredTimescale: 600)
+            if let cg = try? generator.copyCGImage(at: t, actualTime: nil) {
+                let frame = downsample(UIImage(cgImage: cg), maxDimension: maxDimension)
+                frames.append(frame)
+            }
+        }
+
+        guard !frames.isEmpty else { return nil }
+        if frames.count == 1 { return frames[0] }
+        return makeCollage(from: frames, maxDimension: maxDimension)
+    }
+
+    private static func makeCollage(from images: [UIImage], maxDimension: CGFloat) -> UIImage? {
+        let columns = 2
+        let rows = Int(ceil(Double(images.count) / Double(columns)))
+        let tile = maxDimension / CGFloat(columns)
+        let canvasSize = CGSize(width: tile * CGFloat(columns), height: tile * CGFloat(rows))
+        let renderer = UIGraphicsImageRenderer(size: canvasSize)
+
+        return renderer.image { _ in
+            UIColor.black.setFill()
+            UIRectFill(CGRect(origin: .zero, size: canvasSize))
+
+            for (index, image) in images.enumerated() {
+                let row = index / columns
+                let col = index % columns
+                let cell = CGRect(x: CGFloat(col) * tile, y: CGFloat(row) * tile, width: tile, height: tile)
+
+                let fitScale = min(cell.width / image.size.width, cell.height / image.size.height)
+                let drawSize = CGSize(width: image.size.width * fitScale, height: image.size.height * fitScale)
+                let drawRect = CGRect(
+                    x: cell.midX - drawSize.width / 2,
+                    y: cell.midY - drawSize.height / 2,
+                    width: drawSize.width,
+                    height: drawSize.height
+                )
+                image.draw(in: drawRect)
+            }
+        }
     }
 }
