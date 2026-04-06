@@ -3,46 +3,46 @@ import Foundation
 enum MockCatalogData {
 
     // MARK: - Model Catalog
-    // MLX-only testing set: Gemma 4, Qwen 3.5, LFM 2.5.
+    // MLX-only testing set: Gemma 3n, Qwen 3.5, LFM 2.5.
     // All models use native Apple Silicon MLX runtime for best iPhone performance.
     // Capability flags reflect actual model card specs.
 
     static let items: [ModelCatalogItem] = [
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // GOOGLE DEEPMIND — Gemma 4 MLX
+        // GOOGLE DEEPMIND — Gemma 3n MLX
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         ModelCatalogItem(
-            displayName: "Gemma 4 E2B (MLX)",
+            displayName: "Gemma 3n E2B (MLX)",
             family: .gemma,
             variant: "4-bit MLX",
-            summary: "Google Gemma 4 E2B on Apple Silicon. Image + text via mlx-vlm, native tool calling, 128K context. Thinking uses non-standard token format — not parsed by StreamProcessor.",
+            summary: "Google Gemma 3n E2B on Apple Silicon. Native MLX multimodal model with text + image input and 32K context.",
             parameterSize: "2B",
             quantization: "MLX 4-bit",
-            diskSize: "~1.8 GB",
-            contextWindow: "128K",
+            diskSize: "~3.6 GB",
+            contextWindow: "32K",
             runtimeType: .mlx,
-            mlxModelID: "mlx-community/gemma-4-e2b-it-4bit",
+            mlxModelID: "mlx-community/gemma-3n-E2B-it-4bit",
             supportsVision: true,
             supportsReasoning: true,
-            supportsToolCalling: true,
+            supportsToolCalling: false,
             recommendedForIPhone: true
         ),
         ModelCatalogItem(
-            displayName: "Gemma 4 E4B (MLX)",
+            displayName: "Gemma 3n E4B (MLX)",
             family: .gemma,
             variant: "4-bit MLX",
-            summary: "Google Gemma 4 E4B on Apple Silicon. Best edge quality with image + text via mlx-vlm, native tool calling, 128K context. Thinking uses non-standard token format — not parsed by StreamProcessor.",
+            summary: "Google Gemma 3n E4B on Apple Silicon. Higher-capacity multimodal model with text + image input and 32K context.",
             parameterSize: "4B",
             quantization: "MLX 4-bit",
-            diskSize: "~3.0 GB",
-            contextWindow: "128K",
+            diskSize: "~4.0 GB",
+            contextWindow: "32K",
             runtimeType: .mlx,
-            mlxModelID: "mlx-community/gemma-4-e4b-it-4bit",
+            mlxModelID: "mlx-community/gemma-3n-E4B-it-4bit",
             supportsVision: true,
             supportsReasoning: true,
-            supportsToolCalling: true,
+            supportsToolCalling: false,
             recommendedForIPhone: true
         ),
 

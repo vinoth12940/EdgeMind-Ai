@@ -48,6 +48,8 @@ final class AppStateStore {
         } else {
             self.installedModels = installedModels
         }
+
+        migrateDeprecatedGemmaEntriesIfNeeded()
     }
 
     var selectedSession: ChatSession? {
@@ -360,6 +362,56 @@ final class AppStateStore {
 #else
             return true
 #endif
+        }
+    }
+
+    /// One-time migration for deprecated Gemma 4 MLX catalog IDs.
+    /// Rebinds persisted installs to supported Gemma 3n catalog entries.
+    private func migrateDeprecatedGemmaEntriesIfNeeded() {
+        let replacementMap: [String: String] = [
+            "mlx-community/gemma-4-e2b-it-4bit": "mlx-community/gemma-3n-E2B-it-4bit",
+            "mlx-community/gemma-4-e4b-it-4bit": "mlx-community/gemma-3n-E4B-it-4bit"
+        ]
+
+        var didChange = false
+        var migratedDefaultModelID = settings.defaultModelID
+
+        let migrated = installedModels.compactMap { model -> InstalledModel? in
+            guard let oldModelID = model.catalogItem.mlxModelID,
+                  let newModelID = replacementMap[oldModelID] else {
+                return model
+            }
+
+            guard let newCatalogItem = catalog.first(where: { $0.mlxModelID == newModelID }) else {
+                didChange = true
+                if migratedDefaultModelID == model.catalogItem.id {
+                    migratedDefaultModelID = nil
+                }
+                return nil
+            }
+
+            didChange = true
+            if migratedDefaultModelID == model.catalogItem.id {
+                migratedDefaultModelID = newCatalogItem.id
+            }
+
+            return InstalledModel(
+                id: model.id,
+                catalogItem: newCatalogItem,
+                installState: model.installState,
+                progress: model.progress,
+                installedAt: model.installedAt,
+                localPath: newModelID,
+                isDefault: model.isDefault,
+                statusMessage: model.statusMessage
+            )
+        }
+
+        if didChange {
+            installedModels = migrated
+            settings.defaultModelID = migratedDefaultModelID
+            saveInstalledModels()
+            saveSettings()
         }
     }
 }
