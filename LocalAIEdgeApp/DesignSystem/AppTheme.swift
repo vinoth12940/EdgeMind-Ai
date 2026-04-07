@@ -1,54 +1,70 @@
 import SwiftUI
 
 enum AppTheme {
-    // MARK: - Core Palette
-    static let background = Color(red: 0.04, green: 0.04, blue: 0.06)
-    static let panel = Color(red: 0.07, green: 0.08, blue: 0.11)
-    static let panelRaised = Color(red: 0.10, green: 0.12, blue: 0.17)
-    static let panelHover = Color(red: 0.13, green: 0.15, blue: 0.21)
-    static let accent = Color(red: 0.20, green: 0.72, blue: 1.0)
-    static let accentSoft = Color(red: 0.34, green: 0.44, blue: 0.98)
-    static let success = Color(red: 0.22, green: 0.82, blue: 0.56)
-    static let warning = Color(red: 0.98, green: 0.74, blue: 0.28)
-    static let destructive = Color(red: 0.95, green: 0.30, blue: 0.35)
-    static let textPrimary = Color.white
-    static let textSecondary = Color.white.opacity(0.55)
-    static let textTertiary = Color.white.opacity(0.30)
-    static let hairline = Color.white.opacity(0.06)
+    // MARK: - Core Palette (Obsidian 2026)
+    static let background = Color(red: 0.03, green: 0.03, blue: 0.05)
+    static let panel = Color(red: 0.06, green: 0.06, blue: 0.10)
+    static let panelRaised = Color(red: 0.09, green: 0.09, blue: 0.14)
+    static let panelHover = Color(red: 0.12, green: 0.12, blue: 0.18)
+    static let accent = Color(red: 0.30, green: 0.78, blue: 1.0)
+    static let accentSoft = Color(red: 0.45, green: 0.40, blue: 1.0)
+    static let accentWarm = Color(red: 1.0, green: 0.55, blue: 0.35)
+    static let success = Color(red: 0.20, green: 0.88, blue: 0.62)
+    static let warning = Color(red: 1.0, green: 0.78, blue: 0.32)
+    static let destructive = Color(red: 1.0, green: 0.34, blue: 0.38)
+    static let textPrimary = Color(red: 0.96, green: 0.96, blue: 0.98)
+    static let textSecondary = Color.white.opacity(0.50)
+    static let textTertiary = Color.white.opacity(0.26)
+    static let hairline = Color.white.opacity(0.07)
     static let divider = Color.white.opacity(0.04)
 
     // MARK: - Gradients
     static let glow = LinearGradient(
-        colors: [accent.opacity(0.6), accentSoft.opacity(0.25), .clear],
+        colors: [accent.opacity(0.5), accentSoft.opacity(0.2), .clear],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
     static let meshBackground = LinearGradient(
         colors: [
-            Color(red: 0.06, green: 0.04, blue: 0.12),
-            Color(red: 0.03, green: 0.06, blue: 0.10),
-            Color(red: 0.04, green: 0.04, blue: 0.06)
+            Color(red: 0.05, green: 0.03, blue: 0.10),
+            Color(red: 0.02, green: 0.04, blue: 0.08),
+            Color(red: 0.03, green: 0.03, blue: 0.05)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
     static let userBubbleGradient = LinearGradient(
-        colors: [accent, accentSoft],
+        colors: [
+            Color(red: 0.28, green: 0.52, blue: 1.0),
+            Color(red: 0.42, green: 0.35, blue: 0.95)
+        ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
 
     static let subtleGlow = LinearGradient(
-        colors: [accent.opacity(0.08), .clear],
+        colors: [accent.opacity(0.06), .clear],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static let accentGradient = LinearGradient(
+        colors: [accent, accentSoft],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+
+    static let surfaceGradient = LinearGradient(
+        colors: [panel, panelRaised.opacity(0.5)],
         startPoint: .top,
         endPoint: .bottom
     )
 
     // MARK: - Shadows
-    static let softShadow = Color.black.opacity(0.45)
-    static let glowShadow = accent.opacity(0.2)
+    static let softShadow = Color.black.opacity(0.50)
+    static let glowShadow = accent.opacity(0.15)
 
     // MARK: - Lab Colors
     static let labGoogle = Color(red: 0.26, green: 0.52, blue: 0.96)
@@ -107,12 +123,23 @@ struct GlassCardModifier: ViewModifier {
             .padding(padding)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(AppTheme.panel.opacity(0.85))
-                    .shadow(color: AppTheme.softShadow, radius: 16, x: 0, y: 8)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(AppTheme.panel.opacity(0.6))
+                    )
+                    .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(AppTheme.hairline, lineWidth: 1)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.5
+                    )
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
@@ -127,18 +154,22 @@ struct AccentGlassCardModifier: ViewModifier {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(AppTheme.panel.opacity(0.9))
-                    .shadow(color: accentColor.opacity(0.08), radius: 12, x: 0, y: 6)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(AppTheme.panel.opacity(0.65))
+                    )
+                    .shadow(color: accentColor.opacity(0.06), radius: 16, x: 0, y: 8)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [accentColor.opacity(0.45), AppTheme.hairline],
+                            colors: [accentColor.opacity(0.35), Color.white.opacity(0.04)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1
+                        lineWidth: 0.5
                     )
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -174,22 +205,23 @@ struct TypingIndicator: View {
 
 /// Shimmer loading placeholder
 struct ShimmerModifier: ViewModifier {
-    @State private var phase: CGFloat = 0
+    @State private var phase: CGFloat = -200
 
     func body(content: Content) -> some View {
         content
             .overlay(
                 LinearGradient(
-                    colors: [.clear, Color.white.opacity(0.08), .clear],
+                    colors: [.clear, Color.white.opacity(0.06), Color.white.opacity(0.10), Color.white.opacity(0.06), .clear],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
+                .frame(width: 200)
                 .offset(x: phase)
                 .mask(content)
             )
             .onAppear {
-                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
-                    phase = 300
+                withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) {
+                    phase = 400
                 }
             }
     }
@@ -202,9 +234,9 @@ struct PulseGlow: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .shadow(color: color.opacity(isPulsing ? 0.5 : 0.15), radius: isPulsing ? 12 : 4)
+            .shadow(color: color.opacity(isPulsing ? 0.4 : 0.10), radius: isPulsing ? 16 : 6)
             .onAppear {
-                withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
                     isPulsing = true
                 }
             }

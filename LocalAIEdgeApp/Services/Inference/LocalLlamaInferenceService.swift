@@ -38,7 +38,9 @@ struct LocalLlamaInferenceService: InferenceService {
             modelName: model.catalogItem.displayName
         )
 
-        let maxGeneratedTokens: Int32 = searchContext != nil ? 2048 : 1024
+        let nCtx = DeviceCapabilityService.contextSize()
+        let rawMax: Int32 = searchContext != nil ? 2048 : 1024
+        let maxGeneratedTokens = min(rawMax, nCtx / 2)
         do {
             let response = try await LocalLlamaRuntime.shared.generate(
                 chat: chatTurns,
@@ -48,7 +50,7 @@ struct LocalLlamaInferenceService: InferenceService {
             )
             return ChatMessage(
                 role: .assistant,
-                text: response.isEmpty ? "The model finished without returning text. Try a shorter prompt or another model." : response,
+                text: response.isEmpty ? AssistantResponseFallback.emptyOutput : response,
                 citations: searchContext?.citations ?? []
             )
         } catch {
@@ -93,7 +95,9 @@ struct LocalLlamaInferenceService: InferenceService {
             modelName: model.catalogItem.displayName
         )
 
-        let maxGeneratedTokens: Int32 = searchContext != nil ? 2048 : 1024
+        let nCtx = DeviceCapabilityService.contextSize()
+        let rawMax: Int32 = searchContext != nil ? 2048 : 1024
+        let maxGeneratedTokens = min(rawMax, nCtx / 2)
         let messageID = UUID()
         let rawStream = try await LocalLlamaRuntime.shared.generateStream(
             chat: chatTurns,
@@ -107,7 +111,7 @@ struct LocalLlamaInferenceService: InferenceService {
 
     /// Appends tool call definition to system prompt for tool-calling models.
     private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
-        guard model.catalogItem.supportsToolCalling else { return base }
+        guard model.catalogItem.supportsToolCalling, !base.contains("## web_search") else { return base }
         return base + """
 
 # Tools
@@ -145,17 +149,19 @@ enum PromptRenderer {
             systemContent += "\n\nWeb Search Results:\n\(snippets)"
         }
 
-        var turns: [LocalLlamaChatTurn] = []
-        turns.append(LocalLlamaChatTurn(role: "system", content: systemContent))
-
         let maxTokensForGeneration: Int32 = searchContext != nil ? 2048 : 1024
         let nCtx = DeviceCapabilityService.contextSize()
         let maxPromptTokens = max(256, Int(nCtx) - Int(maxTokensForGeneration) - 64)
-        let fixedTokens = estimateTokens(systemContent) + estimateTokens(latestPrompt) + 200
+        let fixedTokens = estimateTokens(systemContent) + estimateTokens(latestPrompt) + 128
         let historyBudget = maxPromptTokens - fixedTokens
 
         // Conversation is prior history only — current user prompt is NOT included.
-        let eligibleMessages = conversation.filter { $0.role != .search && $0.role != .system }
+        let eligibleMessages = conversation.filter {
+            $0.role != .search &&
+            $0.role != .system &&
+            !AssistantResponseFallback.shouldSkipInHistory($0) &&
+            !$0.text.contains("<tool_call>")
+        }
 
         var historyTurns: [LocalLlamaChatTurn] = []
         var usedTokens = 0
@@ -173,8 +179,35 @@ enum PromptRenderer {
             usedTokens += cost
         }
 
+        if usesGemmaTurnFormat(modelName) {
+            // Gemma 2/3 templates use role "model" instead of "assistant"
+            let gemmaTurns = historyTurns.map { turn in
+                turn.role == "assistant"
+                    ? LocalLlamaChatTurn(role: "model", content: turn.content)
+                    : turn
+            }
+            return buildGemmaChatTurns(
+                systemContent: systemContent,
+                historyTurns: gemmaTurns,
+                latestPrompt: latestPrompt
+            )
+        }
+
+        // Gemma 4 uses native <start_of_turn>system which the hardcoded
+        // LLM_CHAT_TEMPLATE_GEMMA handler in llama.cpp does NOT support
+        // (it folds system into the first user turn — correct for Gemma 2/3
+        // but wrong for Gemma 4). Returning empty turns forces the runtime
+        // to use the hand-crafted fallback from renderGemma4FallbackPrompt()
+        // which produces the correct native-system format.
+        if isGemma4(modelName) {
+            return []
+        }
+
+        var turns: [LocalLlamaChatTurn] = []
+        turns.append(LocalLlamaChatTurn(role: "system", content: systemContent))
         turns.append(contentsOf: historyTurns)
         turns.append(LocalLlamaChatTurn(role: "user", content: latestPrompt))
+
         return turns
     }
 
@@ -196,11 +229,16 @@ enum PromptRenderer {
         let maxTokensForGeneration: Int32 = searchContext != nil ? 2048 : 1024
         let nCtx = DeviceCapabilityService.contextSize()
         let maxPromptTokens = max(256, Int(nCtx) - Int(maxTokensForGeneration) - 64)
-        let fixedTokens = estimateTokens(systemSection) + estimateTokens(latestPrompt) + 200
+        let fixedTokens = estimateTokens(systemSection) + estimateTokens(latestPrompt) + 128
         let historyBudget = maxPromptTokens - fixedTokens
 
         // Conversation is prior history only — current user prompt is NOT included.
-        let eligibleMessages = conversation.filter { $0.role != .search && $0.role != .system }
+        let eligibleMessages = conversation.filter {
+            $0.role != .search &&
+            $0.role != .system &&
+            !AssistantResponseFallback.shouldSkipInHistory($0) &&
+            !$0.text.contains("<tool_call>")
+        }
         var historyLines: [String] = []
         var usedTokens = 0
 
@@ -217,6 +255,24 @@ enum PromptRenderer {
             usedTokens += cost
         }
 
+        if usesGemmaTurnFormat(modelName) {
+            return renderGemmaFallbackPrompt(
+                systemSection: systemSection,
+                conversation: eligibleMessages,
+                latestPrompt: latestPrompt,
+                historyBudget: historyBudget
+            )
+        }
+
+        if isGemma4(modelName) {
+            return renderGemma4FallbackPrompt(
+                systemSection: systemSection,
+                conversation: eligibleMessages,
+                latestPrompt: latestPrompt,
+                historyBudget: historyBudget
+            )
+        }
+
         var parts: [String] = [systemSection]
         if !historyLines.isEmpty {
             parts.append(historyLines.joined(separator: "\n"))
@@ -226,6 +282,123 @@ enum PromptRenderer {
     }
 
     // MARK: - Helpers
+
+    /// Gemma 4 uses standard system/user/assistant roles (not user/model like Gemma 2/3).
+    private static func isGemma4(_ modelName: String) -> Bool {
+        modelName.localizedCaseInsensitiveContains("gemma 4") ||
+        modelName.localizedCaseInsensitiveContains("gemma-4") ||
+        modelName.localizedCaseInsensitiveContains("gemma4")
+    }
+
+    private static func usesGemmaTurnFormat(_ modelName: String) -> Bool {
+        modelName.localizedCaseInsensitiveContains("gemma") && !isGemma4(modelName)
+    }
+
+    private static func buildGemmaChatTurns(
+        systemContent: String,
+        historyTurns: [LocalLlamaChatTurn],
+        latestPrompt: String
+    ) -> [LocalLlamaChatTurn] {
+        var turns: [LocalLlamaChatTurn] = []
+
+        if let firstUserIndex = historyTurns.firstIndex(where: { $0.role == "user" }) {
+            for (index, turn) in historyTurns.enumerated() {
+                if index == firstUserIndex {
+                    turns.append(
+                        LocalLlamaChatTurn(
+                            role: "user",
+                            content: systemContent + "\n\n" + turn.content
+                        )
+                    )
+                } else {
+                    turns.append(turn)
+                }
+            }
+        } else {
+            turns.append(LocalLlamaChatTurn(role: "user", content: systemContent + "\n\n" + latestPrompt))
+            return turns
+        }
+
+        turns.append(LocalLlamaChatTurn(role: "user", content: latestPrompt))
+        return turns
+    }
+
+    /// Gemma 4 fallback: uses native system role + model role (not assistant).
+    private static func renderGemma4FallbackPrompt(
+        systemSection: String,
+        conversation: [ChatMessage],
+        latestPrompt: String,
+        historyBudget: Int
+    ) -> String {
+        var retainedMessages: [ChatMessage] = []
+        var usedTokens = 0
+
+        for message in conversation.reversed() {
+            let cost = estimateTokens(message.text)
+            if usedTokens + cost > historyBudget { break }
+            retainedMessages.insert(message, at: 0)
+            usedTokens += cost
+        }
+
+        // Gemma 4 uses <|turn> / <turn|> tokens (NOT <start_of_turn> / <end_of_turn>)
+        // See: https://huggingface.co/google/gemma-4-e2b-it tokenizer_config.json
+        // Ref: https://unsloth.ai/docs/models/gemma-4
+        var promptTurns: [String] = []
+        promptTurns.append("<|turn>system\n\(systemSection)<turn|>")
+
+        for message in retainedMessages {
+            switch message.role {
+            case .user:
+                promptTurns.append("<|turn>user\n\(message.text)<turn|>")
+            case .assistant:
+                promptTurns.append("<|turn>model\n\(message.text)<turn|>")
+            case .system, .search:
+                continue
+            }
+        }
+
+        promptTurns.append("<|turn>user\n\(latestPrompt)<turn|>")
+        promptTurns.append("<|turn>model\n")
+        return promptTurns.joined(separator: "\n")
+    }
+
+    private static func renderGemmaFallbackPrompt(
+        systemSection: String,
+        conversation: [ChatMessage],
+        latestPrompt: String,
+        historyBudget: Int
+    ) -> String {
+        var retainedMessages: [ChatMessage] = []
+        var usedTokens = 0
+
+        for message in conversation.reversed() {
+            let cost = estimateTokens(message.text)
+            if usedTokens + cost > historyBudget { break }
+            retainedMessages.insert(message, at: 0)
+            usedTokens += cost
+        }
+
+        var promptTurns: [String] = []
+        var systemInjected = false
+
+        for message in retainedMessages {
+            switch message.role {
+            case .user:
+                let content = systemInjected ? message.text : "\(systemSection)\n\n\(message.text)"
+                promptTurns.append("<start_of_turn>user\n\(content)<end_of_turn>")
+                systemInjected = true
+            case .assistant:
+                promptTurns.append("<start_of_turn>model\n\(message.text)<end_of_turn>")
+            case .system, .search:
+                continue
+            }
+        }
+
+        let latestUserTurn = systemInjected ? latestPrompt : "\(systemSection)\n\n\(latestPrompt)"
+        promptTurns.append("<start_of_turn>user\n\(latestUserTurn)<end_of_turn>")
+        promptTurns.append("<start_of_turn>model\n")
+        return promptTurns.joined(separator: "\n")
+    }
 
     private static func searchSnippets(_ searchContext: SearchContext) -> String {
         searchContext.snippets.prefix(5).enumerated().map { index, snippet in

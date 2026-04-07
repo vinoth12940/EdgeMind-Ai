@@ -168,11 +168,19 @@ actor LocalLlamaContext {
             throw LocalLlamaRuntimeError.couldNotInitializeContext
         }
 
-        llama_sampler_chain_add(sampling, llama_sampler_init_top_k(40))
-        llama_sampler_chain_add(sampling, llama_sampler_init_top_p(0.9, 1))
+        // Gemma 4 recommended: temp=1.0, top_k=64, top_p=0.95, rep_penalty=1.0
+        // See: https://unsloth.ai/docs/models/gemma-4
+        let isGemma4 = normalizedPath.lowercased().contains("gemma-4") || normalizedPath.lowercased().contains("gemma4")
+        let topK: Int32 = isGemma4 ? 64 : 40
+        let topP: Float = isGemma4 ? 0.95 : 0.9
+        let temp: Float = isGemma4 ? 1.0 : 0.7
+        let repPenalty: Float = isGemma4 ? 1.0 : 1.1
+
+        llama_sampler_chain_add(sampling, llama_sampler_init_top_k(topK))
+        llama_sampler_chain_add(sampling, llama_sampler_init_top_p(topP, 1))
         llama_sampler_chain_add(sampling, llama_sampler_init_min_p(0.05, 1))
-        llama_sampler_chain_add(sampling, llama_sampler_init_temp(0.7))
-        llama_sampler_chain_add(sampling, llama_sampler_init_penalties(64, 1.1, 0.0, 0.0))
+        llama_sampler_chain_add(sampling, llama_sampler_init_temp(temp))
+        llama_sampler_chain_add(sampling, llama_sampler_init_penalties(64, repPenalty, 0.0, 0.0))
         llama_sampler_chain_add(sampling, llama_sampler_init_dist(1234))
 
         let actualBatchCapacity = Int32(llama_n_batch(context))
@@ -198,7 +206,7 @@ actor LocalLlamaContext {
         }
 
         // If prompt is too large, truncate from the middle (keep system prefix + recent suffix)
-        let maxPromptTokens = Int(contextSize - maxGeneratedTokens - 64)
+        let maxPromptTokens = max(256, Int(contextSize - maxGeneratedTokens - 64))
         if promptTokens.count > maxPromptTokens {
             let keepFront = maxPromptTokens / 4          // ~system prompt
             let keepBack  = maxPromptTokens - keepFront  // ~recent conversation + user query
@@ -219,19 +227,25 @@ actor LocalLlamaContext {
 
     func generateStream(prompt: String, addBOS: Bool = true, parseSpecial: Bool = false) throws -> AsyncStream<String> {
         clear()
+        runtimeLogger.log("generateStream: addBOS=\(addBOS) parseSpecial=\(parseSpecial) promptLen=\(prompt.count)")
+        runtimeLogger.log("Prompt first 300 chars: \(String(prompt.prefix(300)), privacy: .public)")
         promptTokens = tokenize(text: prompt, addBOS: addBOS, parseSpecial: parseSpecial)
         guard !promptTokens.isEmpty else {
             throw LocalLlamaRuntimeError.tokenizationFailed
         }
+        if promptTokens.count >= 3 {
+            runtimeLogger.log("First 3 token IDs: \(self.promptTokens[0]), \(self.promptTokens[1]), \(self.promptTokens[2])")
+        }
 
-        let maxPromptTokens = Int(contextSize - maxGeneratedTokens - 64)
+        let maxPromptTokens = max(256, Int(contextSize - maxGeneratedTokens - 64))
         if promptTokens.count > maxPromptTokens {
             let keepFront = maxPromptTokens / 4
             let keepBack  = maxPromptTokens - keepFront
+            runtimeLogger.warning("Stream prompt too large (\(self.promptTokens.count) tokens). Truncating to \(maxPromptTokens) (front=\(keepFront) back=\(keepBack))")
             promptTokens = Array(promptTokens.prefix(keepFront)) + Array(promptTokens.suffix(keepBack))
         }
 
-        runtimeLogger.log("Streaming generation with prompt tokens=\(self.promptTokens.count) ctx=\(self.contextSize)")
+        runtimeLogger.log("Streaming generation with prompt tokens=\(self.promptTokens.count) maxGenerated=\(self.maxGeneratedTokens) ctx=\(self.contextSize)")
         try prefillPrompt()
 
         return AsyncStream { continuation in
@@ -302,12 +316,21 @@ actor LocalLlamaContext {
         llama_sampler_accept(sampling, token)
 
         if llama_vocab_is_eog(vocab, token) || generatedTokenCount >= maxGeneratedTokens {
+            if generatedTokenCount == 0 {
+                runtimeLogger.error("⚠️ IMMEDIATE EOG: First sampled token is EOG (token=\(token)). Model produced zero output. Prompt may be malformed (double BOS?).")
+            } else {
+                runtimeLogger.log("Generation complete: \(self.generatedTokenCount) tokens produced (eog=\(llama_vocab_is_eog(self.vocab, token)))")
+            }
             isDone = true
             defer { partialUTF8Buffer.removeAll() }
             return String(validatingUTF8: partialUTF8Buffer + [0]) ?? ""
         }
 
         generatedTokenCount += 1
+
+        if generatedTokenCount <= 5 {
+            runtimeLogger.log("Token[\(self.generatedTokenCount)]: id=\(token)")
+        }
 
         partialUTF8Buffer.append(contentsOf: tokenToPiece(token))
         let piece = String(validatingUTF8: partialUTF8Buffer + [0]) ?? ""
@@ -369,14 +392,20 @@ actor LocalLlamaContext {
     func preparePrompt(chat: [LocalLlamaChatTurn], fallback fallbackPrompt: String) -> LocalLlamaPreparedPrompt {
         guard let templatedPrompt = applyChatTemplate(chat: chat), !templatedPrompt.isEmpty else {
             runtimeLogger.log("Using fallback raw-text prompt (no chat template in model)")
-            return LocalLlamaPreparedPrompt(text: fallbackPrompt, addBOS: true, parseSpecial: false)
+            let shouldParseSpecial = fallbackPrompt.contains("<start_of_turn>") || fallbackPrompt.contains("<end_of_turn>") || fallbackPrompt.contains("<|turn>") || fallbackPrompt.contains("<turn|>")
+            return LocalLlamaPreparedPrompt(text: fallbackPrompt, addBOS: true, parseSpecial: shouldParseSpecial)
         }
 
         runtimeLogger.log("Chat template applied successfully (\(templatedPrompt.count) chars)")
-        // addBOS: true — the built-in Gemma handler does NOT include <bos> in its
-        // output, so the tokenizer must prepend it. Matches official simple-chat example
-        // which always passes add_special=true for the first generation.
-        return LocalLlamaPreparedPrompt(text: templatedPrompt, addBOS: true, parseSpecial: true)
+        runtimeLogger.log("Template preview: \(String(templatedPrompt.prefix(300)), privacy: .public)")
+        // addBOS must be FALSE when parseSpecial is TRUE and the template output already
+        // includes <bos> (Gemma 4, Qwen 3, etc.). Setting both to true causes double-BOS
+        // which makes the model produce immediate EOG (empty output).
+        // This matches the official llama.cpp simple-chat pattern:
+        //   tokenize(prompt, add_special=false, parse_special=true)
+        let templateStartsWithBos = templatedPrompt.hasPrefix("<bos>") || templatedPrompt.hasPrefix("<s>")
+        runtimeLogger.log("Template starts with BOS: \(templateStartsWithBos) → addBOS: \(!templateStartsWithBos)")
+        return LocalLlamaPreparedPrompt(text: templatedPrompt, addBOS: !templateStartsWithBos, parseSpecial: true)
     }
 
     private func applyChatTemplate(chat: [LocalLlamaChatTurn]) -> String? {

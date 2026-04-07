@@ -49,7 +49,7 @@ final class AppStateStore {
             self.installedModels = installedModels
         }
 
-        migrateDeprecatedGemmaEntriesIfNeeded()
+        migrateUnsupportedCatalogEntriesIfNeeded()
     }
 
     var selectedSession: ChatSession? {
@@ -365,16 +365,20 @@ final class AppStateStore {
         }
     }
 
-    /// One-time migration for deprecated Gemma 4 MLX catalog IDs.
-    /// Removes stale MLX Gemma installs so users can install supported Gemma 4 GGUF entries.
-    private func migrateDeprecatedGemmaEntriesIfNeeded() {
-        let deprecatedGemmaModelIDs: Set<String> = [
+    /// One-time migration for catalog entries that are no longer supported by the shipped runtimes.
+    private func migrateUnsupportedCatalogEntriesIfNeeded() {
+        let deprecatedModelIDs: Set<String> = [
             "mlx-community/gemma-4-e2b-it-4bit",
             "mlx-community/gemma-4-e4b-it-4bit",
             "mlx-community/gemma-3n-E2B-it-4bit",
             "mlx-community/gemma-3n-E4B-it-4bit",
             "mlx-community/gemma-3n-E2B-it-lm-4bit",
-            "mlx-community/gemma-3n-E4B-it-lm-4bit"
+            "mlx-community/gemma-3n-E4B-it-lm-4bit",
+            "mlx-community/Qwen3.5-0.8B-MLX-4bit",
+            "mlx-community/Qwen3.5-2B-MLX-4bit",
+            "mlx-community/Qwen3.5-4B-MLX-4bit",
+            "mlx-community/Qwen3.5-9B-MLX-4bit",
+            "mlx-community/LFM2.5-VL-1.6B-4bit"
         ]
 
         var didChange = false
@@ -382,7 +386,7 @@ final class AppStateStore {
 
         let migrated = installedModels.compactMap { model -> InstalledModel? in
             guard let oldModelID = model.catalogItem.mlxModelID,
-                  deprecatedGemmaModelIDs.contains(oldModelID) else {
+                                    deprecatedModelIDs.contains(oldModelID) else {
                 return model
             }
 

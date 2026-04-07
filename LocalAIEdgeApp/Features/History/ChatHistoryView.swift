@@ -6,13 +6,13 @@ struct ChatHistoryView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.meshBackground.ignoresSafeArea()
+            AppTheme.background.ignoresSafeArea()
 
             if store.chatSessions.isEmpty {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 10) {
+                    LazyVStack(spacing: 8) {
                         ForEach(store.chatSessions) { session in
                             sessionCard(session)
                         }
@@ -37,10 +37,9 @@ struct ChatHistoryView: View {
                     Image(systemName: "plus")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(AppTheme.accent)
-                        .padding(8)
-                        .background(AppTheme.panel.opacity(0.6))
-                        .clipShape(Circle())
+                        .frame(width: 36, height: 36)
                 }
+                .buttonStyle(.plain)
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -53,18 +52,13 @@ struct ChatHistoryView: View {
                 selectedTab.wrappedValue = 0
             }
         } label: {
-            HStack(spacing: 14) {
-                // Leading icon
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(AppTheme.accent.opacity(0.08))
-                        .frame(width: 42, height: 42)
-                    Image(systemName: "message.fill")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(AppTheme.accent.opacity(0.7))
-                }
+            HStack(spacing: 12) {
+                Image(systemName: "bubble.left.fill")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(AppTheme.accent.opacity(0.6))
+                    .frame(width: 36, height: 36)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(session.title)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
@@ -80,7 +74,7 @@ struct ChatHistoryView: View {
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: 3) {
                     Text(session.updatedAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(AppTheme.textTertiary)
@@ -94,14 +88,14 @@ struct ChatHistoryView: View {
                         .clipShape(Capsule())
                 }
             }
-            .padding(14)
+            .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(AppTheme.panel.opacity(0.8))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(AppTheme.panel)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(AppTheme.hairline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
             )
         }
         .contextMenu {
@@ -114,15 +108,10 @@ struct ChatHistoryView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(AppTheme.accentSoft.opacity(0.06))
-                    .frame(width: 80, height: 80)
-                Image(systemName: "clock")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(AppTheme.textTertiary)
-            }
+        VStack(spacing: 14) {
+            Image(systemName: "clock")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(AppTheme.textTertiary)
 
             Text("No conversations yet")
                 .font(.system(size: 16, weight: .semibold, design: .rounded))

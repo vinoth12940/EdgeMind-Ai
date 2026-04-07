@@ -22,7 +22,7 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.meshBackground.ignoresSafeArea()
+            AppTheme.background.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 16) {

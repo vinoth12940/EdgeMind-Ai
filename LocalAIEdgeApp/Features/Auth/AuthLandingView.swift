@@ -11,8 +11,7 @@ struct AuthLandingView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.meshBackground.ignoresSafeArea()
-            AppTheme.glow.opacity(0.16).ignoresSafeArea()
+            AppTheme.background.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 16) {
@@ -35,14 +34,9 @@ struct AuthLandingView: View {
 
     private var headerSection: some View {
         VStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(AppTheme.accent.opacity(0.16))
-                    .frame(width: 86, height: 86)
-                Image(systemName: "person.crop.circle.badge.checkmark")
-                    .font(.system(size: 34, weight: .semibold))
-                    .foregroundStyle(AppTheme.accent)
-            }
+            Image(systemName: "person.crop.circle.badge.checkmark")
+                .font(.system(size: 38, weight: .light))
+                .foregroundStyle(AppTheme.accent)
 
             Text("Welcome to Local AI Edge")
                 .font(.system(size: 26, weight: .bold, design: .rounded))
@@ -189,11 +183,11 @@ struct AuthLandingView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .foregroundStyle(AppTheme.textSecondary)
-            .background(AppTheme.panel.opacity(0.55))
+            .background(AppTheme.panel)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(AppTheme.hairline, lineWidth: 1)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
             )
         }
     }

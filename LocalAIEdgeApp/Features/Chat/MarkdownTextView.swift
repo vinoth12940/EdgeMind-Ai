@@ -191,33 +191,14 @@ struct MarkdownTextView: View {
             VStack(alignment: .leading, spacing: 4) {
                 inlineMarkdown(text)
                     .font(.system(size: headingSize(level), weight: .bold, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: isUser 
-                                ? [.white, .white.opacity(0.9)]
-                                : [Color.white, Color.white.opacity(0.85)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                    .foregroundStyle(isUser ? Color.white : AppTheme.textPrimary)
                 
                 // Accent underline for h1 and h2
                 if level <= 2 {
                     Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    AppTheme.accent,
-                                    AppTheme.accentSoft,
-                                    AppTheme.accent.opacity(0.5)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(height: level == 1 ? 3 : 2)
-                        .frame(maxWidth: level == 1 ? 60 : 40)
+                        .fill(AppTheme.accent.opacity(0.4))
+                        .frame(height: level == 1 ? 2 : 1.5)
+                        .frame(maxWidth: level == 1 ? 48 : 32)
                         .clipShape(Capsule())
                 }
             }
@@ -244,38 +225,10 @@ struct MarkdownTextView: View {
 
         case .bullet(let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                ZStack {
-                    // Glow
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    AppTheme.accent.opacity(0.3),
-                                    .clear
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 8
-                            )
-                        )
-                        .frame(width: 16, height: 16)
-                        .blur(radius: 4)
-
-                    // Bullet
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: isUser
-                                    ? [.white.opacity(0.8), .white.opacity(0.6)]
-                                    : [AppTheme.accent, AppTheme.accentSoft],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 7, height: 7)
-                        .shadow(color: AppTheme.accent.opacity(0.4), radius: 3, x: 0, y: 1)
-                }
-                .frame(width: 20, height: 20)
+                Circle()
+                    .fill(isUser ? Color.white.opacity(0.7) : AppTheme.accent.opacity(0.6))
+                    .frame(width: 5, height: 5)
+                    .padding(.top, 7)
 
                 inlineMarkdown(text)
                     .font(.system(size: 16, weight: .regular))
@@ -287,63 +240,10 @@ struct MarkdownTextView: View {
 
         case .numbered(let idx, let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                ZStack {
-                    // Glow
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    AppTheme.accent.opacity(0.3),
-                                    .clear
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 12
-                            )
-                        )
-                        .frame(width: 24, height: 24)
-                        .blur(radius: 4)
-                    
-                    // Number badge
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: isUser
-                                    ? [Color.white.opacity(0.15), Color.white.opacity(0.1)]
-                                    : [AppTheme.accent.opacity(0.2), AppTheme.accentSoft.opacity(0.15)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 26, height: 26)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    LinearGradient(
-                                        colors: isUser
-                                            ? [.white.opacity(0.4), .white.opacity(0.2)]
-                                            : [AppTheme.accent.opacity(0.6), AppTheme.accentSoft.opacity(0.4)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                        )
-                    
-                    Text("\(idx)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: isUser
-                                    ? [.white, .white.opacity(0.9)]
-                                    : [AppTheme.accent, AppTheme.accentSoft],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
-                }
-                .frame(width: 32, alignment: .center)
+                Text("\(idx)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(isUser ? Color.white.opacity(0.8) : AppTheme.accent.opacity(0.8))
+                    .frame(width: 24, alignment: .center)
                 
                 inlineMarkdown(text)
                     .font(.system(size: 16, weight: .regular))
@@ -368,26 +268,11 @@ struct MarkdownTextView: View {
                             )
                         Text(language.uppercased())
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [AppTheme.accent, AppTheme.accentSoft],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .foregroundStyle(AppTheme.accent)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                AppTheme.accent.opacity(0.12),
-                                AppTheme.accentSoft.opacity(0.08)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .background(AppTheme.accent.opacity(0.08))
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(code)
@@ -399,53 +284,22 @@ struct MarkdownTextView: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: isUser 
-                                ? [Color.white.opacity(0.08), Color.white.opacity(0.05)]
-                                : [Color(red: 0.06, green: 0.08, blue: 0.12), Color(red: 0.04, green: 0.06, blue: 0.10)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(isUser ? Color.white.opacity(0.06) : Color(red: 0.05, green: 0.06, blue: 0.10))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: isUser
-                                ? [Color.white.opacity(0.2), Color.white.opacity(0.1)]
-                                : [Color.white.opacity(0.1), Color.white.opacity(0.05)],
-                            startPoint: .topLeading,
-                            endPoint: .trailing
-                        ),
-                        lineWidth: 1
-                    )
+                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 2)
             .padding(.vertical, 4)
 
         case .table(let headers, let rows):
             tableView(headers: headers, rows: rows)
 
         case .divider:
-            HStack {
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                .clear,
-                                AppTheme.accent.opacity(0.3),
-                                AppTheme.accentSoft.opacity(0.3),
-                                .clear
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(height: 2)
-            }
-            .padding(.vertical, 12)
+            Rectangle()
+                .fill(AppTheme.divider)
+                .frame(height: 1)
+                .padding(.vertical, 12)
         }
     }
 
@@ -505,16 +359,7 @@ struct MarkdownTextView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .frame(minWidth: 100, alignment: .leading)
-                            .background(
-                                LinearGradient(
-                                    colors: [
-                                        AppTheme.accent.opacity(0.25),
-                                        AppTheme.accentSoft.opacity(0.20)
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .background(AppTheme.accent.opacity(0.15))
                     }
                 }
 
@@ -540,18 +385,8 @@ struct MarkdownTextView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: isUser
-                                ? [Color.white.opacity(0.2), Color.white.opacity(0.1)]
-                                : [Color.white.opacity(0.12), Color.white.opacity(0.06)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 2)
         }
         .padding(.vertical, 4)
     }
@@ -698,29 +533,12 @@ struct MarkdownTextView: View {
             .padding(.vertical, 5)
             .background(
                 Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                AppTheme.accent,
-                                AppTheme.accentSoft
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(AppTheme.accent.opacity(0.85))
             )
             .overlay(
                 Capsule()
-                    .stroke(
-                        LinearGradient(
-                            colors: [.white.opacity(0.35), .white.opacity(0.15)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.5
-                    )
+                    .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
             )
-            .shadow(color: AppTheme.accent.opacity(0.5), radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
     }

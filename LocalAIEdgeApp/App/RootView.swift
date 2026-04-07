@@ -16,15 +16,14 @@ struct RootView: View {
     @State private var isKeyboardVisible = false
 
     private let tabs: [(icon: String, filledIcon: String, label: String)] = [
-        ("message", "message.fill", "Chat"),
+        ("bubble.left.and.text.bubble.right", "bubble.left.and.text.bubble.right.fill", "Chat"),
         ("square.stack.3d.up", "square.stack.3d.up.fill", "Models"),
-        ("clock", "clock.fill", "History"),
-        ("gearshape", "gearshape.fill", "Settings"),
+        ("clock.arrow.circlepath", "clock.arrow.circlepath", "History"),
+        ("slider.horizontal.3", "slider.horizontal.3", "Settings"),
     ]
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Content
             Group {
                 switch selectedTab {
                 case 0: NavigationStack { ChatView() }
@@ -36,13 +35,12 @@ struct RootView: View {
             }
             .environment(\.selectedTab, $selectedTab)
 
-            // Floating tab bar
-            if !isKeyboardVisible {
+            if !isKeyboardVisible && selectedTab != 0 {
                 floatingTabBar
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isKeyboardVisible)
+        .animation(.spring(response: 0.30, dampingFraction: 0.82), value: isKeyboardVisible)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
@@ -57,52 +55,51 @@ struct RootView: View {
                 let isActive = selectedTab == index
                 let tab = tabs[index]
                 Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
                         selectedTab = index
                     }
                 } label: {
-                    VStack(spacing: 4) {
-                        ZStack {
-                            if isActive {
-                                Circle()
-                                    .fill(AppTheme.accent.opacity(0.15))
-                                    .frame(width: 40, height: 40)
-                                    .transition(.scale.combined(with: .opacity))
-                            }
-
-                            Image(systemName: isActive ? tabs[index].filledIcon : tabs[index].icon)
-                                .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                                .foregroundStyle(isActive ? AppTheme.accent : AppTheme.textTertiary)
-                        }
-                        .frame(width: 40, height: 40)
+                    VStack(spacing: 5) {
+                        Image(systemName: isActive ? tab.filledIcon : tab.icon)
+                            .font(.system(size: 19, weight: isActive ? .semibold : .regular))
+                            .foregroundStyle(isActive ? AppTheme.accent : AppTheme.textTertiary)
+                            .scaleEffect(isActive ? 1.08 : 1.0)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isActive)
 
                         Text(tab.label)
-                            .font(.system(size: 10, weight: isActive ? .bold : .medium, design: .rounded))
-                            .foregroundStyle(isActive ? AppTheme.accent : AppTheme.textTertiary)
+                            .font(.system(size: 10, weight: isActive ? .bold : .medium))
+                            .foregroundStyle(isActive ? AppTheme.textPrimary : AppTheme.textTertiary)
                             .dynamicTypeSize(...DynamicTypeSize.large)
                     }
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
                 }
                 .accessibilityLabel(tab.label)
             }
         }
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(AppTheme.panel.opacity(0.7))
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .fill(AppTheme.panel.opacity(0.55))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(AppTheme.hairline, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.08), Color.white.opacity(0.02)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 0.5
+                        )
                 )
-                .shadow(color: AppTheme.softShadow, radius: 24, x: 0, y: -4)
-                .shadow(color: Color.black.opacity(0.08), radius: 32, x: 0, y: -8)
+                .shadow(color: Color.black.opacity(0.4), radius: 30, x: 0, y: -6)
         )
-        .padding(.horizontal, 12)
-        .padding(.bottom, 2)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
     }
 }

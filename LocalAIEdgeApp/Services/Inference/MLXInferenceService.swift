@@ -26,6 +26,18 @@ actor MLXRuntime {
     private var activeContainer: ModelContainer?
     private var activeIsVision: Bool = false
 
+    func shouldUseVisionFactory(modelID: String, supportsVision: Bool, imageData: Data?) -> Bool {
+        guard supportsVision else { return false }
+        if imageData != nil { return true }
+
+        let normalizedModelID = modelID.lowercased()
+        return normalizedModelID.contains("qwen2.5-vl")
+            || normalizedModelID.contains("qwen2-vl")
+            || normalizedModelID.contains("qwen3.5")
+            || normalizedModelID.contains("qwen3_5")
+            || normalizedModelID.contains("-vl-")
+    }
+
     private func ensureModel(_ modelID: String, isVision: Bool) async throws -> ModelContainer {
         if activeModelID != modelID || activeContainer == nil || activeIsVision != isVision {
             // Unload previous model first to free GPU memory before loading new one
@@ -220,9 +232,11 @@ struct MLXInferenceService: InferenceService {
             throw InferenceServiceError.missingLocalModelFile
         }
 
-        // Only use VLM path when an image is actually attached — avoids loading
-        // the ~500 MB SigLIP vision tower for text-only prompts, preventing OOM on 8 GB devices.
-        let isVision = model.catalogItem.supportsVision && imageData != nil
+        let isVision = await MLXRuntime.shared.shouldUseVisionFactory(
+            modelID: mlxModelID,
+            supportsVision: model.catalogItem.supportsVision,
+            imageData: imageData
+        )
         let fullSystemPrompt = Self.buildSystemPrompt(
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             searchContext: searchContext
@@ -241,7 +255,7 @@ struct MLXInferenceService: InferenceService {
             )
             return ChatMessage(
                 role: .assistant,
-                text: response.isEmpty ? "The model finished without returning text. Try a shorter prompt or another model." : response,
+                text: response.isEmpty ? AssistantResponseFallback.emptyOutput : response,
                 citations: searchContext?.citations ?? []
             )
         } catch {
@@ -261,9 +275,11 @@ struct MLXInferenceService: InferenceService {
             throw InferenceServiceError.missingLocalModelFile
         }
 
-        // Only use VLM path when an image is actually attached — avoids loading
-        // the ~500 MB SigLIP vision tower for text-only prompts, preventing OOM on 8 GB devices.
-        let isVision = model.catalogItem.supportsVision && imageData != nil
+        let isVision = await MLXRuntime.shared.shouldUseVisionFactory(
+            modelID: mlxModelID,
+            supportsVision: model.catalogItem.supportsVision,
+            imageData: imageData
+        )
         let fullSystemPrompt = Self.buildSystemPrompt(
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             searchContext: searchContext
@@ -290,7 +306,7 @@ struct MLXInferenceService: InferenceService {
 
     /// Appends tool call definition to system prompt for tool-calling models.
     private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
-        guard model.catalogItem.supportsToolCalling else { return base }
+        guard model.catalogItem.supportsToolCalling, !base.contains("## web_search") else { return base }
         return base + """
 
 # Tools
@@ -322,6 +338,9 @@ Call it at most once. Do not call it for questions you can answer from your trai
         // Auth required / forbidden (HTTP 401/403)
         if desc.contains("401") || desc.contains("403") || desc.lowercased().contains("unauthorized") || desc.lowercased().contains("forbidden") {
             return "HuggingFace authentication failed. Check your HF token in Settings → HuggingFace."
+        }
+        if desc.lowercased().contains("unsupported model type") {
+            return "This model architecture is not supported by the MLX runtime bundled in the app. Install one of the supported catalog models instead."
         }
         // Network / timeout
         if nsError.domain == NSURLErrorDomain {
@@ -357,6 +376,9 @@ Call it at most once. Do not call it for questions you can answer from your trai
         var usedTokens = 0
 
         for message in conversation.reversed() {
+            if AssistantResponseFallback.shouldSkipInHistory(message) {
+                continue
+            }
             switch message.role {
             case .user, .assistant: break
             default: continue  // skip system/search messages
