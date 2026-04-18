@@ -1005,13 +1005,14 @@ Rules:
             do {
                 let searchContext: SearchContext?
                 // Search flow:
-                // - liveSearchEnabled ON → upfront search + tool definition (belt & suspenders)
-                // - useSearchByDefault ON (toggle OFF) → upfront search every prompt
-                // - Both OFF → no search
-                // Small models (2B) are unreliable at tool calling, so liveSearchEnabled
-                // now also does upfront search to guarantee results are always available.
+                // - liveSearchEnabled/useSearchByDefault arms web search for this turn
+                // - current/live/explicit web queries get upfront search
+                // - everything else stays local unless the model decides to call web_search
                 let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
-                let shouldUpfrontSearch = (liveSearchEnabled || store.settings.useSearchByDefault) && searchConfigured
+                let searchArmed = liveSearchEnabled || store.settings.useSearchByDefault
+                let shouldUpfrontSearch = searchConfigured
+                    && searchArmed
+                    && SearchResultFallbackComposer.shouldRunUpfrontSearch(trimmedPrompt)
                 if shouldUpfrontSearch,
                    let gateway = SearchGatewayFactory.make(settings: store.settings) {
                     do {
@@ -1051,13 +1052,13 @@ Rules:
                 // already returned snippets, tool definitions waste context window
                 // and overwhelm small models — skip them to maximize generation room.
                 var systemPromptForInference = store.settings.systemPrompt
-                if searchConfigured && searchContext == nil {
+                if searchConfigured && searchArmed && searchContext == nil {
                     systemPromptForInference += Self.toolCallDefinition
                     chatLogger.log("Tool definition injected (search configured, no upfront results)")
                 } else if searchContext != nil {
                     chatLogger.log("Upfront search provided results — tool definition skipped to save context window")
                 } else {
-                    chatLogger.log("No search provider configured — tool definition NOT injected")
+                    chatLogger.log("Search not armed or provider unavailable — tool definition NOT injected")
                 }
 
                 // Create a placeholder assistant message for streaming

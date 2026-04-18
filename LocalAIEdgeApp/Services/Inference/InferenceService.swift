@@ -125,6 +125,32 @@ enum AssistantResponseFallback {
 }
 
 enum SearchResultFallbackComposer {
+    static func shouldRunUpfrontSearch(_ query: String) -> Bool {
+        if queryLooksLive(query) {
+            return true
+        }
+
+        let normalized = query
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        guard !normalized.isEmpty else { return false }
+
+        let explicitSearchPhrases = [
+            "search for",
+            "look up",
+            "lookup",
+            "find online",
+            "from the web",
+            "on the web",
+            "search online",
+            "official source",
+            "official website"
+        ]
+
+        return explicitSearchPhrases.contains(where: normalized.contains)
+    }
+
     static func shouldReplace(_ text: String, prompt: String, searchContext: SearchContext) -> Bool {
         let normalized = text
             .trimmingCharacters(in: .whitespacesAndNewlines)

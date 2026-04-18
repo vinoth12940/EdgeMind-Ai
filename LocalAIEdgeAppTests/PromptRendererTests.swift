@@ -230,6 +230,43 @@ final class PromptRendererTests: XCTestCase {
         XCTAssertTrue(SearchResultFallbackComposer.prefersImmediateReply(query: context.query, searchContext: context))
     }
 
+    func testSearchResultFallbackComposerSkipsUpfrontSearchForGreeting() {
+        XCTAssertFalse(SearchResultFallbackComposer.shouldRunUpfrontSearch("Hi"))
+        XCTAssertFalse(SearchResultFallbackComposer.shouldRunUpfrontSearch("Hello there"))
+    }
+
+    func testSearchResultFallbackComposerRunsUpfrontSearchForExplicitWebPrompt() {
+        XCTAssertTrue(SearchResultFallbackComposer.shouldRunUpfrontSearch("search for current Apple stock price"))
+        XCTAssertTrue(SearchResultFallbackComposer.shouldRunUpfrontSearch("look up the official website for Swift"))
+    }
+
+    func testLivePageSummaryExtractorPullsTickerFromHTML() {
+        let html = """
+        <a title="Royal Challengers Bengaluru vs Delhi Capitals, 26th Match - Need 56 off 39b " href="/live-cricket-scores/example">
+            <span>RCB<!-- --> vs <!-- -->DC<!-- --> -<!-- --> <!-- -->Need 56 off 39b</span>
+        </a>
+        """
+
+        XCTAssertEqual(
+            LivePageSummaryExtractor.extractSummary(from: html, fallbackTitle: "Cricbuzz"),
+            "Royal Challengers Bengaluru vs Delhi Capitals, 26th Match - Need 56 off 39b"
+        )
+    }
+
+    func testLivePageSummaryExtractorPrefersMatchStateOverGenericSiteTitle() {
+        let html = """
+        <title>Live Cricket Score | Scorecard | Live Commentary - IPL 2026 | Cricbuzz.com</title>
+        <a title="Live Cricket Score" href="/cricket-match/live-scores"></a>
+        <a title="Royal Challengers Bengaluru vs Delhi Capitals, 26th Match - Need 42 off 25b " href="/cricket-match/live-scores"></a>
+        <a title="Cricbuzz Home" href="/"></a>
+        """
+
+        XCTAssertEqual(
+            LivePageSummaryExtractor.extractSummary(from: html, fallbackTitle: "Live Cricket Score"),
+            "Royal Challengers Bengaluru vs Delhi Capitals, 26th Match - Need 42 off 25b"
+        )
+    }
+
     func testSearchPromptIncludesGroundingInstructions() {
         let prompt = PromptRenderer.render(
             systemPrompt: "Be concise.",

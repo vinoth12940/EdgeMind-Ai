@@ -1,5 +1,19 @@
 import SwiftUI
 
+private struct FloatingDockHiddenPreferenceKey: PreferenceKey {
+    static let defaultValue = false
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+extension View {
+    func floatingDockHidden(_ hidden: Bool = true) -> some View {
+        preference(key: FloatingDockHiddenPreferenceKey.self, value: hidden)
+    }
+}
+
 struct SelectedTabKey: EnvironmentKey {
     static let defaultValue: Binding<Int> = .constant(0)
 }
@@ -14,6 +28,7 @@ extension EnvironmentValues {
 struct RootView: View {
     @State private var selectedTab = 0
     @State private var isKeyboardVisible = false
+    @State private var isFloatingDockHidden = false
 
     private let tabs: [(icon: String, filledIcon: String, label: String)] = [
         ("bubble.left.and.text.bubble.right", "bubble.left.and.text.bubble.right.fill", "Chat"),
@@ -46,17 +61,21 @@ struct RootView: View {
             .toolbar(.hidden, for: .tabBar)
             .environment(\.selectedTab, $selectedTab)
 
-            if !isKeyboardVisible && selectedTab != 0 {
+            if !isKeyboardVisible && selectedTab != 0 && !isFloatingDockHidden {
                 floatingTabBar
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.30, dampingFraction: 0.82), value: isKeyboardVisible)
+        .animation(.spring(response: 0.30, dampingFraction: 0.82), value: isFloatingDockHidden)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
+        }
+        .onPreferenceChange(FloatingDockHiddenPreferenceKey.self) { hidden in
+            isFloatingDockHidden = hidden
         }
     }
 

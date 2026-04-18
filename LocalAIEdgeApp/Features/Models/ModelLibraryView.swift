@@ -22,6 +22,7 @@ struct ModelLibraryView: View {
                     heroSection
                     latestReleaseSection
                     systemSection
+                    simulatorRuntimeSection
 
                     if !installedModels.isEmpty {
                         installedSection
@@ -128,6 +129,14 @@ struct ModelLibraryView: View {
 
     private var activeModel: InstalledModel? {
         store.defaultModel
+    }
+
+    private var mlxRuntimeAvailable: Bool {
+#if targetEnvironment(simulator)
+        false
+#else
+        true
+#endif
     }
 
     private var totalInstalledCountLabel: String {
@@ -240,28 +249,36 @@ struct ModelLibraryView: View {
 
             HStack(spacing: 8) {
                 if let installed {
-                    Button(installed.isDefault ? "Default" : "Use") {
-                        store.setDefaultModel(id: item.id)
-                    }
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(installed.isDefault ? AppTheme.success : AppTheme.accent)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background((installed.isDefault ? AppTheme.success : AppTheme.accent).opacity(0.14))
-                    .clipShape(Capsule())
-                } else {
-                    Button("Install") {
-                        if item.runtimeType == .mlx {
-                            startMLXInstall(for: item)
-                        } else {
-                            startInstall(for: item)
+                    if item.runtimeType == .mlx && !mlxRuntimeAvailable {
+                        latestReleaseStatusPill("Device only", color: AppTheme.warning)
+                    } else {
+                        Button(installed.isDefault ? "Default" : "Use") {
+                            store.setDefaultModel(id: item.id)
                         }
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(installed.isDefault ? AppTheme.success : AppTheme.accent)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background((installed.isDefault ? AppTheme.success : AppTheme.accent).opacity(0.14))
+                        .clipShape(Capsule())
                     }
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.background)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(AppTheme.accentGradient))
+                } else {
+                    if item.runtimeType == .mlx && !mlxRuntimeAvailable {
+                        latestReleaseStatusPill("Device only", color: AppTheme.warning)
+                    } else {
+                        Button("Install") {
+                            if item.runtimeType == .mlx {
+                                startMLXInstall(for: item)
+                            } else {
+                                startInstall(for: item)
+                            }
+                        }
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.background)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(AppTheme.accentGradient))
+                    }
                 }
 
                 Spacer()
@@ -277,6 +294,16 @@ struct ModelLibraryView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(color.opacity(0.18), lineWidth: 0.7)
         )
+    }
+
+    private func latestReleaseStatusPill(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .foregroundStyle(color)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(color.opacity(0.14))
+            .clipShape(Capsule())
     }
 
     private func metricPill(value: String, label: String) -> some View {
@@ -375,6 +402,30 @@ struct ModelLibraryView: View {
 
     private var systemAccent: Color {
         activeModel.map { AppTheme.labColor(for: $0.catalogItem.family) } ?? AppTheme.accent
+    }
+
+    private var simulatorRuntimeSection: some View {
+        Group {
+            if !mlxRuntimeAvailable {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Simulator mode", systemImage: "iphone.gen3.slash")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.warning)
+
+                    Text("GGUF chat and web grounding work in the simulator. MLX download and execution require a real iPhone or iPad, so those actions are shown as device-only here.")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(18)
+                .background(AppTheme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(AppTheme.warning.opacity(0.18), lineWidth: 0.7)
+                )
+            }
+        }
     }
 
     private var activeModelIcon: String {
@@ -821,6 +872,7 @@ struct ModelLibraryView: View {
             items: items(for: family),
             installedModels: installedModels,
             activeDownloads: activeDownloads,
+            mlxRuntimeAvailable: mlxRuntimeAvailable,
             onInstall: { item in
                 if item.runtimeType == .mlx {
                     startMLXInstall(for: item)
@@ -1038,6 +1090,7 @@ private struct FamilyDetailView: View {
     let items: [ModelCatalogItem]
     let installedModels: [InstalledModel]
     let activeDownloads: Set<UUID>
+    let mlxRuntimeAvailable: Bool
     let onInstall: (ModelCatalogItem) -> Void
     let onUse: (UUID) -> Void
     let onDeleteRequest: (InstalledModel?) -> Void
@@ -1060,6 +1113,10 @@ private struct FamilyDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero
+
+                if !mlxRuntimeAvailable, items.contains(where: { $0.runtimeType == .mlx }) {
+                    simulatorNote
+                }
 
                 if let spotlight {
                     spotlightCard(spotlight)
@@ -1089,6 +1146,7 @@ private struct FamilyDetailView: View {
         .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle(family.rawValue)
         .navigationBarTitleDisplayMode(.inline)
+        .floatingDockHidden()
     }
 
     private var hero: some View {
@@ -1167,6 +1225,26 @@ private struct FamilyDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+        )
+    }
+
+    private var simulatorNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "iphone.gen3.slash")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(AppTheme.warning)
+
+            Text("MLX variants are visible for comparison, but installation and execution require a real Apple Silicon device. Use a GGUF variant in the simulator.")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .background(AppTheme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AppTheme.warning.opacity(0.18), lineWidth: 0.7)
         )
     }
 
@@ -1293,6 +1371,15 @@ private struct ModelTile: View {
 
     private var isActiveDownload: Bool {
         isDownloading || installed?.installState == .downloading
+    }
+
+    private var runtimeAvailableOnCurrentDevice: Bool {
+        guard item.runtimeType == .mlx else { return true }
+#if targetEnvironment(simulator)
+        return false
+#else
+        return true
+#endif
     }
 
     var body: some View {
@@ -1498,7 +1585,31 @@ private struct ModelTile: View {
 
     private var actionRow: some View {
         HStack(spacing: 8) {
-            if isInstalled {
+            if item.runtimeType == .mlx && !runtimeAvailableOnCurrentDevice {
+                HStack(spacing: 10) {
+                    Label(isInstalled ? "Use a real device to run this MLX model" : "Real device required for MLX", systemImage: "iphone.gen3.slash")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.warning)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if isInstalled {
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(AppTheme.destructive)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 11)
+                                .background(AppTheme.destructive.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(AppTheme.warning.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else if isInstalled {
                 if item.primaryUse == .voice {
                     Text("Voice asset ready")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
