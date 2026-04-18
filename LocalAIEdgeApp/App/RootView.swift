@@ -24,15 +24,26 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Group {
-                switch selectedTab {
-                case 0: NavigationStack { ChatView() }
-                case 1: NavigationStack { ModelLibraryView() }
-                case 2: NavigationStack { ChatHistoryView() }
-                case 3: NavigationStack { SettingsView() }
-                default: EmptyView()
-                }
+            AppBackdropView()
+
+            TabView(selection: $selectedTab) {
+                NavigationStack { ChatView() }
+                    .tag(0)
+                    .tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right") }
+
+                NavigationStack { ModelLibraryView() }
+                    .tag(1)
+                    .tabItem { Label("Models", systemImage: "square.stack.3d.up") }
+
+                NavigationStack { ChatHistoryView() }
+                    .tag(2)
+                    .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+
+                NavigationStack { SettingsView() }
+                    .tag(3)
+                    .tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
             }
+            .toolbar(.hidden, for: .tabBar)
             .environment(\.selectedTab, $selectedTab)
 
             if !isKeyboardVisible && selectedTab != 0 {
@@ -50,7 +61,7 @@ struct RootView: View {
     }
 
     private var floatingTabBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             ForEach(0..<tabs.count, id: \.self) { index in
                 let isActive = selectedTab == index
                 let tab = tabs[index]
@@ -59,47 +70,53 @@ struct RootView: View {
                         selectedTab = index
                     }
                 } label: {
-                    VStack(spacing: 5) {
+                    HStack(spacing: 8) {
                         Image(systemName: isActive ? tab.filledIcon : tab.icon)
-                            .font(.system(size: 19, weight: isActive ? .semibold : .regular))
-                            .foregroundStyle(isActive ? AppTheme.accent : AppTheme.textTertiary)
-                            .scaleEffect(isActive ? 1.08 : 1.0)
-                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isActive)
+                            .font(.system(size: 16, weight: isActive ? .bold : .semibold))
+                            .foregroundStyle(isActive ? AppTheme.background : AppTheme.textSecondary)
 
-                        Text(tab.label)
-                            .font(.system(size: 10, weight: isActive ? .bold : .medium))
-                            .foregroundStyle(isActive ? AppTheme.textPrimary : AppTheme.textTertiary)
-                            .dynamicTypeSize(...DynamicTypeSize.large)
+                        if isActive {
+                            Text(tab.label)
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(AppTheme.background)
+                                .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                        }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .background {
+                        if isActive {
+                            Capsule(style: .continuous)
+                                .fill(AppTheme.accentGradient)
+                        }
+                    }
                 }
                 .accessibilityLabel(tab.label)
             }
         }
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
+            Capsule(style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .fill(AppTheme.panel.opacity(0.55))
+                    Capsule(style: .continuous)
+                        .fill(AppTheme.dockGradient.opacity(0.86))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    Capsule(style: .continuous)
                         .stroke(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.08), Color.white.opacity(0.02)],
+                                colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
-                            lineWidth: 0.5
+                            lineWidth: 0.8
                         )
                 )
-                .shadow(color: Color.black.opacity(0.4), radius: 30, x: 0, y: -6)
+                .shadow(color: Color.black.opacity(0.42), radius: 34, x: 0, y: 10)
         )
         .padding(.horizontal, 16)
-        .padding(.bottom, 4)
+        .padding(.bottom, 6)
     }
 }

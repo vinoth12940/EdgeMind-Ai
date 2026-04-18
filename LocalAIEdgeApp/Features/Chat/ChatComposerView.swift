@@ -38,6 +38,7 @@ struct ChatComposerView: View {
 
     var body: some View {
         VStack(spacing: 10) {
+            utilityLane
             attachmentPreview
             inputRow
         }
@@ -45,11 +46,11 @@ struct ChatComposerView: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(AppTheme.panel)
+                .fill(AppTheme.surfaceGradient)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
         )
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(image: $attachedImage)
@@ -110,6 +111,33 @@ struct ChatComposerView: View {
                         attachedImage = storyboard
                     }
                     selectedVideoItem = nil
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var utilityLane: some View {
+        if isSearchConfigured || isVisionModel || voiceModeEnabled || attachedImage != nil {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    statusPill(
+                        icon: liveSearchEnabled ? "globe.badge.chevron.backward" : "lock.fill",
+                        label: liveSearchEnabled ? "Search On" : (isSearchConfigured ? "Search Ready" : "Offline"),
+                        color: liveSearchEnabled ? AppTheme.warning : AppTheme.textSecondary
+                    )
+
+                    if isVisionModel {
+                        statusPill(icon: "photo.on.rectangle.angled", label: "Vision Lane", color: AppTheme.capVision)
+                    }
+
+                    if voiceModeEnabled {
+                        statusPill(icon: isListening ? "waveform.circle.fill" : "mic.fill", label: isListening ? "Listening" : "Voice Ready", color: isListening ? AppTheme.warning : AppTheme.accentSoft)
+                    }
+
+                    if attachedImage != nil {
+                        statusPill(icon: "paperclip", label: "Attachment Added", color: AppTheme.accent)
+                    }
                 }
             }
         }
@@ -244,7 +272,7 @@ struct ChatComposerView: View {
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
                             .background(
-                                Circle().fill(AppTheme.accent)
+                                Circle().fill(AppTheme.accentGradient)
                             )
                     }
                     .accessibilityLabel("Send message")
@@ -285,6 +313,20 @@ struct ChatComposerView: View {
             .foregroundStyle(tint)
             .frame(width: 44, height: 44)
             .background(Circle().fill(fill))
+    }
+
+    private func statusPill(icon: String, label: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .bold))
+            Text(label)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.10))
+        .clipShape(Capsule())
     }
 
     private static func downsample(_ image: UIImage, maxDimension: CGFloat) -> UIImage {

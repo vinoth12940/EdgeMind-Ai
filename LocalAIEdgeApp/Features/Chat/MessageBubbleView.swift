@@ -40,7 +40,7 @@ struct MessageBubbleView: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(AppTheme.accent)
+                    .fill(AppTheme.userBubbleGradient)
             )
 
             messageTimestamp
@@ -92,7 +92,11 @@ struct MessageBubbleView: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
+                    .fill(AppTheme.surfaceGradient)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 0.7)
+                    )
             )
 
             messageTimestamp
@@ -114,7 +118,7 @@ struct MessageBubbleView: View {
             .foregroundStyle(AppTheme.textTertiary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.white.opacity(0.04))
+            .background(AppTheme.panelRaised.opacity(0.82))
             .clipShape(Capsule())
             Spacer(minLength: 0)
         }
@@ -125,8 +129,8 @@ struct MessageBubbleView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 13))
                 .foregroundStyle(AppTheme.warning)
-            Text("No visible answer. Try a shorter prompt or switch models.")
-                .font(.system(size: 13))
+            Text("No visible answer. Try a shorter prompt, switch models, or keep search enabled for live questions.")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(AppTheme.textSecondary)
         }
     }
@@ -161,6 +165,7 @@ struct ThinkingDisclosureRow: View {
     @Binding var isExpanded: Bool
 
     private var isStreaming: Bool { durationSeconds == nil }
+    private let thinkingColor = AppTheme.capThinking
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -173,37 +178,37 @@ struct ThinkingDisclosureRow: View {
                 HStack(spacing: 8) {
                     ZStack {
                         Circle()
-                            .fill(Color(red: 0.66, green: 0.33, blue: 0.98).opacity(0.18))
+                            .fill(thinkingColor.opacity(0.18))
                             .frame(width: 20, height: 20)
                         Image(systemName: "lightbulb.max")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Color(red: 0.75, green: 0.50, blue: 0.98))
+                            .foregroundStyle(thinkingColor)
                     }
 
                     if isStreaming {
                         HStack(spacing: 4) {
                             Text("Thinking")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(Color(red: 0.75, green: 0.50, blue: 0.98))
+                                .foregroundStyle(thinkingColor)
                             ThinkingDotsView()
                         }
                     } else {
                         Text("Thought for \(durationSeconds!)s")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color(red: 0.75, green: 0.50, blue: 0.98))
+                            .foregroundStyle(thinkingColor)
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color(red: 0.49, green: 0.24, blue: 0.86).opacity(0.7))
+                        .foregroundStyle(thinkingColor.opacity(0.7))
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isExpanded)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color(red: 0.66, green: 0.33, blue: 0.98).opacity(0.07))
+                .background(thinkingColor.opacity(0.07))
             }
             .buttonStyle(.plain)
 
@@ -212,27 +217,27 @@ struct ThinkingDisclosureRow: View {
                 HStack(alignment: .top, spacing: 0) {
                     // Left accent bar
                     Rectangle()
-                        .fill(Color(red: 0.66, green: 0.33, blue: 0.98).opacity(0.35))
+                        .fill(thinkingColor.opacity(0.35))
                         .frame(width: 2)
 
                     VStack(alignment: .leading, spacing: 0) {
                         Text(thinkingContent + (isStreaming ? "​" : ""))
                             .font(.system(size: 12, weight: .regular, design: .default))
                             .italic()
-                            .foregroundStyle(Color(red: 0.62, green: 0.48, blue: 0.85))
+                            .foregroundStyle(thinkingColor.opacity(0.88))
                             .lineSpacing(4)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .overlay(alignment: .bottomTrailing) {
                                 if isStreaming {
-                                    StreamingCursorView(color: Color(red: 0.75, green: 0.50, blue: 0.98))
+                                    StreamingCursorView(color: thinkingColor)
                                 }
                             }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                 }
-                .background(Color(red: 0.66, green: 0.33, blue: 0.98).opacity(0.04))
+                .background(thinkingColor.opacity(0.04))
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }

@@ -231,6 +231,12 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         Self.parseContextWindowTokenCount(contextWindow)
     }
 
+    var isLatestRelease: Bool {
+        displayName.localizedCaseInsensitiveContains("2507")
+            || mlxModelID?.localizedCaseInsensitiveContains("2507") == true
+            || downloadURL?.absoluteString.localizedCaseInsensitiveContains("2507") == true
+    }
+
     /// Generate a stable UUID from displayName + variant so IDs survive across launches.
     private static func deterministicID(displayName: String, variant: String) -> UUID {
         // UUID v5 using a fixed namespace

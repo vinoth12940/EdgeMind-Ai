@@ -62,24 +62,189 @@ enum AssistantResponseFallback {
         let refusalPhrases = [
             "i don't have real-time access",
             "i do not have real-time access",
+            "i don't have access to real-time",
+            "i do not have access to real-time",
             "i don't have live access",
             "i do not have live access",
             "i don't have access to live",
             "i do not have access to live",
             "i can't access live",
             "i cannot access live",
+            "i can't access current",
+            "i cannot access current",
+            "i do not have access to current",
             "i can't provide the exact current",
             "i cannot provide the exact current",
             "i can't provide the current",
-            "i cannot provide the current"
+            "i cannot provide the current",
+            "i cannot provide real-time",
+            "i can't provide real-time",
+            "i do not have access to live scores",
+            "i don't have access to live scores",
+            "i do not have access to live match data",
+            "i don't have access to live match data"
         ]
-        return refusalPhrases.contains(where: normalized.contains)
+        if refusalPhrases.contains(where: normalized.contains) {
+            return true
+        }
+
+        let accessSignals = [
+            "i don't have access",
+            "i do not have access",
+            "i can't access",
+            "i cannot access",
+            "i can't provide",
+            "i cannot provide"
+        ]
+        let freshnessSignals = [
+            "real-time",
+            "realtime",
+            "live",
+            "current",
+            "latest",
+            "up-to-date"
+        ]
+        let groundingSignals = [
+            "retrieved results",
+            "search results",
+            "sources above",
+            "sources provided",
+            "results do not show"
+        ]
+
+        return accessSignals.contains(where: normalized.contains)
+            && freshnessSignals.contains(where: normalized.contains)
+            && !groundingSignals.contains(where: normalized.contains)
     }
 
     private static func normalized(_ text: String) -> String {
         text
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+    }
+}
+
+enum SearchResultFallbackComposer {
+    static func shouldReplace(_ text: String, prompt: String, searchContext: SearchContext) -> Bool {
+        let normalized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        if normalized.isEmpty
+            || AssistantResponseFallback.isEmptyOutputMessage(text)
+            || AssistantResponseFallback.isPromptEcho(text, prompt: prompt)
+            || AssistantResponseFallback.isSearchAccessRefusal(text) {
+            return true
+        }
+
+        let vaguePhrases = [
+            "i don't know",
+            "i do not know",
+            "not sure",
+            "cannot determine",
+            "can't determine",
+            "unable to determine",
+            "unable to provide"
+        ]
+
+        return vaguePhrases.contains(where: normalized.contains)
+            && (normalized.count < 160 || searchContext.answer == nil)
+    }
+
+    static func compose(query: String, searchContext: SearchContext) -> String {
+        let isLiveQuery = queryLooksLive(query)
+        let directAnswer = normalizedParagraph(searchContext.answer)
+        let snippetSummary = summarizedSnippets(from: searchContext, liveQuery: isLiveQuery)
+        let sourceSummary = summarizedSources(from: searchContext.citations, liveQuery: isLiveQuery)
+
+        var sections: [String] = []
+
+        if let directAnswer, !directAnswer.isEmpty {
+            sections.append(directAnswer)
+            if let snippetSummary,
+               !directAnswer.lowercased().contains(snippetSummary.lowercased()) {
+                sections.append(snippetSummary)
+            }
+        } else if isLiveQuery {
+            sections.append("The retrieved web results do not show the exact live value in the returned snippets.")
+            if let snippetSummary {
+                sections.append(snippetSummary)
+            }
+        } else if let snippetSummary {
+            sections.append(snippetSummary)
+        } else {
+            sections.append("The retrieved web results did not return a single direct answer, but the linked sources below are the most relevant matches.")
+        }
+
+        if !sourceSummary.isEmpty {
+            sections.append(sourceSummary)
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    static func prefersImmediateReply(query: String, searchContext: SearchContext) -> Bool {
+        queryLooksLive(query)
+            && (!searchContext.citations.isEmpty || normalizedParagraph(searchContext.answer) != nil)
+    }
+
+    static func queryLooksLive(_ query: String) -> Bool {
+        let normalized = query.lowercased()
+        let liveKeywords = [
+            "live",
+            "today",
+            "now",
+            "current",
+            "latest",
+            "score",
+            "weather",
+            "price",
+            "breaking",
+            "news",
+            "stock",
+            "match"
+        ]
+
+        return liveKeywords.contains(where: { normalized.contains($0) })
+    }
+
+    private static func normalizedParagraph(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let cleaned = text
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    private static func summarizedSnippets(from searchContext: SearchContext, liveQuery: Bool) -> String? {
+        let cleaned = searchContext.snippets
+            .map {
+                $0.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
+
+        guard !cleaned.isEmpty else { return nil }
+
+        if liveQuery {
+            return "Returned snippets point to live score pages and match centers rather than exposing an inline scoreboard."
+        }
+
+        let summary = cleaned.prefix(2).joined(separator: " ")
+        if summary.count > 320 {
+            return String(summary.prefix(317)) + "..."
+        }
+        return summary
+    }
+
+    private static func summarizedSources(from citations: [SearchCitation], liveQuery: Bool) -> String {
+        let sourceList = citations.prefix(liveQuery ? 4 : 3).enumerated().map { index, citation in
+            "\(citation.title.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)) [\(index + 1)]"
+        }
+
+        guard !sourceList.isEmpty else { return "" }
+        let prefix = liveQuery ? "Best live sources:" : "Most relevant sources:"
+        return "\(prefix) \(sourceList.joined(separator: ", "))."
     }
 }
 

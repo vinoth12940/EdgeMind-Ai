@@ -191,7 +191,43 @@ final class PromptRendererTests: XCTestCase {
     func testAssistantFallbackRecognizesSearchAccessRefusal() {
         XCTAssertTrue(AssistantResponseFallback.isSearchAccessRefusal("I don't have real-time access to live match data."))
         XCTAssertTrue(AssistantResponseFallback.isSearchAccessRefusal("I cannot provide the exact current IPL score."))
+        XCTAssertTrue(AssistantResponseFallback.isSearchAccessRefusal("I do not have access to real-time, live scores from the current IPL match."))
         XCTAssertFalse(AssistantResponseFallback.isSearchAccessRefusal("The retrieved results do not show the exact score yet, but Cricbuzz and IPLT20 are live sources."))
+    }
+
+    func testSearchResultFallbackComposerBuildsLiveSourceSummary() {
+        let context = SearchContext(
+            query: "IPL live score current match",
+            answer: nil,
+            snippets: [
+                "Cricbuzz: Live cricket scores, scorecard, commentary and stats.",
+                "ESPN Cricinfo: Live score coverage and ball-by-ball updates."
+            ],
+            citations: [
+                SearchCitation(title: "Cricbuzz", url: URL(string: "https://www.cricbuzz.com")!, snippet: "Live cricket scores"),
+                SearchCitation(title: "ESPN Cricinfo", url: URL(string: "https://www.espncricinfo.com")!, snippet: "Live score coverage"),
+                SearchCitation(title: "LiveScore", url: URL(string: "https://www.livescore.com")!, snippet: "IPL live scores")
+            ]
+        )
+
+        let response = SearchResultFallbackComposer.compose(query: context.query, searchContext: context)
+
+        XCTAssertTrue(response.contains("do not show the exact live value"))
+        XCTAssertTrue(response.contains("Best live sources:"))
+        XCTAssertTrue(response.contains("Cricbuzz [1]"))
+    }
+
+    func testSearchResultFallbackComposerPrefersImmediateReplyForLiveSourcePages() {
+        let context = SearchContext(
+            query: "IPL live score current match",
+            answer: "The search results point to live pages such as Cricbuzz, ESPN Cricinfo, LiveScore, but they do not expose the exact live value in the returned snippet.",
+            snippets: ["Cricbuzz: Live cricket scores and commentary."],
+            citations: [
+                SearchCitation(title: "Cricbuzz", url: URL(string: "https://www.cricbuzz.com")!, snippet: "Live cricket scores")
+            ]
+        )
+
+        XCTAssertTrue(SearchResultFallbackComposer.prefersImmediateReply(query: context.query, searchContext: context))
     }
 
     func testSearchPromptIncludesGroundingInstructions() {

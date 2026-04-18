@@ -111,28 +111,11 @@ Rules:
 
     var body: some View {
         ZStack {
-            AppTheme.background.ignoresSafeArea()
-
-            Circle()
-                .fill(AppTheme.accent.opacity(0.12))
-                .frame(width: 300, height: 300)
-                .blur(radius: 100)
-                .offset(x: -100, y: -300)
-
-            Circle()
-                .fill(AppTheme.accentSoft.opacity(0.08))
-                .frame(width: 250, height: 250)
-                .blur(radius: 120)
-                .offset(x: 130, y: -180)
-
-            Circle()
-                .fill(AppTheme.accent.opacity(0.06))
-                .frame(width: 200, height: 200)
-                .blur(radius: 100)
-                .offset(x: 80, y: 350)
+            AppBackdropView()
 
             VStack(spacing: 0) {
                 header
+                sessionOverviewStrip
 
                 if activeMessages.isEmpty {
                     ScrollView {
@@ -253,6 +236,39 @@ Rules:
         store.selectedSession?.messages ?? []
     }
 
+    private var sessionOverviewStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                sessionMetricCard(
+                    title: "Runtime",
+                    value: activeModel?.catalogItem.runtimeType.label ?? "No runtime",
+                    detail: activeModel?.catalogItem.parameterSize ?? "Install a model",
+                    color: activeModel?.catalogItem.runtimeType == .mlx ? AppTheme.accent : AppTheme.warning
+                )
+                sessionMetricCard(
+                    title: "Context",
+                    value: activeModel?.catalogItem.contextWindow ?? "None",
+                    detail: "Model window",
+                    color: AppTheme.warning
+                )
+                sessionMetricCard(
+                    title: "Search",
+                    value: searchStatusLabel,
+                    detail: liveSearchEnabled ? "Web grounded" : (searchGatewayConfigured ? "Ready to arm" : "Offline only"),
+                    color: searchStatusColor
+                )
+                sessionMetricCard(
+                    title: "Voice",
+                    value: store.settings.voiceModeEnabled ? "Enabled" : "Muted",
+                    detail: store.settings.voiceModeEnabled ? "Dictation + playback" : "Text first",
+                    color: store.settings.voiceModeEnabled ? AppTheme.accentSoft : AppTheme.textSecondary
+                )
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+    }
+
     private var generationStatusCard: some View {
         HStack {
             HStack(spacing: 12) {
@@ -272,17 +288,13 @@ Rules:
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(Color.white.opacity(0.04))
-                    )
+                    .fill(AppTheme.surfaceGradient)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.18), Color.white.opacity(0.06)],
+                            colors: [AppTheme.accent.opacity(0.26), Color.white.opacity(0.08)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -334,134 +346,131 @@ Rules:
 
     private var header: some View {
         VStack(spacing: 14) {
-            HStack(alignment: .center, spacing: 14) {
-                // Model info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(activeModel?.catalogItem.family.lab ?? "Local AI")
-                        .font(.system(size: 10, weight: .heavy))
-                        .foregroundStyle(AppTheme.textTertiary)
-                        .textCase(.uppercase)
-                        .tracking(1.2)
-
-                    Button {
-                        showModelPicker = true
-                    } label: {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 6) {
-                            Text(activeModel?.catalogItem.displayName ?? "Select Model")
-                                .font(.system(size: 17, weight: .bold))
-                                .foregroundStyle(AppTheme.textPrimary)
-                                .lineLimit(1)
-
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(AppTheme.textTertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Spacer(minLength: 0)
-
-                // Status pill
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(searchStatusColor)
-                        .frame(width: 6, height: 6)
-                    Text(searchStatusLabel)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(searchStatusColor)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.white.opacity(0.05))
-                )
-
-                // New chat button
-                Button {
-                    isInputFocused = false
-                    store.createSession(using: store.defaultModel?.catalogItem.id)
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(AppTheme.background)
-                        .frame(width: 36, height: 36)
-                        .background(
                             Circle()
-                                .fill(AppTheme.accent)
-                        )
-                }
-                .accessibilityLabel("Start new chat")
-
-                // Nav buttons
-                HStack(spacing: 2) {
-                    headerRailButton(icon: "slider.horizontal.3", accessibilityLabel: "Settings") {
-                        isInputFocused = false
-                        withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
-                            selectedTab.wrappedValue = 3
+                                .fill(searchStatusColor)
+                                .frame(width: 7, height: 7)
+                            Text(searchStatusLabel.uppercased())
+                                .font(.system(size: 10, weight: .black, design: .rounded))
+                                .foregroundStyle(searchStatusColor)
+                                .tracking(1.0)
                         }
-                    }
-                    headerRailButton(icon: "square.stack.3d.up", accessibilityLabel: "Models") {
-                        isInputFocused = false
-                        withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
-                            selectedTab.wrappedValue = 1
-                        }
-                    }
-                    headerRailButton(icon: "clock.arrow.circlepath", accessibilityLabel: "History") {
-                        isInputFocused = false
-                        withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
-                            selectedTab.wrappedValue = 2
-                        }
-                    }
-                }
-                .padding(4)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.white.opacity(0.04))
-                )
-            }
 
-            // Capability chips
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    if let model = activeModel {
-                        headerChip(label: model.catalogItem.parameterSize, tone: .neutral)
-                        headerChip(label: model.catalogItem.contextWindow, tone: .neutral)
-                        headerChip(label: model.catalogItem.runtimeType.label, tone: model.catalogItem.runtimeType == .mlx ? .accent : .neutral)
-                        headerChip(label: model.catalogItem.supportsVision ? "Vision" : "Text", tone: model.catalogItem.supportsVision ? .accent : .neutral)
-
-                        if model.catalogItem.supportsToolCalling {
-                            headerChip(label: "Tools", tone: .warning)
-                        }
-                        if model.catalogItem.supportsReasoning || model.catalogItem.isThinkingModel {
-                            headerChip(label: "Reasoning", tone: .accent)
-                        }
-                    } else {
-                        headerChip(label: "No model", tone: .warning)
-                    }
-
-                    if searchGatewayConfigured {
-                        headerChip(label: liveSearchEnabled ? "Live Search On" : "Search Ready", tone: .warning)
-                    }
-
-                    if store.settings.voiceModeEnabled,
-                       let lastAssistantResponseText,
-                       !lastAssistantResponseText.isEmpty {
                         Button {
-                            replayLastAssistantResponse()
+                            showModelPicker = true
                         } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: voiceController.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .font(.system(size: 10, weight: .bold))
-                                Text(voiceController.isSpeaking ? "Stop" : "Replay")
-                                    .font(.system(size: 10, weight: .bold))
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Text(activeModel?.catalogItem.displayName ?? "Select Model")
+                                        .font(.system(size: 22, weight: .heavy, design: .rounded))
+                                        .foregroundStyle(AppTheme.textPrimary)
+                                        .lineLimit(2)
+
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(AppTheme.textTertiary)
+                                }
+
+                                Text(activeModel?.catalogItem.family.lab ?? "Install a local model to start")
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                    .foregroundStyle(AppTheme.textSecondary)
                             }
-                            .foregroundStyle(voiceController.isSpeaking ? AppTheme.warning : AppTheme.accentSoft)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.05))
-                            .clipShape(Capsule())
+                            .multilineTextAlignment(.leading)
+                        }
+                        .buttonStyle(.plain)
+
+                        Text(store.selectedSession?.title ?? "Fresh local conversation")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AppTheme.textTertiary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    VStack(spacing: 10) {
+                        Button {
+                            isInputFocused = false
+                            store.createSession(using: store.defaultModel?.catalogItem.id)
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(AppTheme.background)
+                                .frame(width: 42, height: 42)
+                                .background(Circle().fill(AppTheme.accentGradient))
+                        }
+                        .accessibilityLabel("Start new chat")
+
+                        HStack(spacing: 4) {
+                            headerRailButton(icon: "square.stack.3d.up", accessibilityLabel: "Models") {
+                                isInputFocused = false
+                                withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                                    selectedTab.wrappedValue = 1
+                                }
+                            }
+                            headerRailButton(icon: "clock.arrow.circlepath", accessibilityLabel: "History") {
+                                isInputFocused = false
+                                withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                                    selectedTab.wrappedValue = 2
+                                }
+                            }
+                            headerRailButton(icon: "slider.horizontal.3", accessibilityLabel: "Settings") {
+                                isInputFocused = false
+                                withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                                    selectedTab.wrappedValue = 3
+                                }
+                            }
+                        }
+                        .padding(4)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(AppTheme.panelRaised.opacity(0.72))
+                        )
+                    }
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        if let model = activeModel {
+                            headerChip(label: model.catalogItem.parameterSize, tone: .neutral)
+                            headerChip(label: model.catalogItem.contextWindow, tone: .neutral)
+                            headerChip(label: model.catalogItem.runtimeType.label, tone: model.catalogItem.runtimeType == .mlx ? .accent : .neutral)
+                            headerChip(label: model.catalogItem.supportsVision ? "Vision" : "Text", tone: model.catalogItem.supportsVision ? .accent : .neutral)
+
+                            if model.catalogItem.supportsToolCalling {
+                                headerChip(label: "Tools", tone: .warning)
+                            }
+                            if model.catalogItem.supportsReasoning || model.catalogItem.isThinkingModel {
+                                headerChip(label: "Reasoning", tone: .accent)
+                            }
+                        } else {
+                            headerChip(label: "No model", tone: .warning)
+                        }
+
+                        if searchGatewayConfigured {
+                            headerChip(label: liveSearchEnabled ? "Live Search On" : "Search Ready", tone: .warning)
+                        }
+
+                        if store.settings.voiceModeEnabled,
+                           let lastAssistantResponseText,
+                           !lastAssistantResponseText.isEmpty {
+                            Button {
+                                replayLastAssistantResponse()
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: voiceController.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text(voiceController.isSpeaking ? "Stop" : "Replay")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                                .foregroundStyle(voiceController.isSpeaking ? AppTheme.warning : AppTheme.accentSoft)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.05))
+                                .clipShape(Capsule())
+                            }
                         }
                     }
                 }
@@ -493,16 +502,22 @@ Rules:
                 )
             }
         }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(AppTheme.surfaceGradient)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(AppTheme.heroGradient)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+        )
         .padding(.horizontal, 16)
         .padding(.top, 12)
-        .padding(.bottom, 12)
-        .background(
-            LinearGradient(
-                colors: [Color.white.opacity(0.06), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .padding(.bottom, 6)
         .sheet(isPresented: $showModelPicker) {
             modelPickerSheet
                 .presentationDetents([.medium, .large])
@@ -513,9 +528,10 @@ Rules:
     private func headerRailButton(icon: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(AppTheme.textSecondary)
-                .frame(width: 40, height: 40)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(Color.white.opacity(0.04)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -552,6 +568,35 @@ Rules:
             .padding(.vertical, 4)
             .background(fill)
             .clipShape(Capsule())
+    }
+
+    private func sessionMetricCard(title: String, value: String, detail: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 10, weight: .black, design: .rounded))
+                .foregroundStyle(AppTheme.textTertiary)
+                .textCase(.uppercase)
+
+            Text(value)
+                .font(.system(size: 16, weight: .heavy, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary)
+                .lineLimit(1)
+
+            Text(detail)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(color)
+                .lineLimit(1)
+        }
+        .frame(width: 142, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.panelRaised.opacity(0.84))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(color.opacity(0.18), lineWidth: 0.7)
+        )
     }
 
     // MARK: - Model Picker Sheet
@@ -663,19 +708,23 @@ Rules:
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 10) {
-                Text(activeModel == nil ? "Private & on-device" : "Meet \(activeModel?.catalogItem.displayName ?? "your model")")
-                    .font(.system(size: 26, weight: .bold))
-                    .multilineTextAlignment(.center)
+        let columns = [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ]
+
+        return VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(activeModel == nil ? "Start from a private local canvas" : "Shape the first turn with \(activeModel?.catalogItem.displayName ?? "your model")")
+                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+                    .multilineTextAlignment(.leading)
                     .foregroundStyle(AppTheme.textPrimary)
 
                 Text(activeModel?.catalogItem.summary ?? "Install a model from the library to start writing, summarizing, and reasoning entirely on-device.")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(AppTheme.textSecondary)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.leading)
                     .lineSpacing(2)
-                    .padding(.horizontal, 8)
             }
 
             if let model = activeModel {
@@ -686,55 +735,46 @@ Rules:
                 }
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(promptStarters) { starter in
-                        Button {
-                            primePrompt(starter)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Image(systemName: starter.icon)
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(AppTheme.accent)
-                                    .frame(width: 34, height: 34)
-                                    .background(AppTheme.accent.opacity(0.12))
-                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            HStack(spacing: 10) {
+                emptyStateFeature(icon: "lock.shield.fill", title: "Local by default", detail: "Your prompt, model, and history stay on this device.", color: AppTheme.success)
+                emptyStateFeature(icon: "globe", title: searchGatewayConfigured ? "Search lane ready" : "Offline lane", detail: searchGatewayConfigured ? "Turn on live grounding when you need current results." : "Add Serper or a gateway in Settings.", color: searchStatusColor)
+            }
 
-                                Text(starter.title)
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(AppTheme.textPrimary)
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(promptStarters) { starter in
+                    Button {
+                        primePrompt(starter)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Image(systemName: starter.icon)
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(AppTheme.accent)
+                                .frame(width: 36, height: 36)
+                                .background(AppTheme.accent.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                                Text(starter.subtitle)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(AppTheme.textTertiary)
-                                    .multilineTextAlignment(.leading)
-                            }
-                            .frame(width: 148, alignment: .leading)
-                            .padding(14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                    .fill(.ultraThinMaterial)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                            .fill(Color.white.opacity(0.05))
-                                    )
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [Color.white.opacity(0.12), Color.white.opacity(0.04)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        lineWidth: 1
-                                    )
-                            )
+                            Text(starter.title)
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(AppTheme.textPrimary)
+
+                            Text(starter.subtitle)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(AppTheme.textSecondary)
+                                .multilineTextAlignment(.leading)
                         }
-                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .fill(AppTheme.panelRaised.opacity(0.88))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(Color.white.opacity(0.07), lineWidth: 0.8)
+                        )
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 4)
             }
 
             if store.defaultModel == nil {
@@ -754,22 +794,21 @@ Rules:
                     .padding(.vertical, 12)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(AppTheme.accent)
+                            .fill(AppTheme.accentGradient)
                     )
                     .shadow(color: AppTheme.accent.opacity(0.25), radius: 16, x: 0, y: 6)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 24)
+        .padding(22)
         .background(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(AppTheme.panel)
+                .fill(AppTheme.surfaceGradient)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
         )
         .padding(.horizontal, 16)
     }
@@ -782,6 +821,27 @@ Rules:
             .padding(.vertical, 5)
             .background(Color.white.opacity(0.05))
             .clipShape(Capsule(style: .continuous))
+    }
+
+    private func emptyStateFeature(icon: String, title: String, detail: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary)
+            }
+
+            Text(detail)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(AppTheme.panelRaised.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func stopGeneration() {
@@ -863,6 +923,20 @@ Rules:
             return AssistantResponseFallback.emptyOutputMessage(thinkingSeen: thinkingSeen)
         }
         return finalText
+    }
+
+    private func searchAwareAssistantText(
+        from rawText: String,
+        prompt: String,
+        thinkingSeen: Bool,
+        searchContext: SearchContext?
+    ) -> String {
+        let resolved = resolvedAssistantText(from: rawText, prompt: prompt, thinkingSeen: thinkingSeen)
+        guard let searchContext else { return resolved }
+        guard SearchResultFallbackComposer.shouldReplace(resolved, prompt: prompt, searchContext: searchContext) else {
+            return resolved
+        }
+        return SearchResultFallbackComposer.compose(query: prompt, searchContext: searchContext)
     }
 
     private func encodedAttachmentData(from image: UIImage?) -> Data? {
@@ -951,6 +1025,25 @@ Rules:
                     }
                 } else {
                     searchContext = nil
+                }
+
+                if let searchContext,
+                   model.catalogItem.runtimeType == .gguf,
+                   SearchResultFallbackComposer.prefersImmediateReply(query: trimmedPrompt, searchContext: searchContext) {
+                    let groundedReply = SearchResultFallbackComposer.compose(query: trimmedPrompt, searchContext: searchContext)
+                    let assistantMessage = ChatMessage(role: .assistant, text: groundedReply, citations: searchContext.citations)
+                    await MainActor.run {
+                        store.appendMessage(assistantMessage, to: sessionID)
+                        finishGenerationIfCurrent(taskID)
+                    }
+
+                    if store.settings.voiceModeEnabled,
+                       store.settings.autoPlayVoiceResponses {
+                        await MainActor.run {
+                            voiceController.speak(groundedReply, using: store.settings)
+                        }
+                    }
+                    return
                 }
 
                 // Inject tool definition ONLY when search is configured but
@@ -1126,10 +1219,11 @@ Rules:
                                 break
                             }
                         }
-                        let finalText2 = resolvedAssistantText(
+                        let finalText2 = searchAwareAssistantText(
                             from: accumulated,
                             prompt: trimmedPrompt,
-                            thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            searchContext: agenticSearchContext
                         )
                         await updateStreamingMessage(
                             finalText2,
@@ -1219,10 +1313,11 @@ Rules:
                             break
                         }
                     }
-                    let finalText2 = resolvedAssistantText(
+                    let finalText2 = searchAwareAssistantText(
                         from: accumulated,
                         prompt: trimmedPrompt,
-                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        searchContext: agenticSearchContext
                     )
                     await updateStreamingMessage(
                         finalText2,
@@ -1296,10 +1391,11 @@ Rules:
                             break
                         }
                     }
-                    let retryFinalText = resolvedAssistantText(
+                    let retryFinalText = searchAwareAssistantText(
                         from: accumulated,
                         prompt: trimmedPrompt,
-                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        searchContext: searchContext
                     )
                     await updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
                     await MainActor.run { finishGenerationIfCurrent(taskID) }
@@ -1366,10 +1462,11 @@ Rules:
                                 break
                             }
                         }
-                        let retryFinalText = resolvedAssistantText(
+                        let retryFinalText = searchAwareAssistantText(
                             from: accumulated,
                             prompt: trimmedPrompt,
-                            thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            searchContext: searchContext
                         )
                         await updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
                         await MainActor.run { finishGenerationIfCurrent(taskID) }
@@ -1435,10 +1532,11 @@ Rules:
                                     break
                                 }
                             }
-                            let fbFinalText = resolvedAssistantText(
+                            let fbFinalText = searchAwareAssistantText(
                                 from: accumulated,
                                 prompt: trimmedPrompt,
-                                thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                                searchContext: fallbackSearchContext
                             )
                             await updateStreamingMessage(fbFinalText, messageID: fbMessageID, sessionID: sessionID, persist: true)
                             await MainActor.run { finishGenerationIfCurrent(taskID) }
@@ -1447,14 +1545,21 @@ Rules:
                     }
                 }
 
-                await updateStreamingMessage(finalText, messageID: messageID, sessionID: sessionID, persist: true)
+                let persistedFinalText = searchAwareAssistantText(
+                    from: accumulated,
+                    prompt: trimmedPrompt,
+                    thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    searchContext: searchContext
+                )
+
+                await updateStreamingMessage(persistedFinalText, messageID: messageID, sessionID: sessionID, persist: true)
 
                 if !stoppedByUser,
                    store.settings.voiceModeEnabled,
                    store.settings.autoPlayVoiceResponses,
-                   !AssistantResponseFallback.isEmptyOutputMessage(finalText) {
+                   !AssistantResponseFallback.isEmptyOutputMessage(persistedFinalText) {
                     await MainActor.run {
-                        voiceController.speak(finalText, using: store.settings)
+                        voiceController.speak(persistedFinalText, using: store.settings)
                     }
                 }
 

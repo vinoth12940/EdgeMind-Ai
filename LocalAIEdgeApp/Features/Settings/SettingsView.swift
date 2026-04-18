@@ -22,10 +22,11 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.background.ignoresSafeArea()
+            AppBackdropView()
 
             ScrollView {
                 VStack(spacing: 16) {
+                    controlCenterSection
                     profileSection
                     privacySection
                     huggingFaceSection
@@ -52,6 +53,92 @@ struct SettingsView: View {
             // Initialize draft token value
             hfTokenDraft = store.settings.huggingFaceToken
         }
+    }
+
+    private var controlCenterSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Control Center")
+                        .font(.system(size: 29, weight: .heavy, design: .rounded))
+                        .foregroundStyle(AppTheme.textPrimary)
+
+                    Text("Tune the device stack, search lane, and download credentials from one place.")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+
+                Spacer(minLength: 12)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    statusPill(value: store.settings.webSearchProvider == .none ? "Off" : store.settings.webSearchProvider.rawValue, label: "Search")
+                    statusPill(value: store.defaultModel?.catalogItem.runtimeType.label ?? "None", label: "Runtime")
+                }
+            }
+
+            HStack(spacing: 10) {
+                controlCard(
+                    title: "Default assistant",
+                    value: store.defaultModel?.catalogItem.displayName ?? "No model selected",
+                    icon: "cpu.fill",
+                    color: AppTheme.accent
+                )
+                controlCard(
+                    title: "Voice lane",
+                    value: store.settings.voiceModeEnabled ? "Enabled" : "Muted",
+                    icon: "waveform",
+                    color: store.settings.voiceModeEnabled ? AppTheme.warning : AppTheme.textSecondary
+                )
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(AppTheme.surfaceGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.7)
+        )
+    }
+
+    private func statusPill(value: String, label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 14, weight: .heavy, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary)
+                .lineLimit(1)
+            Text(label)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.textTertiary)
+                .textCase(.uppercase)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(AppTheme.panelRaised.opacity(0.85))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func controlCard(title: String, value: String, icon: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+
+            Text(value)
+                .font(.system(size: 15, weight: .heavy, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(AppTheme.panelRaised.opacity(0.78))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     // MARK: - Sections

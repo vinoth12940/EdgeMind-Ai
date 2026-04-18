@@ -1,14 +1,14 @@
 import SwiftUI
 
 enum AppTheme {
-    // MARK: - Core Palette (Obsidian 2026)
-    static let background = Color(red: 0.03, green: 0.03, blue: 0.05)
-    static let panel = Color(red: 0.06, green: 0.06, blue: 0.10)
-    static let panelRaised = Color(red: 0.09, green: 0.09, blue: 0.14)
-    static let panelHover = Color(red: 0.12, green: 0.12, blue: 0.18)
-    static let accent = Color(red: 0.30, green: 0.78, blue: 1.0)
-    static let accentSoft = Color(red: 0.45, green: 0.40, blue: 1.0)
-    static let accentWarm = Color(red: 1.0, green: 0.55, blue: 0.35)
+    // MARK: - Core Palette (Obsidian / Neon Tide)
+    static let background = Color(red: 0.02, green: 0.03, blue: 0.05)
+    static let panel = Color(red: 0.05, green: 0.07, blue: 0.10)
+    static let panelRaised = Color(red: 0.08, green: 0.10, blue: 0.14)
+    static let panelHover = Color(red: 0.12, green: 0.14, blue: 0.18)
+    static let accent = Color(red: 0.24, green: 0.82, blue: 1.0)
+    static let accentSoft = Color(red: 0.38, green: 0.94, blue: 0.76)
+    static let accentWarm = Color(red: 1.0, green: 0.60, blue: 0.32)
     static let success = Color(red: 0.20, green: 0.88, blue: 0.62)
     static let warning = Color(red: 1.0, green: 0.78, blue: 0.32)
     static let destructive = Color(red: 1.0, green: 0.34, blue: 0.38)
@@ -27,9 +27,9 @@ enum AppTheme {
 
     static let meshBackground = LinearGradient(
         colors: [
-            Color(red: 0.05, green: 0.03, blue: 0.10),
-            Color(red: 0.02, green: 0.04, blue: 0.08),
-            Color(red: 0.03, green: 0.03, blue: 0.05)
+            Color(red: 0.03, green: 0.05, blue: 0.08),
+            Color(red: 0.02, green: 0.08, blue: 0.11),
+            Color(red: 0.02, green: 0.03, blue: 0.05)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -37,8 +37,8 @@ enum AppTheme {
 
     static let userBubbleGradient = LinearGradient(
         colors: [
-            Color(red: 0.28, green: 0.52, blue: 1.0),
-            Color(red: 0.42, green: 0.35, blue: 0.95)
+            Color(red: 0.18, green: 0.61, blue: 0.98),
+            Color(red: 0.14, green: 0.84, blue: 0.78)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -57,9 +57,26 @@ enum AppTheme {
     )
 
     static let surfaceGradient = LinearGradient(
-        colors: [panel, panelRaised.opacity(0.5)],
+        colors: [panel, panelRaised.opacity(0.78)],
         startPoint: .top,
         endPoint: .bottom
+    )
+
+    static let dockGradient = LinearGradient(
+        colors: [panelRaised.opacity(0.94), panel.opacity(0.92)],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static let heroGradient = LinearGradient(
+        colors: [
+            accent.opacity(0.20),
+            accentSoft.opacity(0.14),
+            accentWarm.opacity(0.10),
+            Color.clear
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
     )
 
     // MARK: - Shadows
@@ -80,7 +97,7 @@ enum AppTheme {
     static let labKokoro = Color(red: 0.97, green: 0.46, blue: 0.62)
 
     // MARK: - Capability Colors
-    static let capThinking = Color(red: 0.95, green: 0.45, blue: 0.95)
+    static let capThinking = Color(red: 1.00, green: 0.56, blue: 0.38)
     static let capVision = Color(red: 0.30, green: 0.85, blue: 0.75)
     static let capTools = Color(red: 0.98, green: 0.60, blue: 0.20)
     static let capReasoning = Color(red: 0.95, green: 0.85, blue: 0.35)
@@ -108,6 +125,40 @@ enum AppTheme {
         case .vision: return capVision
         case .toolCalling: return capTools
         case .reasoning: return capReasoning
+        }
+    }
+}
+
+struct AppBackdropView: View {
+    var body: some View {
+        ZStack {
+            AppTheme.meshBackground.ignoresSafeArea()
+
+            Circle()
+                .fill(AppTheme.accent.opacity(0.18))
+                .frame(width: 340, height: 340)
+                .blur(radius: 130)
+                .offset(x: -120, y: -300)
+
+            Circle()
+                .fill(AppTheme.accentSoft.opacity(0.16))
+                .frame(width: 260, height: 260)
+                .blur(radius: 120)
+                .offset(x: 150, y: -180)
+
+            Circle()
+                .fill(AppTheme.accentWarm.opacity(0.10))
+                .frame(width: 240, height: 240)
+                .blur(radius: 120)
+                .offset(x: 120, y: 330)
+
+            LinearGradient(
+                colors: [Color.white.opacity(0.05), Color.clear, Color.clear],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .blendMode(.screen)
+            .ignoresSafeArea()
         }
     }
 }

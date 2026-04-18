@@ -15,11 +15,12 @@ struct ModelLibraryView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.background.ignoresSafeArea()
+            AppBackdropView()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     heroSection
+                    latestReleaseSection
                     systemSection
 
                     if !installedModels.isEmpty {
@@ -103,6 +104,12 @@ struct ModelLibraryView: View {
         return preferred.filter { available.contains($0) }
     }
 
+    private var latestReleaseModels: [ModelCatalogItem] {
+        store.catalog
+            .filter(\.isLatestRelease)
+            .sorted(by: sortModels)
+    }
+
     private var allFamilies: [ModelCatalogItem.ModelFamily] {
         let preferred: [ModelCatalogItem.ModelFamily] = [.gemma, .qwen, .lfm, .openELM, .phi, .llama, .deepSeek, .mistral, .smolLM, .smolVLM, .stableLM, .tinyLlama, .kokoro]
         let available = Set(store.catalog.map(\.family))
@@ -143,7 +150,7 @@ struct ModelLibraryView: View {
                         .font(.system(size: 30, weight: .heavy, design: .rounded))
                         .foregroundStyle(AppTheme.textPrimary)
 
-                    Text("Curated local families, clean defaults, and honest runtime boundaries.")
+                    Text("Curated local families, newest on-device releases, and honest runtime boundaries.")
                         .font(.system(size: 15, weight: .medium, design: .rounded))
                         .foregroundStyle(AppTheme.textSecondary)
                 }
@@ -152,7 +159,7 @@ struct ModelLibraryView: View {
 
                 VStack(alignment: .trailing, spacing: 8) {
                     metricPill(value: "\(store.catalog.count)", label: "Variants")
-                    metricPill(value: "\(featuredFamilies.count)", label: "Featured")
+                    metricPill(value: "\(latestReleaseModels.count)", label: "Latest")
                 }
             }
 
@@ -170,6 +177,105 @@ struct ModelLibraryView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+        )
+    }
+
+    private var latestReleaseSection: some View {
+        Group {
+            if !latestReleaseModels.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionHeader(title: "Latest On-Device", subtitle: "Fresh MLX and llama.cpp lanes surfaced as first-class picks for modern phones.")
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(latestReleaseModels.prefix(4)) { item in
+                                latestReleaseCard(item)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+    }
+
+    private func latestReleaseCard(_ item: ModelCatalogItem) -> some View {
+        let color = AppTheme.labColor(for: item.family)
+        let installed = installedModel(for: item)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.runtimeType == .mlx ? "Latest MLX" : "Latest GGUF")
+                        .font(.system(size: 10, weight: .black, design: .rounded))
+                        .foregroundStyle(color)
+                        .textCase(.uppercase)
+
+                    Text(item.displayName)
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: item.runtimeType.icon)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(color)
+                    .padding(10)
+                    .background(color.opacity(0.12))
+                    .clipShape(Circle())
+            }
+
+            Text(item.summary)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineLimit(3)
+
+            HStack(spacing: 6) {
+                compactMeta(text: item.parameterSize, color: AppTheme.textSecondary)
+                compactMeta(text: item.contextWindow, color: AppTheme.warning)
+                compactMeta(text: item.runtimeType.label, color: color)
+            }
+
+            HStack(spacing: 8) {
+                if let installed {
+                    Button(installed.isDefault ? "Default" : "Use") {
+                        store.setDefaultModel(id: item.id)
+                    }
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(installed.isDefault ? AppTheme.success : AppTheme.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background((installed.isDefault ? AppTheme.success : AppTheme.accent).opacity(0.14))
+                    .clipShape(Capsule())
+                } else {
+                    Button("Install") {
+                        if item.runtimeType == .mlx {
+                            startMLXInstall(for: item)
+                        } else {
+                            startInstall(for: item)
+                        }
+                    }
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.background)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(AppTheme.accentGradient))
+                }
+
+                Spacer()
+            }
+        }
+        .frame(width: 270, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(AppTheme.surfaceGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(color.opacity(0.18), lineWidth: 0.7)
         )
     }
 
@@ -818,6 +924,9 @@ struct ModelLibraryView: View {
     }
 
     private func sortModels(_ lhs: ModelCatalogItem, _ rhs: ModelCatalogItem) -> Bool {
+        if lhs.isLatestRelease != rhs.isLatestRelease {
+            return lhs.isLatestRelease && !rhs.isLatestRelease
+        }
         if lhs.recommendedForIPhone != rhs.recommendedForIPhone {
             return lhs.recommendedForIPhone && !rhs.recommendedForIPhone
         }

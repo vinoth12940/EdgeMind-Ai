@@ -3,7 +3,7 @@ import Foundation
 enum MockCatalogData {
 
     // MARK: - Model Catalog
-    // Curated runnable set: Gemma 4 (GGUF) + Qwen 3.5 / LFM 2.5 (MLX).
+    // Curated runnable set: Gemma 4 (GGUF) + Qwen 3 / Qwen 3 2507 + LFM 2.5 (MLX).
     // Capability flags reflect source vs runtime behavior in this app.
     // Capability flags reflect actual model card specs.
 
@@ -101,6 +101,37 @@ enum MockCatalogData {
             recommendedForIPhone: true
         ),
         ModelCatalogItem(
+            displayName: "Qwen 3 4B 2507 Instruct (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX · Latest",
+            summary: "Latest Qwen 3 4B non-thinking release converted by MLX Community. Stronger instruction following, tool use, and 256K long-context support in a device-friendly 4-bit package.",
+            parameterSize: "4B",
+            quantization: "MLX 4-bit",
+            diskSize: "~2.3 GB",
+            contextWindow: "256K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+            supportsReasoning: true,
+            supportsToolCalling: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3 4B 2507 Thinking (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX · Latest",
+            summary: "Latest Qwen 3 4B thinking release converted by MLX Community. Best local reasoning lane in the shipped MLX catalog with 256K context and native thinking output.",
+            parameterSize: "4B",
+            quantization: "MLX 4-bit",
+            diskSize: "~2.3 GB",
+            contextWindow: "256K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3-4B-Thinking-2507-4bit",
+            supportsReasoning: true,
+            supportsToolCalling: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
             displayName: "Qwen 3 8B (MLX)",
             family: .qwen,
             variant: "4-bit MLX",
@@ -114,6 +145,37 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3 4B 2507 Instruct (GGUF)",
+            family: .qwen,
+            variant: "Q4_K_M GGUF · Latest",
+            summary: "Latest Qwen 3 4B instruct release for the llama.cpp lane. Text-only on this runtime path, but better aligned for tool calling and long-context local chat.",
+            parameterSize: "4B",
+            quantization: "GGUF Q4_K_M",
+            diskSize: "~2.5 GB",
+            contextWindow: "256K",
+            downloadURL: URL(string: "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf?download=true"),
+            runtimeType: .gguf,
+            supportsReasoning: true,
+            supportsToolCalling: true,
+            recommendedForIPhone: true
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3 4B 2507 Thinking (GGUF)",
+            family: .qwen,
+            variant: "Q4_K_M GGUF · Latest",
+            summary: "Latest Qwen 3 4B thinking release for the llama.cpp lane. Ideal when you want newer reasoning behavior without leaving the on-device GGUF path.",
+            parameterSize: "4B",
+            quantization: "GGUF Q4_K_M",
+            diskSize: "~2.5 GB",
+            contextWindow: "256K",
+            downloadURL: URL(string: "https://huggingface.co/unsloth/Qwen3-4B-Thinking-2507-GGUF/resolve/main/Qwen3-4B-Thinking-2507-Q4_K_M.gguf?download=true"),
+            runtimeType: .gguf,
+            supportsReasoning: true,
+            supportsToolCalling: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true
         ),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
