@@ -402,6 +402,33 @@ struct SettingsView: View {
     private var webSearchSection: some View {
         settingsSection(icon: "globe.americas.fill", title: "Web Search API", iconColor: AppTheme.warning) {
             VStack(alignment: .leading, spacing: 10) {
+                if store.settings.webSearchProvider == .none,
+                   SearchGatewayFactory.hasSuggestedGateway(settings: store.settings),
+                   let gatewayURL = store.settings.searchGatewayURL?.absoluteString {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Local gateway detected")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+
+                        Text(gatewayURL)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(AppTheme.textTertiary)
+
+                        Button {
+                            store.settings.webSearchProvider = .custom
+                            store.persistSettings()
+                        } label: {
+                            Label("Use Local Gateway", systemImage: "bolt.horizontal.circle.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(AppTheme.accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(AppTheme.panelRaised.opacity(0.45))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
                 Picker("Provider", selection: Binding(
                     get: { store.settings.webSearchProvider },
                     set: {
@@ -421,7 +448,11 @@ struct SettingsView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(AppTheme.textTertiary)
 
-                    if store.settings.webSearchProvider != .custom {
+                    if store.settings.webSearchProvider == .custom {
+                        Text("Custom gateway requests use the Search Gateway URL below.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    } else {
                         SecureField(
                             store.settings.webSearchProvider.placeholder,
                             text: Binding(
@@ -457,7 +488,11 @@ struct SettingsView: View {
                 }
 
                 if store.settings.webSearchProvider == .none {
-                    Text("Enable a search provider for real-time info. Keys stay on-device.")
+                    Text(
+                        SearchGatewayFactory.hasSuggestedGateway(settings: store.settings)
+                        ? "Live search can use the local gateway above, or you can choose an API provider."
+                        : "Enable a search provider for real-time info. Keys stay on-device."
+                    )
                         .font(.system(size: 12))
                         .foregroundStyle(AppTheme.textTertiary)
                 }
@@ -475,7 +510,11 @@ struct SettingsView: View {
                 TextField("https://…", text: Binding(
                     get: { store.settings.searchGatewayURL?.absoluteString ?? "" },
                     set: {
-                        store.settings.searchGatewayURL = URL(string: $0)
+                        let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                        store.settings.searchGatewayURL = URL(string: trimmed)
+                        if !trimmed.isEmpty {
+                            store.settings.webSearchProvider = .custom
+                        }
                         store.persistSettings()
                     }
                 ))
@@ -489,7 +528,7 @@ struct SettingsView: View {
                         .stroke(AppTheme.hairline, lineWidth: 1)
                 )
 
-                Text("Only used when Live Search is enabled.")
+                Text("Entering a gateway URL automatically switches Web Search to Custom Gateway.")
                     .font(.system(size: 12))
                     .foregroundStyle(AppTheme.textTertiary)
             }

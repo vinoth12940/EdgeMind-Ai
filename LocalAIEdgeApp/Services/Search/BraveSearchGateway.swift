@@ -11,7 +11,8 @@ struct BraveSearchGateway: SearchGateway {
         var components = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")!
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "count", value: "5")
+            URLQueryItem(name: "count", value: "5"),
+            URLQueryItem(name: "extra_snippets", value: "true")
         ]
 
         var request = URLRequest(url: components.url!)
@@ -32,7 +33,14 @@ struct BraveSearchGateway: SearchGateway {
 
         return SearchContext(
             query: query,
-            snippets: webResults.prefix(5).map { $0.description },
+            answer: nil,
+            snippets: webResults.prefix(5).map { item in
+                var content = "\(item.title): \(item.description)"
+                if let extras = item.extra_snippets, !extras.isEmpty {
+                    content += " " + extras.joined(separator: " ")
+                }
+                return content
+            },
             citations: webResults.prefix(5).map { item in
                 SearchCitation(
                     title: item.title,
@@ -58,4 +66,5 @@ private struct BraveWebResult: Decodable {
     let title: String
     let url: String
     let description: String
+    let extra_snippets: [String]?
 }

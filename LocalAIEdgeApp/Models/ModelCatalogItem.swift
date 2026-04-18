@@ -227,6 +227,10 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         downloadURL?.lastPathComponent.removingPercentEncoding
     }
 
+    var contextWindowTokenCount: Int {
+        Self.parseContextWindowTokenCount(contextWindow)
+    }
+
     /// Generate a stable UUID from displayName + variant so IDs survive across launches.
     private static func deterministicID(displayName: String, variant: String) -> UUID {
         // UUID v5 using a fixed namespace
@@ -234,10 +238,32 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         return uuidV5(namespace: namespace, name: "\(displayName)::\(variant)")
     }
 
+    static func parseContextWindowTokenCount(_ rawValue: String) -> Int {
+        let compact = rawValue
+            .uppercased()
+            .replacingOccurrences(of: "TOKENS", with: "")
+            .replacingOccurrences(of: "TOKEN", with: "")
+            .replacingOccurrences(of: " ", with: "")
+
+        let numericPortion = compact.filter { $0.isNumber || $0 == "." }
+        guard let value = Double(numericPortion), value > 0 else { return 0 }
+
+        let multiplier: Double
+        if compact.contains("M") {
+            multiplier = 1_000_000
+        } else if compact.contains("K") {
+            multiplier = 1_000
+        } else {
+            multiplier = 1
+        }
+
+        return Int((value * multiplier).rounded())
+    }
+
     private static func uuidV5(namespace: UUID, name: String) -> UUID {
-        var namespaceBytes = withUnsafeBytes(of: namespace.uuid) { Array($0) }
+        let namespaceBytes = withUnsafeBytes(of: namespace.uuid) { Array($0) }
         let nameBytes = Array(name.utf8)
-        var data = namespaceBytes + nameBytes
+        let data = namespaceBytes + nameBytes
         // SHA-1 hash (only need first 16 bytes for UUID)
         var hash = [UInt8](repeating: 0, count: 20)
         data.withUnsafeBufferPointer { ptr in

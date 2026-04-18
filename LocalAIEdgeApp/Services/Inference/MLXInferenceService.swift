@@ -237,18 +237,26 @@ struct MLXInferenceService: InferenceService {
             supportsVision: model.catalogItem.supportsVision,
             imageData: imageData
         )
+        let maxGeneratedTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         let fullSystemPrompt = Self.buildSystemPrompt(
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
-            searchContext: searchContext
+            searchContext: searchContext,
+            model: model,
+            maxGeneratedTokens: maxGeneratedTokens
         )
-        let history = Self.buildChatHistory(conversation: conversation)
+        let history = Self.buildChatHistory(
+            conversation: conversation,
+            model: model,
+            searchContext: searchContext,
+            maxGeneratedTokens: maxGeneratedTokens
+        )
 
         do {
             let response = try await MLXRuntime.shared.generate(
                 prompt: prompt,
                 modelID: mlxModelID,
                 systemPrompt: fullSystemPrompt,
-                maxTokens: searchContext != nil ? 2048 : 1024,
+                maxTokens: maxGeneratedTokens,
                 imageData: imageData,
                 isVision: isVision,
                 chatHistory: history
@@ -280,11 +288,19 @@ struct MLXInferenceService: InferenceService {
             supportsVision: model.catalogItem.supportsVision,
             imageData: imageData
         )
+        let maxGeneratedTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         let fullSystemPrompt = Self.buildSystemPrompt(
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
-            searchContext: searchContext
+            searchContext: searchContext,
+            model: model,
+            maxGeneratedTokens: maxGeneratedTokens
         )
-        let history = Self.buildChatHistory(conversation: conversation)
+        let history = Self.buildChatHistory(
+            conversation: conversation,
+            model: model,
+            searchContext: searchContext,
+            maxGeneratedTokens: maxGeneratedTokens
+        )
 
         let messageID = UUID()
         do {
@@ -292,7 +308,7 @@ struct MLXInferenceService: InferenceService {
                 prompt: prompt,
                 modelID: mlxModelID,
                 systemPrompt: fullSystemPrompt,
-                maxTokens: searchContext != nil ? 2048 : 1024,
+                maxTokens: maxGeneratedTokens,
                 imageData: imageData,
                 isVision: isVision,
                 chatHistory: history
@@ -304,26 +320,11 @@ struct MLXInferenceService: InferenceService {
         }
     }
 
-    /// Appends tool call definition to system prompt for tool-calling models.
+    /// Tool definition injection is handled centrally by ChatView to ensure
+    /// consistent behavior across GGUF and MLX runtimes and to avoid wasting
+    /// context window space with duplicate definitions.
     private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
-        guard model.catalogItem.supportsToolCalling, !base.contains("## web_search") else { return base }
-        return base + """
-
-# Tools
-
-You have access to the following tool. Call it when you need current or real-time information (news, scores, weather, prices, recent events).
-
-## web_search
-Search the web for up-to-date information.
-Parameters: query (string) — the search query
-
-To call it, output ONLY this block (no other text before the closing tag):
-<tool_call>
-{"name": "web_search", "arguments": {"query": "your search query here"}}
-</tool_call>
-
-Call it at most once. Do not call it for questions you can answer from your training data.
-"""
+        return base
     }
 
     /// Translate common MLX / Hub download errors into user-friendly messages.
@@ -353,15 +354,85 @@ Call it at most once. Do not call it for questions you can answer from your trai
         return desc
     }
 
-    private static func buildSystemPrompt(systemPrompt: String, searchContext: SearchContext?) -> String {
+    private static func buildSystemPrompt(
+        systemPrompt: String,
+        searchContext: SearchContext?,
+        model: InstalledModel,
+        maxGeneratedTokens: Int
+    ) -> String {
         var result = "\(systemPrompt)\nYou are running locally on-device using MLX on Apple Silicon. Respond directly to the user's question. Do not hallucinate or fabricate information."
         if let searchContext {
-            let snippets = searchContext.snippets.prefix(5).enumerated().map { index, snippet in
+            var parts: [String] = []
+            let totalBudget = InferenceBudget.mlxSearchBudgetCharacters(for: model, maxGeneratedTokens: maxGeneratedTokens)
+
+            // 1. Present the pre-summarized answer prominently (if available)
+            if let answer = searchContext.answer, !answer.isEmpty {
+                let cleanAnswer = stripHTML(answer)
+                let answerCap = min(6_000, max(3_000, totalBudget / 3))
+                let cappedAnswer = cleanAnswer.count > answerCap ? String(cleanAnswer.prefix(answerCap)) + "..." : cleanAnswer
+                parts.append("DIRECT ANSWER: \(cappedAnswer)")
+            }
+
+            // 2. Supporting source snippets with keyword relevance extraction
+            let answerBudget = searchContext.answer != nil ? min(6_000, max(3_000, totalBudget / 3)) : 0
+            let snippetBudget = totalBudget - answerBudget
+            let snippetCount = min(5, searchContext.snippets.count)
+            let perSnippetLimit = snippetCount > 0 ? snippetBudget / snippetCount : 3000
+            let queryKeywords = extractKeywords(from: searchContext.query)
+
+            let sourceLines = searchContext.snippets.prefix(5).enumerated().map { index, snippet -> String in
                 let cleaned = stripHTML(snippet)
-                let truncated = cleaned.count > 300 ? String(cleaned.prefix(300)) + "..." : cleaned
-                return "[\(index + 1)] \(truncated)"
-            }.joined(separator: "\n")
-            result += "\n\nWeb Search Results — Answer the user's question using these results. Reference sources by number (e.g. [1], [2]) in your answer. If the results don't help, say so.\n\(snippets)"
+                let relevant = extractRelevantContent(from: cleaned, keywords: queryKeywords, limit: perSnippetLimit)
+                return "[\(index + 1)] \(relevant)"
+            }
+            parts.append("SOURCES:\n" + sourceLines.joined(separator: "\n"))
+
+            result += "\n\n" + parts.joined(separator: "\n\n") + "\n\nINSTRUCTIONS: Answer the user's question using the information above. If a DIRECT ANSWER is provided, use it as your primary source and expand with details from SOURCES. Be specific and detailed.\n\(SearchGroundingGuidance.instructions)"
+        }
+        return result
+    }
+
+    /// Extract keywords from a search query for relevance matching.
+    private static func extractKeywords(from query: String) -> [String] {
+        let stopWords: Set<String> = ["the", "a", "an", "is", "are", "was", "were", "in", "on", "at",
+                                       "to", "for", "of", "with", "by", "from", "and", "or", "not",
+                                       "what", "who", "how", "when", "where", "which", "that", "this",
+                                       "do", "does", "did", "will", "can", "could", "would", "should",
+                                       "have", "has", "had", "be", "been", "being", "it", "its", "me",
+                                       "my", "give", "get", "show", "tell", "full", "all", "about"]
+        return query.lowercased()
+            .components(separatedBy: .alphanumerics.inverted)
+            .filter { $0.count > 2 && !stopWords.contains($0) }
+    }
+
+    /// Extract paragraphs/sentences from long content that match query keywords.
+    private static func extractRelevantContent(from text: String, keywords: [String], limit: Int) -> String {
+        guard text.count > limit else { return text }
+
+        let paragraphs = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.count > 30 }
+
+        guard !paragraphs.isEmpty, !keywords.isEmpty else {
+            return String(text.prefix(limit)) + "..."
+        }
+
+        let scored = paragraphs.map { para -> (String, Int) in
+            let lower = para.lowercased()
+            let score = keywords.reduce(0) { sum, kw in sum + (lower.contains(kw) ? 1 : 0) }
+            return (para, score)
+        }
+        .sorted { $0.1 > $1.1 }
+
+        var result = ""
+        for (para, score) in scored {
+            if score == 0 && result.count > limit / 3 { break }
+            if result.count + para.count + 1 > limit { break }
+            result += (result.isEmpty ? "" : " ") + para
+        }
+
+        if result.isEmpty {
+            return String(text.prefix(limit)) + "..."
         }
         return result
     }
@@ -370,8 +441,17 @@ Call it at most once. Do not call it for questions you can answer from your trai
     /// Conversation is the prior history — the current user prompt is NOT included here;
     /// it is appended separately in MLXRuntime (where images can also be attached).
     /// Trims oldest turns first when history exceeds the token budget.
-    private static func buildChatHistory(conversation: [ChatMessage]) -> [Chat.Message] {
-        let historyBudget = 6800
+    private static func buildChatHistory(
+        conversation: [ChatMessage],
+        model: InstalledModel,
+        searchContext: SearchContext?,
+        maxGeneratedTokens: Int
+    ) -> [Chat.Message] {
+        let historyBudget = InferenceBudget.mlxHistoryBudget(
+            for: model,
+            searchContext: searchContext,
+            maxGeneratedTokens: maxGeneratedTokens
+        )
         var turns: [Chat.Message] = []
         var usedTokens = 0
 

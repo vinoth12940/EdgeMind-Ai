@@ -5,7 +5,7 @@ struct CustomSearchGateway: SearchGateway {
     let gatewayURL: URL
 
     func search(query: String) async throws -> SearchContext {
-        var request = URLRequest(url: gatewayURL)
+        var request = URLRequest(url: Self.normalizedEndpoint(from: gatewayURL))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -23,6 +23,23 @@ struct CustomSearchGateway: SearchGateway {
 
         return try JSONDecoder().decode(SearchContext.self, from: data)
     }
+
+    static func normalizedEndpoint(from gatewayURL: URL) -> URL {
+        guard var components = URLComponents(url: gatewayURL, resolvingAgainstBaseURL: false) else {
+            return gatewayURL
+        }
+
+        switch components.path {
+        case "", "/":
+            components.path = "/api/search"
+        case "/health":
+            components.path = "/api/search"
+        default:
+            break
+        }
+
+        return components.url ?? gatewayURL
+    }
 }
 
 // MARK: - Factory
@@ -31,7 +48,8 @@ enum SearchGatewayFactory {
     static func make(settings: AppSettings) -> SearchGateway? {
         switch settings.webSearchProvider {
         case .none:
-            return nil
+            guard let url = normalizedCustomGatewayURL(from: settings) else { return nil }
+            return CustomSearchGateway(gatewayURL: url)
         case .tavily:
             guard !settings.webSearchAPIKey.isEmpty else { return nil }
             return TavilySearchGateway(apiKey: settings.webSearchAPIKey)
@@ -42,8 +60,30 @@ enum SearchGatewayFactory {
             guard !settings.webSearchAPIKey.isEmpty else { return nil }
             return SerperSearchGateway(apiKey: settings.webSearchAPIKey)
         case .custom:
-            guard let url = settings.searchGatewayURL else { return nil }
+            guard let url = normalizedCustomGatewayURL(from: settings) else { return nil }
             return CustomSearchGateway(gatewayURL: url)
         }
+    }
+
+    static func shouldAutoEnableLiveSearch(settings: AppSettings) -> Bool {
+        switch settings.webSearchProvider {
+        case .none:
+            return false
+        case .tavily, .brave, .serper:
+            return !settings.webSearchAPIKey.isEmpty
+        case .custom:
+            return normalizedCustomGatewayURL(from: settings) != nil
+        }
+    }
+
+    static func hasSuggestedGateway(settings: AppSettings) -> Bool {
+        normalizedCustomGatewayURL(from: settings) != nil
+    }
+
+    private static func normalizedCustomGatewayURL(from settings: AppSettings) -> URL? {
+        guard let url = settings.searchGatewayURL else { return nil }
+        let absolute = url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !absolute.isEmpty else { return nil }
+        return CustomSearchGateway.normalizedEndpoint(from: url)
     }
 }

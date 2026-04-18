@@ -31,14 +31,15 @@ struct SerperSearchGateway: SearchGateway {
         let result = try JSONDecoder().decode(SerperResponse.self, from: data)
         let organic = result.organic ?? []
 
-        var snippets: [String] = []
-        if let answer = result.answerBox?.answer ?? result.answerBox?.snippet {
-            snippets.append(answer)
+        let answerText = result.answerBox?.answer ?? result.answerBox?.snippet
+        let snippets: [String] = organic.prefix(5).compactMap { item in
+            guard let snippet = item.snippet else { return nil }
+            return "\(item.title): \(snippet)"
         }
-        snippets += organic.prefix(5).compactMap { $0.snippet }
 
         return SearchContext(
             query: query,
+            answer: answerText,
             snippets: snippets,
             citations: organic.prefix(5).map { item in
                 SearchCitation(

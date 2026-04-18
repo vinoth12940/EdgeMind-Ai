@@ -54,7 +54,10 @@ actor StreamProcessor {
                     while !remaining.isEmpty {
                         // ── Tool call buffering ──────────────────────────────
                         if toolCallBuffer != nil {
-                            if let closeRange = remaining.range(of: "</tool_call>", options: .caseInsensitive) {
+                            // Detect both standard </tool_call> and Gemma 4 native <tool_call|>
+                            let closeRange = remaining.range(of: "</tool_call>", options: .caseInsensitive)
+                                ?? remaining.range(of: "<tool_call|>", options: .caseInsensitive)
+                            if let closeRange {
                                 toolCallBuffer! += String(remaining[..<closeRange.lowerBound])
                                 remaining = String(remaining[closeRange.upperBound...])
                                 let raw = toolCallBuffer!
@@ -66,8 +69,8 @@ actor StreamProcessor {
                                     // follow-up stream, it's treated as plain text even if the first was bad JSON.
                                     toolCallFired = true
                                     if let data = raw.data(using: .utf8),
-                                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-                                       let name = json["name"], !name.isEmpty {
+                                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                                       let name = json["name"] as? String, !name.isEmpty {
                                         continuation.yield(.toolCall(name: name, argsJSON: raw))
                                         // Don't emit .done — ChatView will re-invoke inference
                                         // Remaining tokens after </tool_call> are discarded for this stream
@@ -91,6 +94,34 @@ actor StreamProcessor {
                         // ── Think block routing ──────────────────────────────
                         if let openTag = thinkOpenTag {
                             let closeTag = Self.thinkTagPairs[openTag]!
+
+                            // ── Check for <tool_call> inside think block ─────
+                            // Some models (Qwen 3) emit tool calls inside thinking.
+                            // If we detect <tool_call> before the closing think tag,
+                            // close thinking early and switch to tool call buffering.
+                            if !toolCallFired {
+                                let toolOpenRange = remaining.range(of: "<tool_call>", options: .caseInsensitive)
+                                    ?? remaining.range(of: "<|tool_call>", options: .caseInsensitive)
+                                let thinkCloseRange = remaining.range(of: closeTag, options: .caseInsensitive)
+
+                                if let toolRange = toolOpenRange,
+                                   (thinkCloseRange == nil || toolRange.lowerBound < thinkCloseRange!.lowerBound) {
+                                    // Tool call found before think close — end thinking, start tool buffering
+                                    let beforeTool = String(remaining[..<toolRange.lowerBound])
+                                    if !beforeTool.isEmpty {
+                                        continuation.yield(.thinkingDelta(beforeTool))
+                                    }
+                                    let duration = thinkStart.map { Int(Date().timeIntervalSince($0)) } ?? 0
+                                    continuation.yield(.thinkingDone(durationSeconds: max(1, duration)))
+                                    thinkBuffer = ""
+                                    thinkOpenTag = nil
+                                    thinkStart = nil
+                                    remaining = String(remaining[toolRange.upperBound...])
+                                    toolCallBuffer = ""
+                                    continue
+                                }
+                            }
+
                             if let closeRange = remaining.range(of: closeTag, options: .caseInsensitive) {
                                 thinkBuffer += String(remaining[..<closeRange.lowerBound])
                                 remaining = String(remaining[closeRange.upperBound...])
@@ -131,8 +162,10 @@ actor StreamProcessor {
                         if foundThink { continue }
 
                         // ── Detect opening tool_call tag ─────────────────────
+                        // Detect both standard <tool_call> and Gemma 4 native <|tool_call>
                         if !toolCallFired,
-                           let openRange = remaining.range(of: "<tool_call>", options: .caseInsensitive) {
+                           let openRange = remaining.range(of: "<tool_call>", options: .caseInsensitive)
+                                ?? remaining.range(of: "<|tool_call>", options: .caseInsensitive) {
                             let before = String(remaining[..<openRange.lowerBound])
                             lineBuffer += before
                             processBuffer(&lineBuffer)

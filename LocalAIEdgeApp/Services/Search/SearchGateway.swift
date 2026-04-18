@@ -32,6 +32,7 @@ struct MockSearchGateway: SearchGateway {
 
         return SearchContext(
             query: query,
+            answer: "Mock search answer for: \(query).",
             snippets: [
                 "Fresh search result summary for: \(query).",
                 "Use a small backend to protect the search provider API key.",

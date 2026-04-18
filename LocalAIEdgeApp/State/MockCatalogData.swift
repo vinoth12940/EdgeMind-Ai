@@ -27,7 +27,7 @@ enum MockCatalogData {
             sourceSupportsVision: true,
             supportsVision: false,
             supportsReasoning: true,
-            supportsToolCalling: false,
+            supportsToolCalling: true,
             recommendedForIPhone: true
         ),
         ModelCatalogItem(
@@ -44,7 +44,7 @@ enum MockCatalogData {
             sourceSupportsVision: true,
             supportsVision: false,
             supportsReasoning: true,
-            supportsToolCalling: false,
+            supportsToolCalling: true,
             recommendedForIPhone: true
         ),
 
@@ -64,6 +64,7 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3-0.6B-4bit",
             supportsReasoning: true,
+            supportsToolCalling: true,
             isThinkingModel: true,
             recommendedForIPhone: true
         ),
@@ -79,6 +80,7 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3-1.7B-4bit",
             supportsReasoning: true,
+            supportsToolCalling: true,
             isThinkingModel: true,
             recommendedForIPhone: true
         ),
@@ -94,6 +96,7 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3-4B-4bit",
             supportsReasoning: true,
+            supportsToolCalling: true,
             isThinkingModel: true,
             recommendedForIPhone: true
         ),
@@ -109,6 +112,7 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3-8B-4bit",
             supportsReasoning: true,
+            supportsToolCalling: true,
             isThinkingModel: true
         ),
 

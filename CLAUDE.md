@@ -164,7 +164,8 @@ cp .env.example .env   # add TAVILY_API_KEY
 npm run dev            # default port 8787
 ```
 
-Point `AppSettings.customGatewayURL` at `http://localhost:8787` in the app's Settings to use it.
+Point `AppSettings.searchGatewayURL` at `http://localhost:8787/api/search` in the app's Settings to use it.
+The app also normalizes the base URL `http://localhost:8787` to `/api/search` automatically for the bundled gateway.
 
 ## Gotchas
 

@@ -92,4 +92,21 @@ final class StreamProcessorTests: XCTestCase {
         // bad JSON means first fails; second should also fail (either bad or guard)
         XCTAssertEqual(toolEvents.count, 0)
     }
+
+    func test_gemma4ToolCallFormat_emitted() async throws {
+        // Gemma 4 uses <|tool_call> / <tool_call|> native format
+        let json = #"{"name":"web_search","query":"weather today"}"#
+        let events = await process(tokens: ["<|tool_call>", json, "<tool_call|>"])
+        XCTAssertTrue(events.contains {
+            if case .toolCall(let name, _) = $0 { return name == "web_search" }; return false
+        })
+        XCTAssertFalse(events.contains { if case .done = $0 { return true }; return false })
+    }
+
+    func test_gemma4ToolCallFormat_badJSON_flushedAsText() async throws {
+        let events = await process(tokens: ["<|tool_call>", "garbage", "<tool_call|>", "answer"])
+        XCTAssertFalse(events.contains { if case .toolCall = $0 { return true }; return false })
+        let text = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertTrue(text.contains("garbage"))
+    }
 }

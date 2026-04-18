@@ -174,6 +174,13 @@ final class AppStateStore {
         saveChatSessions()
     }
 
+    func removeMessage(_ messageID: UUID, from sessionID: UUID) {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        chatSessions[sessionIndex].messages.removeAll { $0.id == messageID }
+        chatSessions[sessionIndex].updatedAt = .now
+        saveChatSessions()
+    }
+
     func updateMessageText(_ messageID: UUID, in sessionID: UUID, text: String, persist: Bool = true) {
         guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else {
             return

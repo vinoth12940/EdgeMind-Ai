@@ -8,6 +8,7 @@ struct ChatView: View {
     @Environment(\.selectedTab) private var selectedTab
     @State private var prompt = ""
     @State private var liveSearchEnabled = false
+    @State private var searchAutoInitialized = false
     @State private var isInputFocused = false
     @State private var isSending = false
     @State private var generationTask: Task<Void, Never>?
@@ -38,7 +39,11 @@ To call it, output ONLY this block (no other text before the closing tag):
 {"name": "web_search", "arguments": {"query": "your search query here"}}
 </tool_call>
 
-Call it at most once. Do not call it for questions you can answer from your training data.
+Rules:
+- Call it for anything requiring real-time, current, or recent information.
+- If a follow-up question asks for more detail about a topic you previously searched, call web_search AGAIN with a refined query.
+- Do NOT refuse to search. If in doubt, search.
+- Call it at most once per response.
 """
 
     private var composerBottomSpacing: CGFloat {
@@ -53,6 +58,30 @@ Call it at most once. Do not call it for questions you can answer from your trai
 
     private var activeModel: InstalledModel? {
         store.defaultModel
+    }
+
+    private var searchGatewayConfigured: Bool {
+        SearchGatewayFactory.make(settings: store.settings) != nil
+    }
+
+    private var searchStatusLabel: String {
+        if liveSearchEnabled && searchGatewayConfigured {
+            return "Live Search"
+        }
+        if searchGatewayConfigured {
+            return "Search Ready"
+        }
+        return "Local Only"
+    }
+
+    private var searchStatusColor: Color {
+        if liveSearchEnabled && searchGatewayConfigured {
+            return AppTheme.warning
+        }
+        if searchGatewayConfigured {
+            return AppTheme.accent
+        }
+        return AppTheme.success
     }
 
     private var runtimeNotice: String? {
@@ -179,7 +208,7 @@ Call it at most once. Do not call it for questions you can answer from your trai
                 voiceStatusMessage: voiceController.lastError,
                 isVisionModel: isVisionModel,
                 isSending: isSending,
-                isSearchConfigured: SearchGatewayFactory.make(settings: store.settings) != nil,
+                isSearchConfigured: searchGatewayConfigured,
                 onSend: sendPrompt,
                 onToggleVoiceInput: toggleVoiceInput,
                 onStop: stopGeneration
@@ -196,7 +225,17 @@ Call it at most once. Do not call it for questions you can answer from your trai
                 .ignoresSafeArea(edges: .bottom)
             )
         }
-        .onAppear { store.reconcileInstalledFiles() }
+        .onAppear {
+            store.reconcileInstalledFiles()
+            // Auto-enable search when a provider is configured.
+            // The user can still toggle it OFF per-chat via the composer "+" menu.
+            if !searchAutoInitialized {
+                searchAutoInitialized = true
+                if SearchGatewayFactory.shouldAutoEnableLiveSearch(settings: store.settings) {
+                    liveSearchEnabled = true
+                }
+            }
+        }
         .onChange(of: voiceController.transcript) {
             if voiceController.isListening {
                 prompt = voiceController.transcript
@@ -326,11 +365,11 @@ Call it at most once. Do not call it for questions you can answer from your trai
                 // Status pill
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
+                        .fill(searchStatusColor)
                         .frame(width: 6, height: 6)
-                    Text(liveSearchEnabled ? "Online" : "Offline")
+                    Text(searchStatusLabel)
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(liveSearchEnabled ? AppTheme.warning : AppTheme.success)
+                        .foregroundStyle(searchStatusColor)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -388,6 +427,7 @@ Call it at most once. Do not call it for questions you can answer from your trai
                 HStack(spacing: 6) {
                     if let model = activeModel {
                         headerChip(label: model.catalogItem.parameterSize, tone: .neutral)
+                        headerChip(label: model.catalogItem.contextWindow, tone: .neutral)
                         headerChip(label: model.catalogItem.runtimeType.label, tone: model.catalogItem.runtimeType == .mlx ? .accent : .neutral)
                         headerChip(label: model.catalogItem.supportsVision ? "Vision" : "Text", tone: model.catalogItem.supportsVision ? .accent : .neutral)
 
@@ -399,6 +439,10 @@ Call it at most once. Do not call it for questions you can answer from your trai
                         }
                     } else {
                         headerChip(label: "No model", tone: .warning)
+                    }
+
+                    if searchGatewayConfigured {
+                        headerChip(label: liveSearchEnabled ? "Live Search On" : "Search Ready", tone: .warning)
                     }
 
                     if store.settings.voiceModeEnabled,
@@ -765,6 +809,46 @@ Call it at most once. Do not call it for questions you can answer from your trai
         voiceController.speak(lastAssistantResponseText, using: store.settings)
     }
 
+    /// Extract a web_search tool call from raw text (handles both standard and Gemma 4 formats).
+    /// Used as a fallback when StreamProcessor misses <tool_call> due to tag splitting across tokens.
+    private static func extractToolCallQuery(from text: String) -> String? {
+        // Try standard <tool_call>...</tool_call>
+        if let openRange = text.range(of: "<tool_call>", options: .caseInsensitive),
+           let closeRange = text.range(of: "</tool_call>", options: .caseInsensitive, range: openRange.upperBound..<text.endIndex) {
+            return parseWebSearchQuery(String(text[openRange.upperBound..<closeRange.lowerBound]))
+        }
+        // Try Gemma 4 native <|tool_call>...<tool_call|>
+        if let openRange = text.range(of: "<|tool_call>", options: .caseInsensitive),
+           let closeRange = text.range(of: "<tool_call|>", options: .caseInsensitive, range: openRange.upperBound..<text.endIndex) {
+            return parseWebSearchQuery(String(text[openRange.upperBound..<closeRange.lowerBound]))
+        }
+        return nil
+    }
+
+    private static func parseWebSearchQuery(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Try to find JSON object in the text (handles models that add extra text before JSON)
+        guard let jsonStart = trimmed.firstIndex(of: "{"),
+              let data = String(trimmed[jsonStart...]).data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+
+        // Name check (case-insensitive) — allow "web_search", "search", etc.
+        if let name = json["name"] as? String,
+           !name.lowercased().contains("search") { return nil }
+
+        // Try nested dict arguments first
+        if let args = json["arguments"] as? [String: Any],
+           let q = args["query"] as? String, !q.isEmpty { return q }
+        // Try string-encoded arguments
+        if let argsStr = json["arguments"] as? String,
+           let argsData = argsStr.data(using: .utf8),
+           let argsDict = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any],
+           let q = argsDict["query"] as? String, !q.isEmpty { return q }
+        // Try flat query key
+        if let q = json["query"] as? String, !q.isEmpty { return q }
+        return nil
+    }
+
     private func cleanedDisplayedAssistantText(_ text: String) -> String {
         var cleaned = AssistantResponseSanitizer.clean(text)
         cleaned = cleaned.replacingOccurrences(of: AssistantResponseFallback.emptyOutput, with: "")
@@ -847,11 +931,14 @@ Call it at most once. Do not call it for questions you can answer from your trai
             do {
                 let searchContext: SearchContext?
                 // Search flow:
-                // - liveSearchEnabled ON → agentic: model decides to search via <tool_call>
+                // - liveSearchEnabled ON → upfront search + tool definition (belt & suspenders)
                 // - useSearchByDefault ON (toggle OFF) → upfront search every prompt
                 // - Both OFF → no search
+                // Small models (2B) are unreliable at tool calling, so liveSearchEnabled
+                // now also does upfront search to guarantee results are always available.
                 let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
-                if !liveSearchEnabled && store.settings.useSearchByDefault && searchConfigured,
+                let shouldUpfrontSearch = (liveSearchEnabled || store.settings.useSearchByDefault) && searchConfigured
+                if shouldUpfrontSearch,
                    let gateway = SearchGatewayFactory.make(settings: store.settings) {
                     do {
                         searchContext = try await gateway.search(query: trimmedPrompt)
@@ -866,11 +953,18 @@ Call it at most once. Do not call it for questions you can answer from your trai
                     searchContext = nil
                 }
 
-                // When search toggle is ON, inject tool definition so the model
-                // can decide whether to search via <tool_call>.
+                // Inject tool definition ONLY when search is configured but
+                // no upfront search results are available. When upfront search
+                // already returned snippets, tool definitions waste context window
+                // and overwhelm small models — skip them to maximize generation room.
                 var systemPromptForInference = store.settings.systemPrompt
-                if liveSearchEnabled && searchConfigured {
+                if searchConfigured && searchContext == nil {
                     systemPromptForInference += Self.toolCallDefinition
+                    chatLogger.log("Tool definition injected (search configured, no upfront results)")
+                } else if searchContext != nil {
+                    chatLogger.log("Upfront search provided results — tool definition skipped to save context window")
+                } else {
+                    chatLogger.log("No search provider configured — tool definition NOT injected")
                 }
 
                 // Create a placeholder assistant message for streaming
@@ -934,28 +1028,56 @@ Call it at most once. Do not call it for questions you can answer from your trai
                         }
 
                     case .toolCall(let name, let argsJSON):
-                        guard name == "web_search" else { break }
-                        // Parse query from either flat {"query":"..."} or Qwen3-style
-                        // {"name":"web_search","arguments":{"query":"..."}}
+                        chatLogger.log("StreamProcessor yielded .toolCall: name=\(name, privacy: .public) argsLen=\(argsJSON.count)")
+                        guard name.lowercased() == "web_search" else {
+                            chatLogger.log("Tool call name '\(name, privacy: .public)' is not web_search — ignoring")
+                            break
+                        }
+                        // Parse query from multiple JSON formats:
+                        // 1) {"name":"web_search","arguments":{"query":"..."}}
+                        // 2) {"name":"web_search","query":"..."}
+                        // 3) {"name":"web_search","arguments":"{\"query\":\"...\"}"} (string args)
                         guard let data = argsJSON.data(using: .utf8),
-                              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                              let query = (raw["query"] as? String)
-                                ?? ((raw["arguments"] as? [String: Any])?["query"] as? String),
-                              !query.isEmpty else { break }
+                              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                            chatLogger.log("Failed to parse tool call JSON: \(argsJSON.prefix(200), privacy: .public)")
+                            break
+                        }
+                        // Try nested dict arguments, then flat query, then string-encoded arguments
+                        var query: String?
+                        if let args = raw["arguments"] as? [String: Any] {
+                            query = args["query"] as? String
+                        } else if let argsStr = raw["arguments"] as? String,
+                                  let argsData = argsStr.data(using: .utf8),
+                                  let argsDict = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] {
+                            query = argsDict["query"] as? String
+                        }
+                        if query == nil { query = raw["query"] as? String }
+                        guard let query, !query.isEmpty else {
+                            chatLogger.log("Could not extract query from tool call JSON: \(argsJSON.prefix(200), privacy: .public)")
+                            break
+                        }
+                        chatLogger.log("Tool call parsed — query: \(query, privacy: .public)")
 
-                        // Clean up the first assistant placeholder so <tool_call> text
-                        // doesn't pollute conversation history on the next turn.
-                        await updateStreamingMessage(
-                            AssistantResponseFallback.emptyOutput,
-                            messageID: messageID, sessionID: sessionID, persist: true
-                        )
+                        // Remove the first assistant placeholder entirely so the
+                        // "No visible answer" recovery card never appears in the chat.
+                        await MainActor.run { store.removeMessage(messageID, from: sessionID) }
 
                         let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(query)…")
                         await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
 
                         var agenticSearchContext: SearchContext? = nil
                         if let gateway = SearchGatewayFactory.make(settings: store.settings) {
-                            agenticSearchContext = try? await gateway.search(query: query)
+                            chatLogger.log("Calling search gateway for query: \(query, privacy: .public)")
+                            do {
+                                agenticSearchContext = try await gateway.search(query: query)
+                                chatLogger.log("Search returned \(agenticSearchContext?.snippets.count ?? 0) snippets")
+                            } catch {
+                                chatLogger.log("Search gateway error: \(error.localizedDescription, privacy: .public)")
+                                let errorMsg = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
+                                await MainActor.run { store.appendMessage(errorMsg, to: sessionID) }
+                            }
+                        } else {
+                            chatLogger.log("No search gateway available — factory returned nil")
                         }
                         if agenticSearchContext == nil {
                             let unavailableMsg = ChatMessage(role: .system, text: "⚠️ Search unavailable — answering from local knowledge.")
@@ -963,6 +1085,7 @@ Call it at most once. Do not call it for questions you can answer from your trai
                         }
 
                         let newPendingCitations = agenticSearchContext?.citations ?? []
+                        chatLogger.log("Re-invoking inference with search context (nil=\(agenticSearchContext == nil))")
                         let (newMessageID, newStream) = try await service.generateStream(
                             prompt: trimmedPrompt,
                             model: model,
@@ -1020,6 +1143,95 @@ Call it at most once. Do not call it for questions you can answer from your trai
                     }
                 }
 
+                // ── Post-stream tool call fallback ──────────────────────
+                // If StreamProcessor missed a <tool_call> block (e.g. tag split
+                // across token boundaries), detect it in the accumulated text.
+                chatLogger.log("Stream ended. accumulated length=\(accumulated.count), checking for missed tool calls…")
+                if accumulated.lowercased().contains("<tool_call>") || accumulated.lowercased().contains("<|tool_call>") {
+                    chatLogger.log("Post-stream: raw text contains tool_call tag")
+                }
+                if !stoppedByUser,
+                   let query = Self.extractToolCallQuery(from: accumulated),
+                   SearchGatewayFactory.make(settings: store.settings) != nil {
+                    chatLogger.log("Post-stream fallback FIRED — query: \(query, privacy: .public)")
+                    await MainActor.run { store.removeMessage(messageID, from: sessionID) }
+
+                    let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(query)…")
+                    await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
+
+                    var agenticSearchContext: SearchContext? = nil
+                    if let gateway = SearchGatewayFactory.make(settings: store.settings) {
+                        chatLogger.log("Post-stream: calling search gateway…")
+                        do {
+                            agenticSearchContext = try await gateway.search(query: query)
+                            chatLogger.log("Post-stream: search returned \(agenticSearchContext?.snippets.count ?? 0) snippets")
+                        } catch {
+                            chatLogger.log("Post-stream: search error: \(error.localizedDescription, privacy: .public)")
+                            let errorMsg = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
+                            await MainActor.run { store.appendMessage(errorMsg, to: sessionID) }
+                        }
+                    } else {
+                        chatLogger.log("Post-stream: no search gateway available")
+                    }
+                    if agenticSearchContext == nil {
+                        let unavailableMsg = ChatMessage(role: .system, text: "⚠️ Search unavailable — answering from local knowledge.")
+                        await MainActor.run { store.appendMessage(unavailableMsg, to: sessionID) }
+                    }
+
+                    let newPendingCitations = agenticSearchContext?.citations ?? []
+                    let (newMessageID, newStream) = try await service.generateStream(
+                        prompt: trimmedPrompt,
+                        model: model,
+                        conversation: conversation,
+                        searchContext: agenticSearchContext,
+                        systemPrompt: store.settings.systemPrompt,
+                        imageData: jpegData
+                    )
+                    let newPlaceholder = ChatMessage(id: newMessageID, role: .assistant, text: "", citations: newPendingCitations)
+                    await MainActor.run { store.appendMessage(newPlaceholder, to: sessionID) }
+
+                    accumulated = ""
+                    thinkingAccumulated = ""
+                    for await newEvent in newStream {
+                        if Task.isCancelled { break }
+                        switch newEvent {
+                        case .textDelta(let chunk):
+                            accumulated += chunk
+                            let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                                || chunk.contains(where: \.isNewline)
+                                || accumulated.count <= 48
+                            if shouldFlush {
+                                lastFlush = clock.now
+                                await updateStreamingMessage(accumulated, messageID: newMessageID, sessionID: sessionID)
+                            }
+                        case .thinkingDelta(let chunk):
+                            thinkingAccumulated += chunk
+                            let snapshot = thinkingAccumulated
+                            await MainActor.run {
+                                store.updateMessageThinking(newMessageID, in: sessionID, thinkingContent: snapshot)
+                            }
+                        case .thinkingDone(let dur):
+                            let snapshot = thinkingAccumulated
+                            await MainActor.run {
+                                store.updateMessageThinking(newMessageID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
+                            }
+                        case .toolCall, .done:
+                            break
+                        }
+                    }
+                    let finalText2 = resolvedAssistantText(
+                        from: accumulated,
+                        prompt: trimmedPrompt,
+                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    await updateStreamingMessage(
+                        finalText2,
+                        messageID: newMessageID, sessionID: sessionID, persist: true
+                    )
+                    await MainActor.run { finishGenerationIfCurrent(taskID) }
+                    return
+                }
+
                 // Sanitize the final text — this is what gets stored in conversation history,
                 // so template tokens must be stripped to prevent feedback loops on next turn.
                 chatLogger.log("Raw accumulated text (\(accumulated.count) chars): \(accumulated.prefix(500), privacy: .public)")
@@ -1029,6 +1241,212 @@ Call it at most once. Do not call it for questions you can answer from your trai
                     thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
                 chatLogger.log("Resolved final text (\(finalText.count) chars): \(finalText.prefix(300), privacy: .public)")
+
+                // ── Search-grounding retry ──────────────────────────
+                // Some small models still emit a stock "no real-time access"
+                // disclaimer even when fresh web results are already in the prompt.
+                // Retry once with a stricter search-grounding prompt and no history.
+                if !stoppedByUser,
+                   let searchContext,
+                   AssistantResponseFallback.isSearchAccessRefusal(finalText) {
+                    chatLogger.log("Search-grounding retry triggered after searched response refused live/current access.")
+                    await MainActor.run { store.removeMessage(messageID, from: sessionID) }
+
+                    let retryMsg = ChatMessage(role: .system, text: "🔄 Retrying with grounded web results…")
+                    await MainActor.run { store.appendMessage(retryMsg, to: sessionID) }
+
+                    let retryCitations = searchContext.citations
+                    let (retryMsgID, retryStream) = try await service.generateStream(
+                        prompt: trimmedPrompt,
+                        model: model,
+                        conversation: [],
+                        searchContext: searchContext,
+                        systemPrompt: SearchGroundingGuidance.retrySystemPrompt(from: store.settings.systemPrompt),
+                        imageData: nil
+                    )
+                    let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: retryCitations)
+                    await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
+
+                    accumulated = ""
+                    thinkingAccumulated = ""
+                    for await retryEvent in retryStream {
+                        if Task.isCancelled { break }
+                        switch retryEvent {
+                        case .textDelta(let chunk):
+                            accumulated += chunk
+                            let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                                || chunk.contains(where: \.isNewline)
+                                || accumulated.count <= 48
+                            if shouldFlush {
+                                lastFlush = clock.now
+                                await updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
+                            }
+                        case .thinkingDelta(let chunk):
+                            thinkingAccumulated += chunk
+                            let snapshot = thinkingAccumulated
+                            await MainActor.run {
+                                store.updateMessageThinking(retryMsgID, in: sessionID, thinkingContent: snapshot)
+                            }
+                        case .thinkingDone(let dur):
+                            let snapshot = thinkingAccumulated
+                            await MainActor.run {
+                                store.updateMessageThinking(retryMsgID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
+                            }
+                        case .toolCall, .done:
+                            break
+                        }
+                    }
+                    let retryFinalText = resolvedAssistantText(
+                        from: accumulated,
+                        prompt: trimmedPrompt,
+                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    await updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
+                    await MainActor.run { finishGenerationIfCurrent(taskID) }
+                    return
+                }
+
+                // ── Empty-output fallback ───────────────────────────
+                // Two branches depending on whether search was already provided:
+                // A) searchContext was provided but model still failed → retry with
+                //    simplified prompt (no history, no tool def) to maximize context
+                // B) No search context → auto-search and retry
+                if !stoppedByUser,
+                   AssistantResponseFallback.isEmptyOutputMessage(finalText),
+                   SearchGatewayFactory.make(settings: store.settings) != nil {
+
+                    if searchContext != nil {
+                        // ── Branch A: search was provided, model still produced nothing ──
+                        // Retry with a minimal system prompt and no history to give the
+                        // model maximum context window for the search results + question.
+                        chatLogger.log("Empty-output retry: search context was provided but model produced nothing. Retrying with simplified prompt.")
+                        await MainActor.run { store.removeMessage(messageID, from: sessionID) }
+
+                        let retryMsg = ChatMessage(role: .system, text: "🔄 Retrying with simplified prompt…")
+                        await MainActor.run { store.appendMessage(retryMsg, to: sessionID) }
+
+                        let retryCitations = searchContext?.citations ?? []
+                        let (retryMsgID, retryStream) = try await service.generateStream(
+                            prompt: trimmedPrompt,
+                            model: model,
+                            conversation: [],
+                            searchContext: searchContext,
+                            systemPrompt: SearchGroundingGuidance.retrySystemPrompt(from: store.settings.systemPrompt),
+                            imageData: nil
+                        )
+                        let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: retryCitations)
+                        await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
+
+                        accumulated = ""
+                        thinkingAccumulated = ""
+                        for await retryEvent in retryStream {
+                            if Task.isCancelled { break }
+                            switch retryEvent {
+                            case .textDelta(let chunk):
+                                accumulated += chunk
+                                let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                                    || chunk.contains(where: \.isNewline)
+                                    || accumulated.count <= 48
+                                if shouldFlush {
+                                    lastFlush = clock.now
+                                    await updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
+                                }
+                            case .thinkingDelta(let chunk):
+                                thinkingAccumulated += chunk
+                                let snapshot = thinkingAccumulated
+                                await MainActor.run {
+                                    store.updateMessageThinking(retryMsgID, in: sessionID, thinkingContent: snapshot)
+                                }
+                            case .thinkingDone(let dur):
+                                let snapshot = thinkingAccumulated
+                                await MainActor.run {
+                                    store.updateMessageThinking(retryMsgID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
+                                }
+                            case .toolCall, .done:
+                                break
+                            }
+                        }
+                        let retryFinalText = resolvedAssistantText(
+                            from: accumulated,
+                            prompt: trimmedPrompt,
+                            thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                        await updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
+                        await MainActor.run { finishGenerationIfCurrent(taskID) }
+                        return
+
+                    } else if let gateway = SearchGatewayFactory.make(settings: store.settings) {
+                        // ── Branch B: no search was done → auto-search and retry ──
+                        chatLogger.log("Empty-output auto-search fallback triggered for: \(trimmedPrompt, privacy: .public)")
+                        await MainActor.run { store.removeMessage(messageID, from: sessionID) }
+
+                        let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(trimmedPrompt)…")
+                        await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
+
+                        var fallbackSearchContext: SearchContext? = nil
+                        do {
+                            fallbackSearchContext = try await gateway.search(query: trimmedPrompt)
+                            chatLogger.log("Auto-search fallback returned \(fallbackSearchContext?.snippets.count ?? 0) snippets")
+                        } catch {
+                            chatLogger.log("Auto-search fallback error: \(error.localizedDescription, privacy: .public)")
+                            let errorMsg = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
+                            await MainActor.run { store.appendMessage(errorMsg, to: sessionID) }
+                        }
+
+                        if let fallbackSearchContext {
+                            let fallbackCitations = fallbackSearchContext.citations
+                            let (fbMessageID, fbStream) = try await service.generateStream(
+                                prompt: trimmedPrompt,
+                                model: model,
+                                conversation: conversation,
+                                searchContext: fallbackSearchContext,
+                                systemPrompt: store.settings.systemPrompt,
+                                imageData: jpegData
+                            )
+                            let fbPlaceholder = ChatMessage(id: fbMessageID, role: .assistant, text: "", citations: fallbackCitations)
+                            await MainActor.run { store.appendMessage(fbPlaceholder, to: sessionID) }
+
+                            accumulated = ""
+                            thinkingAccumulated = ""
+                            for await fbEvent in fbStream {
+                                if Task.isCancelled { break }
+                                switch fbEvent {
+                                case .textDelta(let chunk):
+                                    accumulated += chunk
+                                    let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                                        || chunk.contains(where: \.isNewline)
+                                        || accumulated.count <= 48
+                                    if shouldFlush {
+                                        lastFlush = clock.now
+                                        await updateStreamingMessage(accumulated, messageID: fbMessageID, sessionID: sessionID)
+                                    }
+                                case .thinkingDelta(let chunk):
+                                    thinkingAccumulated += chunk
+                                    let snapshot = thinkingAccumulated
+                                    await MainActor.run {
+                                        store.updateMessageThinking(fbMessageID, in: sessionID, thinkingContent: snapshot)
+                                    }
+                                case .thinkingDone(let dur):
+                                    let snapshot = thinkingAccumulated
+                                    await MainActor.run {
+                                        store.updateMessageThinking(fbMessageID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
+                                    }
+                                case .toolCall, .done:
+                                    break
+                                }
+                            }
+                            let fbFinalText = resolvedAssistantText(
+                                from: accumulated,
+                                prompt: trimmedPrompt,
+                                thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            )
+                            await updateStreamingMessage(fbFinalText, messageID: fbMessageID, sessionID: sessionID, persist: true)
+                            await MainActor.run { finishGenerationIfCurrent(taskID) }
+                            return
+                        }
+                    }
+                }
+
                 await updateStreamingMessage(finalText, messageID: messageID, sessionID: sessionID, persist: true)
 
                 if !stoppedByUser,

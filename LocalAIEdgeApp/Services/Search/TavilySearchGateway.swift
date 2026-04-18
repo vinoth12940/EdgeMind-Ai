@@ -16,10 +16,12 @@ struct TavilySearchGateway: SearchGateway {
             "api_key": apiKey,
             "query": query,
             "max_results": 5,
-            "include_answer": true
+            "include_answer": true,
+            "search_depth": "advanced",
+            "include_raw_content": true
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        request.timeoutInterval = 15
+        request.timeoutInterval = 30
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -31,23 +33,29 @@ struct TavilySearchGateway: SearchGateway {
 
         let result = try JSONDecoder().decode(TavilyResponse.self, from: data)
 
-        let snippets = result.results.prefix(5).map { Self.stripHTML($0.content) }
-        if let answer = result.answer, !answer.isEmpty {
-            return SearchContext(
-                query: query,
-                snippets: [Self.stripHTML(answer)] + snippets,
-                citations: result.results.prefix(5).map { item in
-                    SearchCitation(
-                        title: Self.stripHTML(item.title),
-                        url: URL(string: item.url) ?? URL(string: "https://tavily.com")!,
-                        snippet: String(Self.stripHTML(item.content).prefix(200))
-                    )
-                }
-            )
+        // Diagnostic logging - see what Tavily returns
+        print("[TAVILY DEBUG] Query: \(query)")
+        print("[TAVILY DEBUG] Answer present: \(result.answer != nil), Answer: \(result.answer?.prefix(150) ?? "nil")")
+        print("[TAVILY DEBUG] Results count: \(result.results.count)")
+        for (i, item) in result.results.prefix(3).enumerated() {
+            print("[TAVILY DEBUG] Result[\(i)]: raw_content=\(item.raw_content != nil ? "✓(\(item.raw_content!.count) chars)" : "nil"), content=\(item.content.count) chars")
         }
+
+        let snippets = result.results.prefix(5).map { item -> String in
+            // Prefer raw_content (full page text) over content (short summary)
+            let body = item.raw_content ?? item.content
+            return "\(Self.stripHTML(item.title)): \(Self.stripHTML(body))"
+        }
+        let answerText: String? = {
+            guard let answer = result.answer, !answer.isEmpty else { return nil }
+            return Self.stripHTML(answer)
+        }()
+
+        print("[TAVILY DEBUG] Final: answer=\(answerText != nil ? "✓(\(answerText!.count) chars)" : "nil"), snippets count=\(snippets.count)")
 
         return SearchContext(
             query: query,
+            answer: answerText,
             snippets: Array(snippets),
             citations: result.results.prefix(5).map { item in
                 SearchCitation(
@@ -83,4 +91,5 @@ private struct TavilyResult: Decodable {
     let title: String
     let url: String
     let content: String
+    let raw_content: String?
 }

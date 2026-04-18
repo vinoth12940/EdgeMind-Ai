@@ -40,10 +40,10 @@ app.post("/api/search", async (request, response) => {
     body: JSON.stringify({
       api_key: apiKey,
       query,
-      search_depth: "basic",
+      search_depth: "advanced",
       max_results: 5,
-      include_answer: false,
-      include_raw_content: false
+      include_answer: true,
+      include_raw_content: true
     })
   });
 
@@ -54,7 +54,8 @@ app.post("/api/search", async (request, response) => {
   }
 
   const payload = (await upstreamResponse.json()) as {
-    results?: Array<{ title?: string; url?: string; content?: string }>;
+    answer?: string;
+    results?: Array<{ title?: string; url?: string; content?: string; raw_content?: string }>;
   };
 
   const citations = (payload.results ?? []).flatMap((item) => {
@@ -73,7 +74,17 @@ app.post("/api/search", async (request, response) => {
 
   response.json({
     query,
-    snippets: citations.map((citation) => citation.snippet).filter(Boolean),
+    answer: payload.answer,
+    snippets: (payload.results ?? [])
+      .map((item) => {
+        const body = item.raw_content ?? item.content ?? "";
+        const title = item.title?.trim();
+        if (!body.trim()) {
+          return title ?? "";
+        }
+        return title ? `${title}: ${body}` : body;
+      })
+      .filter(Boolean),
     citations
   });
 });

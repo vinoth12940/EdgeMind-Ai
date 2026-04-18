@@ -267,7 +267,8 @@ npm install
 npm run dev
 ```
 
-Set the gateway URL in **Settings → Custom Gateway URL** (default: `http://localhost:8787`).
+Set the gateway URL in **Settings → Custom Gateway URL** (default: `http://localhost:8787/api/search`).
+The app also accepts the base gateway URL `http://localhost:8787` and normalizes it to the bundled `/api/search` endpoint automatically.
 
 ### HuggingFace Token
 

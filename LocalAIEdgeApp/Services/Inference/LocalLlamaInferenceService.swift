@@ -27,7 +27,9 @@ struct LocalLlamaInferenceService: InferenceService {
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
-            modelName: model.catalogItem.displayName
+            modelName: model.catalogItem.displayName,
+            contextWindowTokens: model.catalogItem.contextWindowTokenCount,
+            maxGeneratedTokens: InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         )
 
         let fallbackPrompt = PromptRenderer.render(
@@ -35,18 +37,18 @@ struct LocalLlamaInferenceService: InferenceService {
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
-            modelName: model.catalogItem.displayName
+            modelName: model.catalogItem.displayName,
+            contextWindowTokens: model.catalogItem.contextWindowTokenCount,
+            maxGeneratedTokens: InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         )
 
-        let nCtx = DeviceCapabilityService.contextSize()
-        let rawMax: Int32 = searchContext != nil ? 2048 : 1024
-        let maxGeneratedTokens = min(rawMax, nCtx / 2)
+        let maxGeneratedTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         do {
             let response = try await LocalLlamaRuntime.shared.generate(
                 chat: chatTurns,
                 fallbackPrompt: fallbackPrompt,
                 using: modelPath,
-                maxGeneratedTokens: maxGeneratedTokens
+                maxGeneratedTokens: Int32(maxGeneratedTokens)
             )
             return ChatMessage(
                 role: .assistant,
@@ -84,7 +86,9 @@ struct LocalLlamaInferenceService: InferenceService {
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
-            modelName: model.catalogItem.displayName
+            modelName: model.catalogItem.displayName,
+            contextWindowTokens: model.catalogItem.contextWindowTokenCount,
+            maxGeneratedTokens: InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         )
 
         let fallbackPrompt = PromptRenderer.render(
@@ -92,43 +96,27 @@ struct LocalLlamaInferenceService: InferenceService {
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
-            modelName: model.catalogItem.displayName
+            modelName: model.catalogItem.displayName,
+            contextWindowTokens: model.catalogItem.contextWindowTokenCount,
+            maxGeneratedTokens: InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         )
 
-        let nCtx = DeviceCapabilityService.contextSize()
-        let rawMax: Int32 = searchContext != nil ? 2048 : 1024
-        let maxGeneratedTokens = min(rawMax, nCtx / 2)
+        let maxGeneratedTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         let messageID = UUID()
         let rawStream = try await LocalLlamaRuntime.shared.generateStream(
             chat: chatTurns,
             fallbackPrompt: fallbackPrompt,
             using: modelPath,
-            maxGeneratedTokens: maxGeneratedTokens
+            maxGeneratedTokens: Int32(maxGeneratedTokens)
         )
         let processor = StreamProcessor(rawStream: rawStream)
         return (messageID: messageID, stream: await processor.process())
     }
 
-    /// Appends tool call definition to system prompt for tool-calling models.
+    /// Returns system prompt as-is. Tool definition injection is now handled
+    /// by ChatView when a search provider is configured, avoiding dual injection paths.
     private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
-        guard model.catalogItem.supportsToolCalling, !base.contains("## web_search") else { return base }
-        return base + """
-
-# Tools
-
-You have access to the following tool. Call it when you need current or real-time information (news, scores, weather, prices, recent events).
-
-## web_search
-Search the web for up-to-date information.
-Parameters: query (string) — the search query
-
-To call it, output ONLY this block (no other text before the closing tag):
-<tool_call>
-{"name": "web_search", "arguments": {"query": "your search query here"}}
-</tool_call>
-
-Call it at most once. Do not call it for questions you can answer from your training data.
-"""
+        return base
     }
 }
 
@@ -140,18 +128,22 @@ enum PromptRenderer {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         latestPrompt: String,
-        modelName: String
+        modelName: String,
+        contextWindowTokens: Int = 0,
+        maxGeneratedTokens: Int = 1024
     ) -> [LocalLlamaChatTurn] {
         var systemContent = "\(systemPrompt)\nYou are running locally on-device using model \(modelName). Respond directly to the user's question. Do not hallucinate or fabricate information."
 
         if let searchContext {
-            let snippets = searchSnippets(searchContext)
-            systemContent += "\n\nWeb Search Results:\n\(snippets)"
+            let snippets = searchSnippets(
+                searchContext,
+                contextSize: effectiveContextSize(contextWindowTokens: contextWindowTokens),
+                maxGeneratedTokens: maxGeneratedTokens
+            )
+            systemContent += "\n\n\(snippets)\n\nINSTRUCTIONS: Answer the user's question using the information above. If a DIRECT ANSWER is provided, use it as your primary source and expand with details from SOURCES. Be specific and detailed.\n\(SearchGroundingGuidance.instructions)"
         }
 
-        let maxTokensForGeneration: Int32 = searchContext != nil ? 2048 : 1024
-        let nCtx = DeviceCapabilityService.contextSize()
-        let maxPromptTokens = max(256, Int(nCtx) - Int(maxTokensForGeneration) - 64)
+        let maxPromptTokens = max(256, effectiveContextSize(contextWindowTokens: contextWindowTokens) - maxGeneratedTokens - 64)
         let fixedTokens = estimateTokens(systemContent) + estimateTokens(latestPrompt) + 128
         let historyBudget = maxPromptTokens - fixedTokens
 
@@ -217,18 +209,22 @@ enum PromptRenderer {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         latestPrompt: String,
-        modelName: String
+        modelName: String,
+        contextWindowTokens: Int = 0,
+        maxGeneratedTokens: Int = 1024
     ) -> String {
         var systemSection = "\(systemPrompt)\nYou are running locally on-device using model \(modelName). Respond directly to the user's question. Do not hallucinate or fabricate information."
 
         if let searchContext {
-            let snippets = searchSnippets(searchContext)
-            systemSection += "\n\nWeb Search Results:\n\(snippets)"
+            let snippets = searchSnippets(
+                searchContext,
+                contextSize: effectiveContextSize(contextWindowTokens: contextWindowTokens),
+                maxGeneratedTokens: maxGeneratedTokens
+            )
+            systemSection += "\n\n\(snippets)\n\nINSTRUCTIONS: Answer the user's question using the information above. If a DIRECT ANSWER is provided, use it as your primary source and expand with details from SOURCES. Be specific and detailed.\n\(SearchGroundingGuidance.instructions)"
         }
 
-        let maxTokensForGeneration: Int32 = searchContext != nil ? 2048 : 1024
-        let nCtx = DeviceCapabilityService.contextSize()
-        let maxPromptTokens = max(256, Int(nCtx) - Int(maxTokensForGeneration) - 64)
+        let maxPromptTokens = max(256, effectiveContextSize(contextWindowTokens: contextWindowTokens) - maxGeneratedTokens - 64)
         let fixedTokens = estimateTokens(systemSection) + estimateTokens(latestPrompt) + 128
         let historyBudget = maxPromptTokens - fixedTokens
 
@@ -400,12 +396,105 @@ enum PromptRenderer {
         return promptTurns.joined(separator: "\n")
     }
 
-    private static func searchSnippets(_ searchContext: SearchContext) -> String {
-        searchContext.snippets.prefix(5).enumerated().map { index, snippet in
+    private static func effectiveContextSize(contextWindowTokens: Int) -> Int {
+        let deviceContext = Int(DeviceCapabilityService.contextSize())
+        if contextWindowTokens > 0 {
+            return min(deviceContext, contextWindowTokens)
+        }
+        return deviceContext
+    }
+
+    private static func searchSnippets(_ searchContext: SearchContext, contextSize: Int, maxGeneratedTokens: Int) -> String {
+        // Reserve generous budget for search content within context window
+        let totalSearchBudget = min(20_000, max(2_000, (contextSize - maxGeneratedTokens - 500) * 4))
+
+        print("[SEARCH DEBUG] Query: \(searchContext.query)")
+        print("[SEARCH DEBUG] nCtx: \(contextSize), totalSearchBudget: \(totalSearchBudget) chars")
+        print("[SEARCH DEBUG] Answer: \(searchContext.answer != nil ? "✓(\(searchContext.answer!.count) chars)" : "nil")")
+        print("[SEARCH DEBUG] Snippets count: \(searchContext.snippets.count)")
+
+        var parts: [String] = []
+
+        // 1. Present the pre-summarized answer prominently (if available)
+        if let answer = searchContext.answer, !answer.isEmpty {
+            let cleanAnswer = stripHTML(answer)
+            let cappedAnswer = cleanAnswer.count > 2000 ? String(cleanAnswer.prefix(2000)) + "..." : cleanAnswer
+            parts.append("DIRECT ANSWER: \(cappedAnswer)")
+            print("[SEARCH DEBUG] Added DIRECT ANSWER: \(cappedAnswer.prefix(100))...")
+        } else {
+            print("[SEARCH DEBUG] No answer available from search provider")
+        }
+
+        // 2. Present supporting source snippets — extract only query-relevant paragraphs
+        let answerBudget = searchContext.answer != nil ? 2000 : 0
+        let snippetBudget = totalSearchBudget - answerBudget
+        let snippetCount = min(5, searchContext.snippets.count)
+        let perSnippetLimit = snippetCount > 0 ? snippetBudget / snippetCount : 600
+        let queryKeywords = Self.extractKeywords(from: searchContext.query)
+        print("[SEARCH DEBUG] Extracted keywords: \(queryKeywords.joined(separator: ", "))")
+        print("[SEARCH DEBUG] Per-snippet limit: \(perSnippetLimit) chars")
+
+        let sourceLines = searchContext.snippets.prefix(5).enumerated().map { index, snippet -> String in
             let cleaned = stripHTML(snippet)
-            let truncated = cleaned.count > 300 ? String(cleaned.prefix(300)) + "..." : cleaned
-            return "[\(index + 1)] \(truncated)"
-        }.joined(separator: "\n")
+            let relevant = Self.extractRelevantContent(from: cleaned, keywords: queryKeywords, limit: perSnippetLimit)
+            print("[SEARCH DEBUG] Source[\(index+1)]: original=\(cleaned.count) chars, extracted=\(relevant.count) chars")
+            return "[\(index + 1)] \(relevant)"
+        }
+        parts.append("SOURCES:\n" + sourceLines.joined(separator: "\n"))
+
+        let finalPrompt = parts.joined(separator: "\n\n")
+        print("[SEARCH DEBUG] Final search prompt: \(finalPrompt.count) chars total")
+        print("[SEARCH DEBUG] First 300 chars: \(finalPrompt.prefix(300))")
+        return finalPrompt
+    }
+
+    /// Extract keywords from a search query for relevance matching.
+    private static func extractKeywords(from query: String) -> [String] {
+        let stopWords: Set<String> = ["the", "a", "an", "is", "are", "was", "were", "in", "on", "at",
+                                       "to", "for", "of", "with", "by", "from", "and", "or", "not",
+                                       "what", "who", "how", "when", "where", "which", "that", "this",
+                                       "do", "does", "did", "will", "can", "could", "would", "should",
+                                       "have", "has", "had", "be", "been", "being", "it", "its", "me",
+                                       "my", "give", "get", "show", "tell", "full", "all", "about"]
+        return query.lowercased()
+            .components(separatedBy: .alphanumerics.inverted)
+            .filter { $0.count > 2 && !stopWords.contains($0) }
+    }
+
+    /// Extract paragraphs/sentences from long content that match query keywords.
+    /// Falls back to prefix truncation if no keyword matches found.
+    private static func extractRelevantContent(from text: String, keywords: [String], limit: Int) -> String {
+        guard text.count > limit else { return text }
+
+        // Split into paragraphs, then score each by keyword density
+        let paragraphs = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.count > 30 }  // skip tiny fragments (nav items, etc.)
+
+        guard !paragraphs.isEmpty, !keywords.isEmpty else {
+            return String(text.prefix(limit)) + "..."
+        }
+
+        // Score paragraphs by keyword match count
+        let scored = paragraphs.map { para -> (String, Int) in
+            let lower = para.lowercased()
+            let score = keywords.reduce(0) { sum, kw in sum + (lower.contains(kw) ? 1 : 0) }
+            return (para, score)
+        }
+        .sorted { $0.1 > $1.1 }
+
+        // Take top-scoring paragraphs up to the limit
+        var result = ""
+        for (para, score) in scored {
+            if score == 0 && result.count > limit / 3 { break }
+            if result.count + para.count + 1 > limit { break }
+            result += (result.isEmpty ? "" : " ") + para
+        }
+
+        if result.isEmpty {
+            return String(text.prefix(limit)) + "..."
+        }
+        return result
     }
 
     static func estimateTokens(_ text: String) -> Int {

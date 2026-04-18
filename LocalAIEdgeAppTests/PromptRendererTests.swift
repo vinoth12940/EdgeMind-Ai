@@ -15,6 +15,11 @@ final class PromptRendererTests: XCTestCase {
         XCTAssertEqual(PromptRenderer.estimateTokens(""), 1, "Empty string should return minimum of 1")
     }
 
+    func testContextWindowParserSupportsKNotation() {
+        XCTAssertEqual(ModelCatalogItem.parseContextWindowTokenCount("128K"), 128_000)
+        XCTAssertEqual(ModelCatalogItem.parseContextWindowTokenCount("40K"), 40_000)
+    }
+
     // MARK: - Prompt budget with small context (iPhone 12 tier)
 
     func testBudgetWithSmallContext() {
@@ -181,5 +186,29 @@ final class PromptRendererTests: XCTestCase {
         XCTAssertTrue(AssistantResponseFallback.isPromptEcho("Hi", prompt: "Hi"))
         XCTAssertTrue(AssistantResponseFallback.isPromptEcho("  hi  ", prompt: "Hi"))
         XCTAssertFalse(AssistantResponseFallback.isPromptEcho("Hello", prompt: "Hi"))
+    }
+
+    func testAssistantFallbackRecognizesSearchAccessRefusal() {
+        XCTAssertTrue(AssistantResponseFallback.isSearchAccessRefusal("I don't have real-time access to live match data."))
+        XCTAssertTrue(AssistantResponseFallback.isSearchAccessRefusal("I cannot provide the exact current IPL score."))
+        XCTAssertFalse(AssistantResponseFallback.isSearchAccessRefusal("The retrieved results do not show the exact score yet, but Cricbuzz and IPLT20 are live sources."))
+    }
+
+    func testSearchPromptIncludesGroundingInstructions() {
+        let prompt = PromptRenderer.render(
+            systemPrompt: "Be concise.",
+            conversation: [],
+            searchContext: SearchContext(
+                query: "today ipl score",
+                answer: nil,
+                snippets: ["Cricbuzz: Live score updates and commentary."],
+                citations: []
+            ),
+            latestPrompt: "What is today ipl score?",
+            modelName: "LFM2.5-1.2B (GGUF)"
+        )
+
+        XCTAssertTrue(prompt.contains("WEB SEARCH RESULTS ARE ALREADY PROVIDED ABOVE."))
+        XCTAssertTrue(prompt.contains("Do not say that you lack real-time, live, or current access."))
     }
 }

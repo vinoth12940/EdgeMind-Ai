@@ -57,10 +57,88 @@ enum AssistantResponseFallback {
         normalized(response) == normalized(prompt)
     }
 
+    static func isSearchAccessRefusal(_ text: String) -> Bool {
+        let normalized = normalized(text)
+        let refusalPhrases = [
+            "i don't have real-time access",
+            "i do not have real-time access",
+            "i don't have live access",
+            "i do not have live access",
+            "i don't have access to live",
+            "i do not have access to live",
+            "i can't access live",
+            "i cannot access live",
+            "i can't provide the exact current",
+            "i cannot provide the exact current",
+            "i can't provide the current",
+            "i cannot provide the current"
+        ]
+        return refusalPhrases.contains(where: normalized.contains)
+    }
+
     private static func normalized(_ text: String) -> String {
         text
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+    }
+}
+
+enum InferenceBudget {
+    static func safeContextWindow(for model: InstalledModel) -> Int {
+        let catalogContext = model.catalogItem.contextWindowTokenCount
+
+        switch model.catalogItem.runtimeType {
+        case .gguf:
+            let deviceContext = Int(DeviceCapabilityService.contextSize())
+            if catalogContext > 0 {
+                return max(512, min(deviceContext, catalogContext))
+            }
+            return max(512, deviceContext)
+        case .mlx:
+            return max(4_096, catalogContext > 0 ? catalogContext : 8_192)
+        }
+    }
+
+    static func maxGeneratedTokens(for model: InstalledModel, searchContext: SearchContext?) -> Int {
+        let preferred = searchContext == nil ? 1_024 : 2_048
+        let contextWindow = safeContextWindow(for: model)
+        let hardCeiling = max(512, contextWindow - 256)
+        return min(preferred, hardCeiling)
+    }
+
+    static func mlxHistoryBudget(for model: InstalledModel, searchContext: SearchContext?, maxGeneratedTokens: Int) -> Int {
+        let contextWindow = safeContextWindow(for: model)
+        let reservedPromptSpace = searchContext == nil ? 3_072 : 8_192
+        return max(4_096, contextWindow - maxGeneratedTokens - reservedPromptSpace)
+    }
+
+    static func mlxSearchBudgetCharacters(for model: InstalledModel, maxGeneratedTokens: Int) -> Int {
+        let contextWindow = safeContextWindow(for: model)
+        let promptBudget = max(4_096, contextWindow - maxGeneratedTokens - 4_096)
+        return min(36_000, max(12_000, promptBudget * 2))
+    }
+}
+
+enum SearchGroundingGuidance {
+    static let instructions = """
+WEB SEARCH RESULTS ARE ALREADY PROVIDED ABOVE.
+Treat them as current web data for this reply.
+Do not say that you lack real-time, live, or current access.
+If the exact answer is visible in DIRECT ANSWER or SOURCES, state it directly.
+If the retrieved results only point to live pages but do not expose the exact value, say that the retrieved results do not show the exact value and summarize the most relevant live sources.
+Cite sources as [1], [2], etc.
+"""
+
+    static func retrySystemPrompt(from base: String) -> String {
+        """
+\(base)
+
+WEB SEARCH RESULTS ARE ALREADY INCLUDED IN THIS PROMPT.
+Answer strictly from those retrieved results.
+Do not say that you lack real-time, live, or current access.
+If the exact value is not visible in the retrieved text, say that the retrieved results do not show the exact value and summarize the most relevant sources.
+Cite sources as [1], [2], etc.
+"""
     }
 }
 
@@ -79,6 +157,7 @@ enum AssistantResponseSanitizer {
             "(?i)<\\|think\\|>",
             "(?i)<\\|tool_call>",
             "(?i)<tool_call\\|>",
+            "(?i)</?tool_call>",
             "(?i)<\\|eot_id\\|>",
             "(?i)<eot_id>",
             "(?i)<\\|end_of_text\\|>",
