@@ -42,19 +42,31 @@ struct RootView: View {
             AppBackdropView()
 
             TabView(selection: $selectedTab) {
-                NavigationStack { ChatView() }
+                NavigationStack {
+                    ChatView()
+                        .toolbar(.hidden, for: .tabBar)
+                }
                     .tag(0)
                     .tabItem { Label("Chat", systemImage: "bubble.left.and.text.bubble.right") }
 
-                NavigationStack { ModelLibraryView() }
+                NavigationStack {
+                    ModelLibraryView()
+                        .toolbar(.hidden, for: .tabBar)
+                }
                     .tag(1)
                     .tabItem { Label("Models", systemImage: "square.stack.3d.up") }
 
-                NavigationStack { ChatHistoryView() }
+                NavigationStack {
+                    ChatHistoryView()
+                        .toolbar(.hidden, for: .tabBar)
+                }
                     .tag(2)
                     .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
 
-                NavigationStack { SettingsView() }
+                NavigationStack {
+                    SettingsView()
+                        .toolbar(.hidden, for: .tabBar)
+                }
                     .tag(3)
                     .tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
             }

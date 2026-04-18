@@ -267,6 +267,39 @@ final class PromptRendererTests: XCTestCase {
         )
     }
 
+    func testCricbuzzLiveMatchExtractorBuildsStructuredScoreSummary() {
+        let matchesListJSON = """
+        {"matches":[{"match":{"matchInfo":{"seriesName":"Indian Premier League 2026","matchDesc":"26th Match","state":"Complete","status":"Delhi Capitals won by 6 wickets","team1":{"teamName":"Royal Challengers Bengaluru","teamSName":"RCB"},"team2":{"teamName":"Delhi Capitals","teamSName":"DC"},"stateTitle":"DC Won"},"matchScore":{"team1Score":{"inngs1":{"runs":163,"wickets":10,"overs":19.6}},"team2Score":{"inngs1":{"runs":169,"wickets":4,"overs":18.4}}}}}]}
+        """
+        let escapedMatchesListJSON = matchesListJSON.replacingOccurrences(of: "\"", with: "\\\"")
+        let html = "matchesList\\\":\(escapedMatchesListJSON)"
+
+        XCTAssertEqual(
+            CricbuzzLiveMatchExtractor.extractSummary(from: html, query: "IPL live score current match"),
+            "Royal Challengers Bengaluru vs Delhi Capitals, 26th Match: Royal Challengers Bengaluru 163/10 (19.6 ov); Delhi Capitals 169/4 (18.4 ov). Delhi Capitals won by 6 wickets"
+        )
+    }
+
+    func testLiveOrganicSnippetExtractorPromotesInlineScoreboardSnippet() {
+        let organic = [
+            SerperOrganicResult(
+                title: "Live Cricket Score | Scorecard - IPL 2026 - Cricbuzz",
+                link: "https://www.cricbuzz.com/cricket-match/live-scores",
+                snippet: "Scotland tour of Namibia, 2026 · 3rd T20I • ScotlandSCO. 186-4 (20). NamibiaNAM. 187-6 (20)."
+            ),
+            SerperOrganicResult(
+                title: "Live Cricket Scores - Find Latest Scores of all Matches Online - ESPN",
+                link: "https://www.espn.com/cricket/scores",
+                snippet: "Royal Challengers BengaluruRCB. 175/8 · Delhi CapitalsDC. 179/4 (19.5/20 ov, target 176)."
+            )
+        ]
+
+        XCTAssertEqual(
+            LiveOrganicSnippetExtractor.extractAnswer(from: organic, query: "IPL live score current match"),
+            "Royal Challengers Bengaluru (RCB). 175/8; Delhi Capitals (DC). 179/4 (19.5/20 ov, target 176)."
+        )
+    }
+
     func testSearchPromptIncludesGroundingInstructions() {
         let prompt = PromptRenderer.render(
             systemPrompt: "Be concise.",

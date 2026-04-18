@@ -162,19 +162,7 @@ enum SearchResultFallbackComposer {
             || AssistantResponseFallback.isSearchAccessRefusal(text) {
             return true
         }
-
-        let vaguePhrases = [
-            "i don't know",
-            "i do not know",
-            "not sure",
-            "cannot determine",
-            "can't determine",
-            "unable to determine",
-            "unable to provide"
-        ]
-
-        return vaguePhrases.contains(where: normalized.contains)
-            && (normalized.count < 160 || searchContext.answer == nil)
+        return false
     }
 
     static func compose(query: String, searchContext: SearchContext) -> String {
@@ -316,6 +304,10 @@ WEB SEARCH RESULTS ARE ALREADY PROVIDED ABOVE.
 Treat them as current web data for this reply.
 Do not say that you lack real-time, live, or current access.
 If the exact answer is visible in DIRECT ANSWER or SOURCES, state it directly.
+If DIRECT ANSWER already contains a scoreboard or live value, restate that value plainly instead of saying the sources are incomplete.
+If DIRECT ANSWER already answers the user's question, keep the reply focused on that answer and skip unrelated results from other sources.
+Lead with the answer instead of talking about search results or retrieved snippets.
+Do not mention tool access, prompt context, or internal search steps unless the user asks.
 If the retrieved results only point to live pages but do not expose the exact value, say that the retrieved results do not show the exact value and summarize the most relevant live sources.
 Cite sources as [1], [2], etc.
 """
@@ -327,6 +319,10 @@ Cite sources as [1], [2], etc.
 WEB SEARCH RESULTS ARE ALREADY INCLUDED IN THIS PROMPT.
 Answer strictly from those retrieved results.
 Do not say that you lack real-time, live, or current access.
+If DIRECT ANSWER already contains a scoreboard or live value, restate that value plainly instead of saying the sources are incomplete.
+If DIRECT ANSWER already answers the user's question, keep the reply focused on that answer and skip unrelated results from other sources.
+Lead with the answer instead of talking about search results or retrieved snippets.
+Do not mention tool access, prompt context, or internal search steps unless the user asks.
 If the exact value is not visible in the retrieved text, say that the retrieved results do not show the exact value and summarize the most relevant sources.
 Cite sources as [1], [2], etc.
 """

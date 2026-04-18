@@ -29,7 +29,7 @@ struct SerperSearchGateway: SearchGateway {
         }
 
         let result = try JSONDecoder().decode(SerperResponse.self, from: data)
-        let organic = result.organic ?? []
+        let organic = LiveOrganicSnippetExtractor.prioritize(result.organic ?? [], query: query)
 
         let answerText = await primaryAnswerText(from: result, organic: organic, query: query)
 
@@ -80,7 +80,11 @@ struct SerperSearchGateway: SearchGateway {
             return nil
         }
 
-        if let livePageSummary = await fetchLivePageSummary(from: organic) {
+        if let snippetAnswer = LiveOrganicSnippetExtractor.extractAnswer(from: organic, query: query) {
+            return snippetAnswer
+        }
+
+        if let livePageSummary = await fetchLivePageSummary(from: organic, query: query) {
             return livePageSummary
         }
 
@@ -88,7 +92,7 @@ struct SerperSearchGateway: SearchGateway {
         return "The search results point to live pages such as \(sourceList), but they do not expose the exact live value in the returned snippet."
     }
 
-    private func fetchLivePageSummary(from organic: [SerperOrganicResult]) async -> String? {
+    private func fetchLivePageSummary(from organic: [SerperOrganicResult], query: String) async -> String? {
         let rankedSources = organic
             .prefix(4)
             .sorted { lhs, rhs in
@@ -115,6 +119,10 @@ struct SerperSearchGateway: SearchGateway {
                     ?? ""
                 guard !html.isEmpty else { continue }
 
+                if let summary = structuredLiveSummary(from: html, sourceURL: url, query: query) {
+                    return summary
+                }
+
                 if let summary = LivePageSummaryExtractor.extractSummary(from: html, fallbackTitle: item.title) {
                     return summary
                 }
@@ -134,6 +142,16 @@ struct SerperSearchGateway: SearchGateway {
         if host.contains("iplt20") { return 2 }
         if host.contains("livescore") { return 3 }
         return 10
+    }
+
+    private func structuredLiveSummary(from html: String, sourceURL: URL, query: String) -> String? {
+        let host = sourceURL.host?.lowercased() ?? ""
+
+        if host.contains("cricbuzz") {
+            return CricbuzzLiveMatchExtractor.extractSummary(from: html, query: query)
+        }
+
+        return nil
     }
 }
 
@@ -180,10 +198,343 @@ private struct SerperSportsResults: Decodable {
     }
 }
 
-private struct SerperOrganicResult: Decodable {
+struct SerperOrganicResult: Decodable {
     let title: String
     let link: String
     let snippet: String?
+}
+
+enum LiveOrganicSnippetExtractor {
+    static func prioritize(_ organic: [SerperOrganicResult], query: String) -> [SerperOrganicResult] {
+        guard SearchResultFallbackComposer.queryLooksLive(query) else { return organic }
+
+        return organic.sorted { lhs, rhs in
+            let lhsScore = score(for: lhs, query: query)
+            let rhsScore = score(for: rhs, query: query)
+            if lhsScore != rhsScore {
+                return lhsScore > rhsScore
+            }
+            return lhs.title < rhs.title
+        }
+    }
+
+    static func extractAnswer(from organic: [SerperOrganicResult], query: String) -> String? {
+        guard SearchResultFallbackComposer.queryLooksLive(query) else { return nil }
+
+        let ranked = organic
+            .compactMap { item -> (text: String, score: Int)? in
+                guard let snippet = item.snippet else { return nil }
+                let normalized = normalize(snippet)
+                let score = score(for: item, normalizedSnippet: normalized, query: query)
+                guard score >= 70 else { return nil }
+                return (normalized, score)
+            }
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score {
+                    return lhs.score > rhs.score
+                }
+                return lhs.text.count > rhs.text.count
+            }
+
+        return ranked.first?.text
+    }
+
+    private static func score(for item: SerperOrganicResult, query: String) -> Int {
+        score(for: item, normalizedSnippet: normalize(item.snippet ?? ""), query: query)
+    }
+
+    private static func score(for item: SerperOrganicResult, normalizedSnippet: String, query: String) -> Int {
+        let normalizedTitle = normalize(item.title).lowercased()
+        let combined = "\(normalizedTitle) \(normalizedSnippet.lowercased())"
+        var score = 0
+
+        if normalizedTitle.contains("live") { score += 12 }
+        if normalizedTitle.contains("score") { score += 12 }
+        if combined.contains("ipl") { score += 18 }
+        if normalizedSnippet.range(of: #"\b\d{1,3}/\d{1,2}\b"#, options: .regularExpression) != nil {
+            score += 65
+        }
+        if normalizedSnippet.lowercased().contains("target") {
+            score += 18
+        }
+        if normalizedSnippet.lowercased().contains(" ov") || normalizedSnippet.lowercased().contains("/20 ov") {
+            score += 14
+        }
+
+        let genericPhrases = [
+            "catch the fastest live cricket scores",
+            "catch up on the latest",
+            "find latest scores",
+            "score updates and commentary",
+            "all global"
+        ]
+        if genericPhrases.contains(where: normalizedSnippet.lowercased().contains) {
+            score -= 28
+        }
+
+        if normalizedSnippet.lowercased().contains("finished") {
+            score -= 14
+        }
+        if query.lowercased().contains("current") || query.lowercased().contains("live") {
+            if item.link.contains("espn.com/cricket/scores") {
+                score += 10
+            }
+        }
+
+        return score
+    }
+
+    private static func normalize(_ text: String) -> String {
+        var normalized = PromptRenderer.stripHTML(text)
+            .replacingOccurrences(of: "•", with: ";")
+            .replacingOccurrences(of: "·", with: ";")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        normalized = normalized.replacingOccurrences(
+            of: #"([a-z])([A-Z]{2,4})([.,])"#,
+            with: "$1 ($2)$3",
+            options: .regularExpression
+        )
+        normalized = normalized.replacingOccurrences(of: "\\s*;\\s*", with: "; ", options: .regularExpression)
+
+        return normalized
+    }
+}
+
+private struct CricbuzzMatchesList: Decodable {
+    let matches: [CricbuzzWrappedMatch]
+}
+
+private struct CricbuzzWrappedMatch: Decodable {
+    let match: CricbuzzMatchPayload
+}
+
+private struct CricbuzzMatchPayload: Decodable {
+    let matchInfo: CricbuzzMatchInfo
+    let matchScore: CricbuzzMatchScore?
+}
+
+private struct CricbuzzMatchInfo: Decodable {
+    let seriesName: String
+    let matchDesc: String
+    let state: String?
+    let status: String?
+    let stateTitle: String?
+    let team1: CricbuzzTeam
+    let team2: CricbuzzTeam
+}
+
+private struct CricbuzzTeam: Decodable {
+    let teamName: String
+    let teamSName: String?
+}
+
+private struct CricbuzzMatchScore: Decodable {
+    let team1Score: CricbuzzTeamScore?
+    let team2Score: CricbuzzTeamScore?
+}
+
+private struct CricbuzzTeamScore: Decodable {
+    let inngs1: CricbuzzInnings?
+    let inngs2: CricbuzzInnings?
+}
+
+private struct CricbuzzInnings: Decodable {
+    let runs: Int?
+    let wickets: Int?
+    let overs: Double?
+}
+
+enum CricbuzzLiveMatchExtractor {
+    static func extractSummary(from html: String, query: String) -> String? {
+        let matches = extractMatches(from: html)
+        guard !matches.isEmpty else { return nil }
+        guard let bestMatch = bestMatch(for: query, matches: matches) else { return nil }
+        return summarize(bestMatch)
+    }
+
+    private static func extractMatches(from html: String) -> [CricbuzzMatchPayload] {
+        let marker = #"matchesList\":{"#
+        var matches: [CricbuzzMatchPayload] = []
+        var searchStart = html.startIndex
+
+        while let range = html.range(of: marker, range: searchStart..<html.endIndex) {
+            let objectStart = html.index(before: range.upperBound)
+            guard let objectEnd = balancedObjectEnd(in: html, startingAt: objectStart) else {
+                break
+            }
+
+            let rawObject = String(html[objectStart...objectEnd])
+            let normalized = rawObject.replacingOccurrences(of: #"\""#, with: #"""#)
+
+            if let data = normalized.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(CricbuzzMatchesList.self, from: data) {
+                matches.append(contentsOf: decoded.matches.map(\.match))
+            }
+
+            searchStart = html.index(after: objectEnd)
+        }
+
+        return matches
+    }
+
+    private static func balancedObjectEnd(in text: String, startingAt start: String.Index) -> String.Index? {
+        var depth = 0
+        var index = start
+
+        while index < text.endIndex {
+            let character = text[index]
+
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return index
+                }
+            }
+
+            index = text.index(after: index)
+        }
+
+        return nil
+    }
+
+    private static func bestMatch(for query: String, matches: [CricbuzzMatchPayload]) -> CricbuzzMatchPayload? {
+        let normalizedQuery = query.lowercased()
+        let keywords = queryKeywords(from: normalizedQuery)
+
+        return matches.max { lhs, rhs in
+            score(lhs, normalizedQuery: normalizedQuery, keywords: keywords)
+                < score(rhs, normalizedQuery: normalizedQuery, keywords: keywords)
+        }
+    }
+
+    private static func score(_ match: CricbuzzMatchPayload, normalizedQuery: String, keywords: [String]) -> Int {
+        let info = match.matchInfo
+        let searchableText = [
+            info.seriesName,
+            info.matchDesc,
+            info.status ?? "",
+            info.stateTitle ?? "",
+            info.team1.teamName,
+            info.team1.teamSName ?? "",
+            info.team2.teamName,
+            info.team2.teamSName ?? ""
+        ]
+            .joined(separator: " ")
+            .lowercased()
+
+        var score = 0
+
+        for keyword in keywords where searchableText.contains(keyword) {
+            score += 12
+        }
+
+        if normalizedQuery.contains("ipl") && searchableText.contains("indian premier league") {
+            score += 40
+        }
+        if normalizedQuery.contains("current") || normalizedQuery.contains("live") || normalizedQuery.contains("today") {
+            switch info.state?.lowercased() {
+            case "live":
+                score += 30
+            case "complete":
+                score += 14
+            default:
+                break
+            }
+            if info.stateTitle?.lowercased().contains("preview") == true {
+                score -= 20
+            }
+        }
+
+        if match.matchScore?.team1Score != nil || match.matchScore?.team2Score != nil {
+            score += 20
+        }
+        if let status = info.status, !status.isEmpty {
+            score += 12
+        }
+
+        return score
+    }
+
+    private static func queryKeywords(from query: String) -> [String] {
+        let stopWords: Set<String> = [
+            "the", "a", "an", "for", "and", "with", "that", "this", "from", "show",
+            "give", "score", "scorecard", "match", "current", "live", "today", "now"
+        ]
+
+        return query
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count > 2 }
+            .map { $0.lowercased() }
+            .filter { !stopWords.contains($0) }
+    }
+
+    private static func summarize(_ match: CricbuzzMatchPayload) -> String {
+        let info = match.matchInfo
+        let matchup = "\(info.team1.teamName) vs \(info.team2.teamName), \(info.matchDesc)"
+
+        var scoreParts: [String] = []
+        if let team1 = format(team: info.team1, score: match.matchScore?.team1Score) {
+            scoreParts.append(team1)
+        }
+        if let team2 = format(team: info.team2, score: match.matchScore?.team2Score) {
+            scoreParts.append(team2)
+        }
+
+        var summary = matchup
+        if !scoreParts.isEmpty {
+            summary += ": " + scoreParts.joined(separator: "; ") + "."
+        }
+
+        if let status = normalized(info.status), !status.isEmpty {
+            summary += " " + status
+        } else if let stateTitle = normalized(info.stateTitle), !stateTitle.isEmpty {
+            summary += " " + stateTitle
+        }
+
+        return summary
+    }
+
+    private static func format(team: CricbuzzTeam, score: CricbuzzTeamScore?) -> String? {
+        let innings = [score?.inngs1, score?.inngs2]
+            .compactMap { $0 }
+            .compactMap(format)
+
+        guard !innings.isEmpty else { return nil }
+        return "\(team.teamName) " + innings.joined(separator: " & ")
+    }
+
+    private static func format(_ innings: CricbuzzInnings) -> String? {
+        guard let runs = innings.runs else { return nil }
+
+        var formatted = "\(runs)"
+        if let wickets = innings.wickets {
+            formatted += "/\(wickets)"
+        }
+        if let overs = innings.overs {
+            formatted += " (\(formatOvers(overs)) ov)"
+        }
+
+        return formatted
+    }
+
+    private static func formatOvers(_ overs: Double) -> String {
+        if overs.rounded(.down) == overs {
+            return String(Int(overs))
+        }
+        return String(format: "%.1f", overs)
+    }
+
+    private static func normalized(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let cleaned = text
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
+    }
 }
 
 enum LivePageSummaryExtractor {

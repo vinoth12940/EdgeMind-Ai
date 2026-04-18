@@ -5,6 +5,10 @@ struct LocalAIEdgeApp: App {
     @State private var store = AppStateStore()
     @State private var authStore = AuthStateStore()
 
+    init() {
+        UITabBar.appearance().isHidden = true
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {

@@ -1008,6 +1008,8 @@ Rules:
                 // - liveSearchEnabled/useSearchByDefault arms web search for this turn
                 // - current/live/explicit web queries get upfront search
                 // - everything else stays local unless the model decides to call web_search
+                // Search results are passed into the model prompt; we only fall back
+                // to a grounded summary after generation if the model refuses or emits nothing usable.
                 let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
                 let searchArmed = liveSearchEnabled || store.settings.useSearchByDefault
                 let shouldUpfrontSearch = searchConfigured
@@ -1026,25 +1028,6 @@ Rules:
                     }
                 } else {
                     searchContext = nil
-                }
-
-                if let searchContext,
-                   model.catalogItem.runtimeType == .gguf,
-                   SearchResultFallbackComposer.prefersImmediateReply(query: trimmedPrompt, searchContext: searchContext) {
-                    let groundedReply = SearchResultFallbackComposer.compose(query: trimmedPrompt, searchContext: searchContext)
-                    let assistantMessage = ChatMessage(role: .assistant, text: groundedReply, citations: searchContext.citations)
-                    await MainActor.run {
-                        store.appendMessage(assistantMessage, to: sessionID)
-                        finishGenerationIfCurrent(taskID)
-                    }
-
-                    if store.settings.voiceModeEnabled,
-                       store.settings.autoPlayVoiceResponses {
-                        await MainActor.run {
-                            voiceController.speak(groundedReply, using: store.settings)
-                        }
-                    }
-                    return
                 }
 
                 // Inject tool definition ONLY when search is configured but
