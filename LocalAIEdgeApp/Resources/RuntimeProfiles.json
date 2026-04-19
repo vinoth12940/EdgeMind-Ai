@@ -1,0 +1,82 @@
+[
+  {
+    "catalogID": "D28960C3-7F8A-51C1-BE61-BD08B57096FB",
+    "verifiedThinking": "qwenNative",
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "78937FD4-0A5A-5A3B-B1AE-79638B0289FE",
+    "verifiedThinking": "qwenNative",
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "E39D2813-FFAF-5456-B4E2-5ADC89A821D8",
+    "verifiedThinking": "qwenNative",
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "D0F95FC3-DCAB-5917-88E7-92B6A395A4AB",
+    "verifiedThinking": null,
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "C30BBC43-3696-5889-A169-25F492146FF3",
+    "verifiedThinking": "qwenNative",
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "523DAF6C-C287-58DB-BE2D-56E63F09FD35",
+    "verifiedThinking": "qwenNative",
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "0E1B7E9D-3801-5762-AA65-41782FC9D8B3",
+    "verifiedThinking": null,
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<end_of_turn>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "D3A3A420-52F3-5F30-84BC-20FE0BA03F8B",
+    "verifiedThinking": null,
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "imageAndText",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<end_of_turn>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  }
+]
