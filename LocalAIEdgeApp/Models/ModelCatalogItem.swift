@@ -103,6 +103,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     let supportsToolCalling: Bool
     let isThinkingModel: Bool
     let recommendedForIPhone: Bool
+    let minimumTier: DeviceTier
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -125,6 +126,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         case supportsToolCalling
         case isThinkingModel
         case recommendedForIPhone
+        case minimumTier
     }
 
     init(
@@ -147,7 +149,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         supportsReasoning: Bool = false,
         supportsToolCalling: Bool = false,
         isThinkingModel: Bool = false,
-        recommendedForIPhone: Bool = false
+        recommendedForIPhone: Bool = false,
+        minimumTier: DeviceTier = .standard
     ) {
         self.id = id ?? Self.deterministicID(displayName: displayName, variant: variant)
         self.displayName = displayName
@@ -169,6 +172,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         self.supportsToolCalling = supportsToolCalling
         self.isThinkingModel = isThinkingModel
         self.recommendedForIPhone = recommendedForIPhone
+        self.minimumTier = minimumTier
     }
 
     init(from decoder: Decoder) throws {
@@ -196,7 +200,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         supportsReasoning = try container.decode(Bool.self, forKey: .supportsReasoning)
         supportsToolCalling = try container.decode(Bool.self, forKey: .supportsToolCalling)
         isThinkingModel = try container.decode(Bool.self, forKey: .isThinkingModel)
-        recommendedForIPhone = try container.decode(Bool.self, forKey: .recommendedForIPhone)
+        recommendedForIPhone = try container.decodeIfPresent(Bool.self, forKey: .recommendedForIPhone) ?? false
+        minimumTier = try container.decodeIfPresent(DeviceTier.self, forKey: .minimumTier) ?? .standard
     }
 
     func encode(to encoder: Encoder) throws {
@@ -221,6 +226,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         try container.encode(supportsToolCalling, forKey: .supportsToolCalling)
         try container.encode(isThinkingModel, forKey: .isThinkingModel)
         try container.encode(recommendedForIPhone, forKey: .recommendedForIPhone)
+        try container.encode(minimumTier, forKey: .minimumTier)
     }
 
     var downloadFileName: String? {
@@ -352,5 +358,41 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
 
     var inputCategoriesDifferByRuntime: Bool {
         sourceInputCategories != runtimeInputCategories
+    }
+
+    /// Approximate resident memory (GB) the model will use at runtime.
+    /// weights ≈ disk × 1.15  +  KV cache (layer count × head dim × ctx)
+    ///         + vision tower (0.6 GB if applicable)  +  app heap headroom (0.3 GB).
+    func estimatedResidentGB(contextTokens: Int) -> Double {
+        let weightsGB = parsedDiskSizeGB * 1.15
+        let kvCacheGB = kvCacheEstimateGB(contextTokens: contextTokens)
+        let visionGB: Double = supportsVision ? 0.6 : 0.0
+        let heapGB = 0.3
+        return weightsGB + kvCacheGB + visionGB + heapGB
+    }
+
+    private var parsedDiskSizeGB: Double {
+        // diskSize is a string like "~1.7 GB" / "2.5 GB" / "~600 MB".
+        let upper = diskSize.uppercased()
+        let numericPortion = upper.filter { $0.isNumber || $0 == "." }
+        guard let value = Double(numericPortion), value > 0 else { return 0 }
+        if upper.contains("MB") { return value / 1024.0 }
+        return value
+    }
+
+    private func kvCacheEstimateGB(contextTokens: Int) -> Double {
+        // Rough family-based estimate. KV cache = 2 × nLayers × nHeads × headDim × ctx × 2 bytes.
+        let perTokenKB: Double
+        switch parameterSize {
+        case _ where parameterSize.contains("0.6"):  perTokenKB = 2
+        case _ where parameterSize.contains("1.2"):  perTokenKB = 3
+        case _ where parameterSize.contains("1.6"):  perTokenKB = 3
+        case _ where parameterSize.contains("1.7"):  perTokenKB = 4
+        case _ where parameterSize.contains("2"):    perTokenKB = 5
+        case _ where parameterSize.contains("4"):    perTokenKB = 7
+        case _ where parameterSize.contains("8"):    perTokenKB = 10
+        default:                                      perTokenKB = 4
+        }
+        return (Double(contextTokens) * perTokenKB) / (1024 * 1024)
     }
 }
