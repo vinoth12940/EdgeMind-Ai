@@ -20,6 +20,12 @@ struct ChatView: View {
     @State private var attachedImage: UIImage?
     @StateObject private var voiceController = VoiceInteractionController()
 
+    private let profileStore = RuntimeProfileStore()
+
+    private func resolved(for model: InstalledModel) -> ResolvedModel {
+        ModelRuntimeResolver.resolve(catalog: model.catalogItem, store: profileStore)
+    }
+
     private let streamUpdateInterval: Duration = .milliseconds(80)
 
     /// Tool definition injected into system prompt when the search toggle is ON
@@ -52,8 +58,10 @@ Rules:
 
     private var isVisionModel: Bool {
         guard let model = store.defaultModel else { return false }
-        // Only enable vision UI for MLX models — GGUF runtime has no image pipeline
-        return model.catalogItem.supportsVision && model.catalogItem.runtimeType == .mlx
+        // Runtime-decision: gate image attachment UI on the resolved RuntimeProfile.
+        // `.imageAndText` already implies an MLX-backed vision path; GGUF profiles
+        // resolve to `.none` per the shipped RuntimeProfiles.json.
+        return resolved(for: model).vision == .imageAndText
     }
 
     private var activeModel: InstalledModel? {
