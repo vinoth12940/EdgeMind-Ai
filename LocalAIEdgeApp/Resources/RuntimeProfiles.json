@@ -78,5 +78,45 @@
     "recommendedMaxTokens": 1024,
     "auditedAt": "",
     "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "CF11B1E9-337F-5818-B6D3-E30B84B89FA1",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>"],
+    "recommendedMaxTokens": 256,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "D7123AA2-C115-5368-81E6-6051A146F4E9",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "imageAndText",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "86FD3530-5629-5ECE-AD8C-BA15895B8618",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<end_of_turn>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "66BA9629-2F9C-5FB0-A30D-154AD7E017E5",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<end_of_turn>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
   }
 ]

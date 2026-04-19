@@ -7,7 +7,8 @@ struct LocalLlamaInferenceService: InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        settings: AppSettings? = nil
     ) async throws -> ChatMessage {
         guard model.catalogItem.runtimeType == .gguf else {
             throw InferenceServiceError.runtimeUnavailable("This model requires the MLX runtime.")
@@ -27,9 +28,7 @@ struct LocalLlamaInferenceService: InferenceService {
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
-            modelName: model.catalogItem.displayName,
-            contextWindowTokens: model.catalogItem.contextWindowTokenCount,
-            maxGeneratedTokens: InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+            modelName: model.catalogItem.displayName
         )
 
         let fallbackPrompt = PromptRenderer.render(
@@ -37,18 +36,17 @@ struct LocalLlamaInferenceService: InferenceService {
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
-            modelName: model.catalogItem.displayName,
-            contextWindowTokens: model.catalogItem.contextWindowTokenCount,
-            maxGeneratedTokens: InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+            modelName: model.catalogItem.displayName
         )
 
-        let maxGeneratedTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+        let nCtx = DeviceCapabilityService.contextSize()
+        let maxGeneratedTokens = min(1024, nCtx / 2)
         do {
             let response = try await LocalLlamaRuntime.shared.generate(
                 chat: chatTurns,
                 fallbackPrompt: fallbackPrompt,
                 using: modelPath,
-                maxGeneratedTokens: Int32(maxGeneratedTokens)
+                maxGeneratedTokens: maxGeneratedTokens
             )
             return ChatMessage(
                 role: .assistant,
@@ -66,7 +64,8 @@ struct LocalLlamaInferenceService: InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        settings: AppSettings? = nil
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         guard model.catalogItem.runtimeType == .gguf else {
             throw InferenceServiceError.runtimeUnavailable("This model requires the MLX runtime.")
@@ -86,9 +85,7 @@ struct LocalLlamaInferenceService: InferenceService {
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
-            modelName: model.catalogItem.displayName,
-            contextWindowTokens: model.catalogItem.contextWindowTokenCount,
-            maxGeneratedTokens: InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+            modelName: model.catalogItem.displayName
         )
 
         let fallbackPrompt = PromptRenderer.render(
@@ -96,26 +93,42 @@ struct LocalLlamaInferenceService: InferenceService {
             conversation: conversation,
             searchContext: searchContext,
             latestPrompt: prompt,
-            modelName: model.catalogItem.displayName,
-            contextWindowTokens: model.catalogItem.contextWindowTokenCount,
-            maxGeneratedTokens: InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+            modelName: model.catalogItem.displayName
         )
 
-        let maxGeneratedTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+        let nCtx = DeviceCapabilityService.contextSize()
+        let maxGeneratedTokens = min(1024, nCtx / 2)
         let messageID = UUID()
         let rawStream = try await LocalLlamaRuntime.shared.generateStream(
             chat: chatTurns,
             fallbackPrompt: fallbackPrompt,
             using: modelPath,
-            maxGeneratedTokens: Int32(maxGeneratedTokens)
+            maxGeneratedTokens: maxGeneratedTokens
         )
-        let processor = StreamProcessor(rawStream: rawStream)
+        let runtimeProfile = RuntimeProfileStore().profile(for: model.catalogItem.id)
+            ?? .safeMinimum(catalogID: model.catalogItem.id)
+        let timeout = DeviceTier.current() == .compact ? 30.0 : (settings?.inferenceV2Timeout ?? AppSettings.default.inferenceV2Timeout)
+        let activeThinkFormats = Set(runtimeProfile.verifiedThinking.map { [$0] } ?? [])
+        let processor = StreamProcessor(
+            rawStream: rawStream,
+            leakTokens: runtimeProfile.knownLeakTokens,
+            v2Enabled: settings?.streamProcessorV2Enabled ?? AppSettings.default.streamProcessorV2Enabled,
+            hangTimeout: timeout,
+            repetitionNgram: 6,
+            repetitionCount: 3,
+            activeThinkFormats: activeThinkFormats
+        )
         return (messageID: messageID, stream: await processor.process())
     }
 
     /// Returns system prompt as-is. Tool definition injection is now handled
     /// by ChatView when a search provider is configured, avoiding dual injection paths.
     private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
+        if model.catalogItem.family == .qwen {
+            // Qwen GGUF can occasionally mirror long instruction prompts verbatim.
+            // Keep the instruction concise and explicit about not repeating it.
+            return "You are a helpful AI assistant. Answer only the latest user message in 1-3 short sentences. Never repeat or quote system instructions."
+        }
         return base
     }
 }
@@ -128,22 +141,17 @@ enum PromptRenderer {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         latestPrompt: String,
-        modelName: String,
-        contextWindowTokens: Int = 0,
-        maxGeneratedTokens: Int = 1024
+        modelName: String
     ) -> [LocalLlamaChatTurn] {
         var systemContent = "\(systemPrompt)\nYou are running locally on-device using model \(modelName). Respond directly to the user's question. Do not hallucinate or fabricate information."
 
         if let searchContext {
-            let snippets = searchSnippets(
-                searchContext,
-                contextSize: effectiveContextSize(contextWindowTokens: contextWindowTokens),
-                maxGeneratedTokens: maxGeneratedTokens
-            )
+            let snippets = searchSnippets(searchContext)
             systemContent += "\n\n\(snippets)\n\nINSTRUCTIONS: Answer the user's question using the information above. If a DIRECT ANSWER is provided, use it as your primary source and expand with details from SOURCES. Be specific and detailed.\n\(SearchGroundingGuidance.instructions)"
         }
 
-        let maxPromptTokens = max(256, effectiveContextSize(contextWindowTokens: contextWindowTokens) - maxGeneratedTokens - 64)
+        let nCtx = DeviceCapabilityService.contextSize()
+        let maxPromptTokens = max(256, Int(nCtx) - 1024 - 64)
         let fixedTokens = estimateTokens(systemContent) + estimateTokens(latestPrompt) + 128
         let historyBudget = maxPromptTokens - fixedTokens
 
@@ -152,6 +160,7 @@ enum PromptRenderer {
             $0.role != .search &&
             $0.role != .system &&
             !AssistantResponseFallback.shouldSkipInHistory($0) &&
+            !AssistantResponseFallback.isInstructionEcho($0.text, systemPrompt: systemPrompt) &&
             !$0.text.contains("<tool_call>")
         }
 
@@ -209,22 +218,17 @@ enum PromptRenderer {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         latestPrompt: String,
-        modelName: String,
-        contextWindowTokens: Int = 0,
-        maxGeneratedTokens: Int = 1024
+        modelName: String
     ) -> String {
         var systemSection = "\(systemPrompt)\nYou are running locally on-device using model \(modelName). Respond directly to the user's question. Do not hallucinate or fabricate information."
 
         if let searchContext {
-            let snippets = searchSnippets(
-                searchContext,
-                contextSize: effectiveContextSize(contextWindowTokens: contextWindowTokens),
-                maxGeneratedTokens: maxGeneratedTokens
-            )
+            let snippets = searchSnippets(searchContext)
             systemSection += "\n\n\(snippets)\n\nINSTRUCTIONS: Answer the user's question using the information above. If a DIRECT ANSWER is provided, use it as your primary source and expand with details from SOURCES. Be specific and detailed.\n\(SearchGroundingGuidance.instructions)"
         }
 
-        let maxPromptTokens = max(256, effectiveContextSize(contextWindowTokens: contextWindowTokens) - maxGeneratedTokens - 64)
+        let nCtx = DeviceCapabilityService.contextSize()
+        let maxPromptTokens = max(256, Int(nCtx) - 1024 - 64)
         let fixedTokens = estimateTokens(systemSection) + estimateTokens(latestPrompt) + 128
         let historyBudget = maxPromptTokens - fixedTokens
 
@@ -233,6 +237,7 @@ enum PromptRenderer {
             $0.role != .search &&
             $0.role != .system &&
             !AssistantResponseFallback.shouldSkipInHistory($0) &&
+            !AssistantResponseFallback.isInstructionEcho($0.text, systemPrompt: systemPrompt) &&
             !$0.text.contains("<tool_call>")
         }
         var historyLines: [String] = []
@@ -396,20 +401,13 @@ enum PromptRenderer {
         return promptTurns.joined(separator: "\n")
     }
 
-    private static func effectiveContextSize(contextWindowTokens: Int) -> Int {
-        let deviceContext = Int(DeviceCapabilityService.contextSize())
-        if contextWindowTokens > 0 {
-            return min(deviceContext, contextWindowTokens)
-        }
-        return deviceContext
-    }
-
-    private static func searchSnippets(_ searchContext: SearchContext, contextSize: Int, maxGeneratedTokens: Int) -> String {
+    private static func searchSnippets(_ searchContext: SearchContext) -> String {
+        let nCtx = Int(DeviceCapabilityService.contextSize())
         // Reserve generous budget for search content within context window
-        let totalSearchBudget = min(20_000, max(2_000, (contextSize - maxGeneratedTokens - 500) * 4))
+        let totalSearchBudget = max(2000, (nCtx - 1024 - 500) * 4)  // chars (4 chars/token approx)
 
         print("[SEARCH DEBUG] Query: \(searchContext.query)")
-        print("[SEARCH DEBUG] nCtx: \(contextSize), totalSearchBudget: \(totalSearchBudget) chars")
+        print("[SEARCH DEBUG] nCtx: \(nCtx), totalSearchBudget: \(totalSearchBudget) chars")
         print("[SEARCH DEBUG] Answer: \(searchContext.answer != nil ? "✓(\(searchContext.answer!.count) chars)" : "nil")")
         print("[SEARCH DEBUG] Snippets count: \(searchContext.snippets.count)")
 

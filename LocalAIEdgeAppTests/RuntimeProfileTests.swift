@@ -49,10 +49,19 @@ final class RuntimeProfileTests: XCTestCase {
     }
 
     func test_resolverPrefersProfileForRuntimeBehavior() {
-        let item = MockCatalogData.items.first { $0.displayName == "LFM2.5 VL 1.6B (MLX)" }!
-        let store = RuntimeProfileStore()
+        let item = MockCatalogData.items.first { $0.runtimeType == .mlx }!
+        let injected = RuntimeProfile(
+            catalogID: item.id,
+            verifiedThinking: nil,
+            verifiedToolCalling: nil,
+            verifiedVision: .imageAndText,
+            knownLeakTokens: [],
+            recommendedMaxTokens: 1024,
+            auditedAt: "2026-04-19T10:00:00Z",
+            auditVerdict: .green
+        )
+        let store = RuntimeProfileStore(bundleLoader: { [injected] }, overrideLoader: { [] })
         let resolved = ModelRuntimeResolver.resolve(catalog: item, store: store)
-        // Catalog claims vision: true (supportsVision), profile should confirm
         XCTAssertEqual(resolved.vision, .imageAndText)
     }
 

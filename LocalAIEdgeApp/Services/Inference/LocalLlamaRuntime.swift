@@ -168,19 +168,25 @@ actor LocalLlamaContext {
             throw LocalLlamaRuntimeError.couldNotInitializeContext
         }
 
-        // Gemma 4 recommended: temp=1.0, top_k=64, top_p=0.95, rep_penalty=1.0
-        // See: https://unsloth.ai/docs/models/gemma-4
+        // Sampling presets:
+        // - Gemma 4: temp=1.0, top_k=64, top_p=0.95, rep_penalty=1.0
+        //   (https://unsloth.ai/docs/models/gemma-4)
+        // - Qwen (llama.cpp guide): temp=0.6, top_k=20, top_p=0.95
+        //   and add a light presence penalty to reduce repetition loops.
+        //   (https://qwen.readthedocs.io/en/latest/run_locally/llama.cpp.html)
         let isGemma4 = normalizedPath.lowercased().contains("gemma-4") || normalizedPath.lowercased().contains("gemma4")
-        let topK: Int32 = isGemma4 ? 64 : 40
-        let topP: Float = isGemma4 ? 0.95 : 0.9
-        let temp: Float = isGemma4 ? 1.0 : 0.7
-        let repPenalty: Float = isGemma4 ? 1.0 : 1.1
+        let isQwen = normalizedPath.lowercased().contains("qwen")
+        let topK: Int32 = isGemma4 ? 64 : (isQwen ? 20 : 40)
+        let topP: Float = isGemma4 ? 0.95 : (isQwen ? 0.95 : 0.9)
+        let temp: Float = isGemma4 ? 1.0 : (isQwen ? 0.6 : 0.7)
+        let repPenalty: Float = isGemma4 ? 1.0 : (isQwen ? 1.05 : 1.1)
+        let presencePenalty: Float = isQwen ? 0.2 : 0.0
 
         llama_sampler_chain_add(sampling, llama_sampler_init_top_k(topK))
         llama_sampler_chain_add(sampling, llama_sampler_init_top_p(topP, 1))
         llama_sampler_chain_add(sampling, llama_sampler_init_min_p(0.05, 1))
         llama_sampler_chain_add(sampling, llama_sampler_init_temp(temp))
-        llama_sampler_chain_add(sampling, llama_sampler_init_penalties(64, repPenalty, 0.0, 0.0))
+        llama_sampler_chain_add(sampling, llama_sampler_init_penalties(64, repPenalty, 0.0, presencePenalty))
         llama_sampler_chain_add(sampling, llama_sampler_init_dist(1234))
 
         let actualBatchCapacity = Int32(llama_n_batch(context))

@@ -385,6 +385,7 @@ final class AppStateStore {
             "mlx-community/Qwen3.5-2B-MLX-4bit",
             "mlx-community/Qwen3.5-4B-MLX-4bit",
             "mlx-community/Qwen3.5-9B-MLX-4bit",
+            "mlx-community/Qwen3.5-4B-4bit",
             "mlx-community/LFM2.5-VL-1.6B-4bit"
         ]
 

@@ -7,7 +7,8 @@ protocol InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data?
+        imageData: Data?,
+        settings: AppSettings?
     ) async throws -> ChatMessage
 
     func generateStream(
@@ -16,7 +17,8 @@ protocol InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data?
+        imageData: Data?,
+        settings: AppSettings?
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>)
 }
 
@@ -40,6 +42,7 @@ enum InferenceServiceError: LocalizedError {
 enum AssistantResponseFallback {
     static let emptyOutput = "No visible answer was produced. Try a shorter prompt, turn off search, or switch models."
     static let emptyOutputAfterThinking = "The model reasoned, but it never produced a final answer. Try a shorter prompt, turn off search, or switch models."
+    static let instructionEcho = "The model repeated internal instructions instead of answering. Please resend your message or switch models."
 
     static func emptyOutputMessage(thinkingSeen: Bool) -> String {
         thinkingSeen ? emptyOutputAfterThinking : emptyOutput
@@ -49,8 +52,12 @@ enum AssistantResponseFallback {
         text == emptyOutput || text == emptyOutputAfterThinking
     }
 
+    static func isInstructionEchoMessage(_ text: String) -> Bool {
+        text == instructionEcho
+    }
+
     static func shouldSkipInHistory(_ message: ChatMessage) -> Bool {
-        message.role == .assistant && isEmptyOutputMessage(message.text)
+        message.role == .assistant && (isEmptyOutputMessage(message.text) || isInstructionEchoMessage(message.text))
     }
 
     static func isPromptEcho(_ response: String, prompt: String) -> Bool {
@@ -115,6 +122,35 @@ enum AssistantResponseFallback {
         return accessSignals.contains(where: normalized.contains)
             && freshnessSignals.contains(where: normalized.contains)
             && !groundingSignals.contains(where: normalized.contains)
+    }
+
+    static func isInstructionEcho(_ response: String, systemPrompt: String) -> Bool {
+        let responseNormalized = normalized(response)
+        let promptNormalized = normalized(systemPrompt)
+        guard !responseNormalized.isEmpty, !promptNormalized.isEmpty else { return false }
+
+        // Strong signal: response starts with a substantial prefix of system prompt.
+        let promptPrefixCount = min(90, promptNormalized.count)
+        if promptPrefixCount >= 40 {
+            let promptPrefix = String(promptNormalized.prefix(promptPrefixCount))
+            if responseNormalized.hasPrefix(promptPrefix) {
+                return true
+            }
+        }
+
+        // Heuristic markers from default safety/instruction prompts.
+        let markerPhrases = [
+            "answer the user's question directly and accurately",
+            "be concise but thorough",
+            "if you are unsure or do not know the answer",
+            "do not repeat the question back",
+            "do not add unnecessary filler or disclaimers"
+        ]
+        let promptMatches = markerPhrases.filter { promptNormalized.contains($0) }
+        guard !promptMatches.isEmpty else { return false }
+
+        let responseMatches = promptMatches.filter { responseNormalized.contains($0) }
+        return responseMatches.count >= 2
     }
 
     private static func normalized(_ text: String) -> String {
@@ -345,9 +381,13 @@ enum AssistantResponseSanitizer {
             "(?i)<\\|tool_call>",
             "(?i)<tool_call\\|>",
             "(?i)</?tool_call>",
+            "(?i)<\\|tool_output>",
+            "(?i)<tool_output\\|>",
+            "(?i)</?tool_output>",
             "(?i)<\\|eot_id\\|>",
             "(?i)<eot_id>",
             "(?i)<\\|end_of_text\\|>",
+            "(?i)<\\|endoftext\\|>",
             "(?i)<\\|im_end\\|>",
             "(?i)<\\|assistant\\|>",
             "(?i)<\\|user\\|>",

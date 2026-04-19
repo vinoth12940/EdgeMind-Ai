@@ -53,15 +53,14 @@ Rules:
 """
 
     private var composerBottomSpacing: CGFloat {
-        isInputFocused ? 8 : 18
+        isInputFocused ? 4 : 8
     }
 
     private var isVisionModel: Bool {
         guard let model = store.defaultModel else { return false }
-        // Runtime-decision: gate image attachment UI on the resolved RuntimeProfile.
-        // `.imageAndText` already implies an MLX-backed vision path; GGUF profiles
-        // resolve to `.none` per the shipped RuntimeProfiles.json.
-        return resolved(for: model).vision == .imageAndText
+        // Prefer audited runtime profile when available, but allow catalog-declared
+        // vision support so newly added models don't get blocked by missing profiles.
+        return resolved(for: model).vision == .imageAndText || model.catalogItem.supportsVision
     }
 
     private var activeModel: InstalledModel? {
@@ -122,8 +121,7 @@ Rules:
             AppBackdropView()
 
             VStack(spacing: 0) {
-                header
-                sessionOverviewStrip
+                compactTopBar
 
                 if activeMessages.isEmpty {
                     ScrollView {
@@ -134,7 +132,7 @@ Rules:
                                     removal: .scale(scale: 1.1).combined(with: .opacity)
                                 )
                             )
-                            .padding(.top, 18)
+                            .padding(.top, 8)
                             .frame(maxWidth: .infinity)
                     }
                     .scrollDismissesKeyboard(.interactively)
@@ -161,8 +159,8 @@ Rules:
                                 }
                             }
                             .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                            .padding(.bottom, 18)
+                            .padding(.top, 6)
+                            .padding(.bottom, 10)
                             .frame(maxWidth: .infinity)
                         }
                         .scrollDismissesKeyboard(.interactively)
@@ -188,6 +186,7 @@ Rules:
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+        .floatingDockHidden()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ChatComposerView(
                 prompt: $prompt,
@@ -205,7 +204,7 @@ Rules:
                 onStop: stopGeneration
             )
             .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.top, 4)
             .padding(.bottom, composerBottomSpacing)
             .background(
                 LinearGradient(
@@ -238,10 +237,98 @@ Rules:
                 voiceController.stopSpeaking()
             }
         }
+        .onChange(of: store.defaultModel?.id) {
+            // If user switches to a text-only model, drop pending image attachment
+            // so we don't accidentally route image data into a non-vision runtime.
+            if !isVisionModel {
+                attachedImage = nil
+            }
+        }
     }
 
     private var activeMessages: [ChatMessage] {
         store.selectedSession?.messages ?? []
+    }
+
+    private var compactTopBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                showModelPicker = true
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(searchStatusColor)
+                        .frame(width: 6, height: 6)
+                    Text(activeModel?.catalogItem.displayName ?? "Select Model")
+                        .font(.appCaps(12))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(AppTheme.panelRaised.opacity(0.82))
+                )
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            Menu {
+                Button {
+                    isInputFocused = false
+                    store.createSession(using: store.defaultModel?.catalogItem.id)
+                } label: {
+                    Label("New Chat", systemImage: "plus")
+                }
+
+                Button {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                        selectedTab.wrappedValue = 1
+                    }
+                } label: {
+                    Label("Models", systemImage: "square.stack.3d.up")
+                }
+
+                Button {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                        selectedTab.wrappedValue = 2
+                    }
+                } label: {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
+
+                Button {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                        selectedTab.wrappedValue = 3
+                    }
+                } label: {
+                    Label("Settings", systemImage: "slider.horizontal.3")
+                }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(AppTheme.panelRaised.opacity(0.9))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                }
+            }
+            .accessibilityLabel("Open menu")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .sheet(isPresented: $showModelPicker) {
+            modelPickerSheet
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     private var sessionOverviewStrip: some View {
@@ -927,6 +1014,9 @@ Rules:
 
     private func resolvedAssistantText(from rawText: String, prompt: String, thinkingSeen: Bool) -> String {
         let finalText = cleanedDisplayedAssistantText(rawText)
+        if AssistantResponseFallback.isInstructionEcho(finalText, systemPrompt: store.settings.systemPrompt) {
+            return AssistantResponseFallback.instructionEcho
+        }
         if finalText.isEmpty || AssistantResponseFallback.isPromptEcho(finalText, prompt: prompt) {
             return AssistantResponseFallback.emptyOutputMessage(thinkingSeen: thinkingSeen)
         }
@@ -1018,8 +1108,13 @@ Rules:
                 // - everything else stays local unless the model decides to call web_search
                 // Search results are passed into the model prompt; we only fall back
                 // to a grounded summary after generation if the model refuses or emits nothing usable.
+                let resolvedModel = resolved(for: model)
+                let toolsVerified = resolvedModel.tools != nil
+                let modelCanUseToolLoop = model.catalogItem.supportsToolCalling && toolsVerified
+                let isOpenELM = model.catalogItem.family == .openELM
                 let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
-                let searchArmed = liveSearchEnabled || store.settings.useSearchByDefault
+                // OpenELM lane: keep fully local/minimal prompt path for stability.
+                let searchArmed = !isOpenELM && (liveSearchEnabled || store.settings.useSearchByDefault)
                 let shouldUpfrontSearch = searchConfigured
                     && searchArmed
                     && SearchResultFallbackComposer.shouldRunUpfrontSearch(trimmedPrompt)
@@ -1043,9 +1138,11 @@ Rules:
                 // already returned snippets, tool definitions waste context window
                 // and overwhelm small models — skip them to maximize generation room.
                 var systemPromptForInference = store.settings.systemPrompt
-                if searchConfigured && searchArmed && searchContext == nil {
+                if searchConfigured && searchArmed && modelCanUseToolLoop && searchContext == nil {
                     systemPromptForInference += Self.toolCallDefinition
                     chatLogger.log("Tool definition injected (search configured, no upfront results)")
+                } else if searchConfigured && searchArmed && !modelCanUseToolLoop {
+                    chatLogger.log("Search armed, but tool definition skipped (model not tool-verified)")
                 } else if searchContext != nil {
                     chatLogger.log("Upfront search provided results — tool definition skipped to save context window")
                 } else {
@@ -1061,7 +1158,8 @@ Rules:
                     conversation: conversation,
                     searchContext: searchContext,
                     systemPrompt: systemPromptForInference,
-                    imageData: jpegData
+                    imageData: jpegData,
+                    settings: store.settings
                 )
 
                 let placeholder = ChatMessage(id: messageID, role: .assistant, text: "", citations: pendingCitations)
@@ -1114,6 +1212,10 @@ Rules:
 
                     case .toolCall(let name, let argsJSON):
                         chatLogger.log("StreamProcessor yielded .toolCall: name=\(name, privacy: .public) argsLen=\(argsJSON.count)")
+                        guard modelCanUseToolLoop else {
+                            chatLogger.log("Ignoring tool call: model is not tool-verified")
+                            break
+                        }
                         guard name.lowercased() == "web_search" else {
                             chatLogger.log("Tool call name '\(name, privacy: .public)' is not web_search — ignoring")
                             break
@@ -1177,7 +1279,8 @@ Rules:
                             conversation: conversation,
                             searchContext: agenticSearchContext,
                             systemPrompt: store.settings.systemPrompt,
-                            imageData: jpegData
+                            imageData: jpegData,
+                            settings: store.settings
                         )
                         let newPlaceholder = ChatMessage(id: newMessageID, role: .assistant, text: "", citations: newPendingCitations)
                         await MainActor.run { store.appendMessage(newPlaceholder, to: sessionID) }
@@ -1237,6 +1340,7 @@ Rules:
                     chatLogger.log("Post-stream: raw text contains tool_call tag")
                 }
                 if !stoppedByUser,
+                   modelCanUseToolLoop,
                    let query = Self.extractToolCallQuery(from: accumulated),
                    SearchGatewayFactory.make(settings: store.settings) != nil {
                     chatLogger.log("Post-stream fallback FIRED — query: \(query, privacy: .public)")
@@ -1271,7 +1375,8 @@ Rules:
                         conversation: conversation,
                         searchContext: agenticSearchContext,
                         systemPrompt: store.settings.systemPrompt,
-                        imageData: jpegData
+                        imageData: jpegData,
+                        settings: store.settings
                     )
                     let newPlaceholder = ChatMessage(id: newMessageID, role: .assistant, text: "", citations: newPendingCitations)
                     await MainActor.run { store.appendMessage(newPlaceholder, to: sessionID) }
@@ -1329,6 +1434,59 @@ Rules:
                 )
                 chatLogger.log("Resolved final text (\(finalText.count) chars): \(finalText.prefix(300), privacy: .public)")
 
+                // OpenELM-specific retry path: if the first pass echoed instructions,
+                // retry once with an ultra-minimal system prompt and no history/search.
+                if !stoppedByUser,
+                   model.catalogItem.family == .openELM,
+                   AssistantResponseFallback.isInstructionEchoMessage(finalText) {
+                    chatLogger.log("OpenELM instruction-echo retry triggered.")
+                    await MainActor.run { store.removeMessage(messageID, from: sessionID) }
+
+                    let retryMsg = ChatMessage(role: .system, text: "🔄 Retrying OpenELM with minimal prompt…")
+                    await MainActor.run { store.appendMessage(retryMsg, to: sessionID) }
+
+                    let (retryMsgID, retryStream) = try await service.generateStream(
+                        prompt: trimmedPrompt,
+                        model: model,
+                        conversation: [],
+                        searchContext: nil,
+                        systemPrompt: "Answer in one short sentence.",
+                        imageData: nil,
+                        settings: store.settings
+                    )
+                    let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: [])
+                    await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
+
+                    accumulated = ""
+                    thinkingAccumulated = ""
+                    for await retryEvent in retryStream {
+                        if Task.isCancelled { break }
+                        switch retryEvent {
+                        case .textDelta(let chunk):
+                            accumulated += chunk
+                            let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                                || chunk.contains(where: \.isNewline)
+                                || accumulated.count <= 48
+                            if shouldFlush {
+                                lastFlush = clock.now
+                                await updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
+                            }
+                        case .thinkingDelta(let chunk):
+                            thinkingAccumulated += chunk
+                        case .thinkingDone, .toolCall, .done:
+                            break
+                        }
+                    }
+                    let retryFinalText = resolvedAssistantText(
+                        from: accumulated,
+                        prompt: trimmedPrompt,
+                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    await updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
+                    await MainActor.run { finishGenerationIfCurrent(taskID) }
+                    return
+                }
+
                 // ── Search-grounding retry ──────────────────────────
                 // Some small models still emit a stock "no real-time access"
                 // disclaimer even when fresh web results are already in the prompt.
@@ -1346,10 +1504,11 @@ Rules:
                     let (retryMsgID, retryStream) = try await service.generateStream(
                         prompt: trimmedPrompt,
                         model: model,
-                        conversation: [],
+                        conversation: conversation,
                         searchContext: searchContext,
                         systemPrompt: SearchGroundingGuidance.retrySystemPrompt(from: store.settings.systemPrompt),
-                        imageData: nil
+                        imageData: nil,
+                        settings: store.settings
                     )
                     let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: retryCitations)
                     await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
@@ -1417,10 +1576,11 @@ Rules:
                         let (retryMsgID, retryStream) = try await service.generateStream(
                             prompt: trimmedPrompt,
                             model: model,
-                            conversation: [],
+                            conversation: conversation,
                             searchContext: searchContext,
                             systemPrompt: SearchGroundingGuidance.retrySystemPrompt(from: store.settings.systemPrompt),
-                            imageData: nil
+                            imageData: nil,
+                            settings: store.settings
                         )
                         let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: retryCitations)
                         await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
@@ -1490,7 +1650,8 @@ Rules:
                                 conversation: conversation,
                                 searchContext: fallbackSearchContext,
                                 systemPrompt: store.settings.systemPrompt,
-                                imageData: jpegData
+                                imageData: jpegData,
+                                settings: store.settings
                             )
                             let fbPlaceholder = ChatMessage(id: fbMessageID, role: .assistant, text: "", citations: fallbackCitations)
                             await MainActor.run { store.appendMessage(fbPlaceholder, to: sessionID) }

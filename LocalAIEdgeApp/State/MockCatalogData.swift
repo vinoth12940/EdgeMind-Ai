@@ -3,7 +3,7 @@ import Foundation
 enum MockCatalogData {
 
     // MARK: - Model Catalog
-    // Curated runnable set: Gemma 4 (GGUF) + Qwen 3 / Qwen 3 2507 + LFM 2.5 (MLX).
+    // Curated runnable set: Gemma 4 (GGUF) + Apple OpenELM + Qwen 3/Qwen 3 VL + LFM 2.5 (MLX).
     // Capability flags reflect source vs runtime behavior in this app.
     // Capability flags reflect actual model card specs.
 
@@ -51,9 +51,43 @@ enum MockCatalogData {
         ),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // APPLE — OpenELM MLX
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        ModelCatalogItem(
+            displayName: "OpenELM 270M Instruct (MLX)",
+            family: .openELM,
+            variant: "4-bit MLX · Latest Apple OpenELM",
+            summary: "Apple OpenELM instruct model in MLX format for fast, fully local edge inference on-device. Text-only lane for lightweight assistant tasks.",
+            parameterSize: "270M",
+            quantization: "MLX 4-bit",
+            diskSize: "~0.3 GB",
+            contextWindow: "2K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/OpenELM-270M-Instruct-4bit",
+            recommendedForIPhone: true,
+            minimumTier: .compact
+        ),
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // ALIBABA CLOUD — Qwen 3 MLX
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+        ModelCatalogItem(
+            displayName: "Qwen 3 VL 4B (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX · Vision",
+            summary: "Qwen 3 vision-language model for reliable image + text understanding on the bundled MLX runtime.",
+            parameterSize: "4B",
+            quantization: "MLX 4-bit",
+            diskSize: "~4.5 GB",
+            contextWindow: "32K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3-VL-4B-Instruct-4bit",
+            supportsVision: true,
+            recommendedForIPhone: true,
+            minimumTier: .pro
+        ),
         ModelCatalogItem(
             displayName: "Qwen 3 0.6B (MLX)",
             family: .qwen,
@@ -193,6 +227,38 @@ enum MockCatalogData {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         ModelCatalogItem(
+            displayName: "LFM2.5 350M (MLX)",
+            family: .lfm,
+            variant: "6-bit MLX · Latest",
+            summary: "Latest lightweight LFM2.5 release optimized for edge tool-use and structured outputs with very low memory overhead.",
+            parameterSize: "350M",
+            quantization: "MLX 6-bit",
+            diskSize: "~0.4 GB",
+            contextWindow: "128K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/LFM2.5-350M-6bit",
+            supportsToolCalling: true,
+            recommendedForIPhone: true,
+            minimumTier: .compact
+        ),
+        ModelCatalogItem(
+            displayName: "LFM2.5 1.2B Thinking (MLX)",
+            family: .lfm,
+            variant: "6-bit MLX · Latest",
+            summary: "Latest LFM2.5 reasoning-focused release for on-device chain-of-thought style workloads and deeper local planning.",
+            parameterSize: "1.2B",
+            quantization: "MLX 6-bit",
+            diskSize: "~1.0 GB",
+            contextWindow: "128K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/LFM2.5-1.2B-Thinking-6bit",
+            supportsReasoning: true,
+            supportsToolCalling: true,
+            isThinkingModel: true,
+            recommendedForIPhone: true,
+            minimumTier: .standard
+        ),
+        ModelCatalogItem(
             displayName: "LFM2.5 1.2B Instruct (MLX)",
             family: .lfm,
             variant: "4-bit MLX",
@@ -203,22 +269,6 @@ enum MockCatalogData {
             contextWindow: "32K",
             runtimeType: .mlx,
             mlxModelID: "mlx-community/LFM2.5-1.2B-Instruct-4bit",
-            supportsToolCalling: true,
-            recommendedForIPhone: true,
-            minimumTier: .standard
-        ),
-        ModelCatalogItem(
-            displayName: "LFM2.5 VL 1.6B (MLX)",
-            family: .lfm,
-            variant: "4-bit MLX",
-            summary: "Liquid vision-language model on Apple Silicon. Image + text via mlx-vlm, tool calling (text-only inputs). Fast inference, real-time caption capable. 32K context.",
-            parameterSize: "1.6B",
-            quantization: "MLX 4-bit",
-            diskSize: "~1.5 GB",
-            contextWindow: "32K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/LFM2.5-VL-1.6B-4bit",
-            supportsVision: true,
             supportsToolCalling: true,
             recommendedForIPhone: true,
             minimumTier: .standard

@@ -26,6 +26,13 @@ actor MLXRuntime {
     private var activeContainer: ModelContainer?
     private var activeIsVision: Bool = false
 
+    private struct SamplingPreset {
+        let temperature: Float
+        let topP: Float
+        let repetitionPenalty: Float?
+        let repetitionContextSize: Int
+    }
+
     func shouldUseVisionFactory(modelID: String, supportsVision: Bool, imageData: Data?) -> Bool {
         guard supportsVision else { return false }
         if imageData != nil { return true }
@@ -36,6 +43,25 @@ actor MLXRuntime {
             || normalizedModelID.contains("qwen3.5")
             || normalizedModelID.contains("qwen3_5")
             || normalizedModelID.contains("-vl-")
+    }
+
+    private func samplingPreset(for modelID: String) -> SamplingPreset {
+        let normalized = modelID.lowercased()
+        if normalized.contains("openelm") {
+            // OpenELM 270M drifts quickly with high-entropy sampling.
+            return SamplingPreset(
+                temperature: 0.2,
+                topP: 0.8,
+                repetitionPenalty: 1.12,
+                repetitionContextSize: 64
+            )
+        }
+        return SamplingPreset(
+            temperature: 0.7,
+            topP: 0.9,
+            repetitionPenalty: 1.05,
+            repetitionContextSize: 64
+        )
     }
 
     private func ensureModel(_ modelID: String, isVision: Bool) async throws -> ModelContainer {
@@ -97,10 +123,21 @@ actor MLXRuntime {
         }
         let container = try await ensureModel(modelID, isVision: isVision)
 
-        let parameters = GenerateParameters(maxTokens: maxTokens, temperature: 0.7, topP: 0.9)
-        let images = Self.ciImages(from: imageData)
-        // Build proper multi-turn chat: system + history + current user message
-        var chat: [Chat.Message] = [.system(systemPrompt)]
+        let sampling = samplingPreset(for: modelID)
+        let parameters = GenerateParameters(
+            maxTokens: maxTokens,
+            temperature: sampling.temperature,
+            topP: sampling.topP,
+            repetitionPenalty: sampling.repetitionPenalty,
+            repetitionContextSize: sampling.repetitionContextSize
+        )
+        // Never attach images to non-vision containers.
+        let images = isVision ? Self.ciImages(from: imageData) : []
+        // Build proper multi-turn chat: optional system + history + current user message.
+        var chat: [Chat.Message] = []
+        if !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            chat.append(.system(systemPrompt))
+        }
         chat.append(contentsOf: chatHistory)
         chat.append(.user(prompt, images: images))
         // Let the VLM processor handle its own image sizing — don't force a resize
@@ -142,10 +179,21 @@ actor MLXRuntime {
         }
         let container = try await ensureModel(modelID, isVision: isVision)
 
-        let parameters = GenerateParameters(maxTokens: maxTokens, temperature: 0.7, topP: 0.9)
-        let images = Self.ciImages(from: imageData)
-        // Build proper multi-turn chat: system + history + current user message
-        var chat: [Chat.Message] = [.system(systemPrompt)]
+        let sampling = samplingPreset(for: modelID)
+        let parameters = GenerateParameters(
+            maxTokens: maxTokens,
+            temperature: sampling.temperature,
+            topP: sampling.topP,
+            repetitionPenalty: sampling.repetitionPenalty,
+            repetitionContextSize: sampling.repetitionContextSize
+        )
+        // Never attach images to non-vision containers.
+        let images = isVision ? Self.ciImages(from: imageData) : []
+        // Build proper multi-turn chat: optional system + history + current user message.
+        var chat: [Chat.Message] = []
+        if !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            chat.append(.system(systemPrompt))
+        }
         chat.append(contentsOf: chatHistory)
         chat.append(.user(prompt, images: images))
         // Let the VLM processor handle its own image sizing — don't force a resize
@@ -226,10 +274,16 @@ struct MLXInferenceService: InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        settings: AppSettings? = nil
     ) async throws -> ChatMessage {
         guard let mlxModelID = model.catalogItem.mlxModelID else {
             throw InferenceServiceError.missingLocalModelFile
+        }
+        if imageData != nil && model.catalogItem.supportsVision == false {
+            throw InferenceServiceError.runtimeUnavailable(
+                "The selected model is text-only. Switch to a vision model (for example, Qwen 3 VL 4B) to analyze images."
+            )
         }
 
         let isVision = await MLXRuntime.shared.shouldUseVisionFactory(
@@ -237,7 +291,8 @@ struct MLXInferenceService: InferenceService {
             supportsVision: model.catalogItem.supportsVision,
             imageData: imageData
         )
-        let maxGeneratedTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+        let baseMaxTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+        let maxGeneratedTokens = tunedMaxTokens(for: model, base: baseMaxTokens)
         let fullSystemPrompt = Self.buildSystemPrompt(
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             searchContext: searchContext,
@@ -277,10 +332,16 @@ struct MLXInferenceService: InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        settings: AppSettings? = nil
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         guard let mlxModelID = model.catalogItem.mlxModelID else {
             throw InferenceServiceError.missingLocalModelFile
+        }
+        if imageData != nil && model.catalogItem.supportsVision == false {
+            throw InferenceServiceError.runtimeUnavailable(
+                "The selected model is text-only. Switch to a vision model (for example, Qwen 3 VL 4B) to analyze images."
+            )
         }
 
         let isVision = await MLXRuntime.shared.shouldUseVisionFactory(
@@ -288,7 +349,8 @@ struct MLXInferenceService: InferenceService {
             supportsVision: model.catalogItem.supportsVision,
             imageData: imageData
         )
-        let maxGeneratedTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+        let baseMaxTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
+        let maxGeneratedTokens = tunedMaxTokens(for: model, base: baseMaxTokens)
         let fullSystemPrompt = Self.buildSystemPrompt(
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             searchContext: searchContext,
@@ -313,7 +375,19 @@ struct MLXInferenceService: InferenceService {
                 isVision: isVision,
                 chatHistory: history
             )
-            let processor = StreamProcessor(rawStream: rawStream)
+            let runtimeProfile = RuntimeProfileStore().profile(for: model.catalogItem.id)
+                ?? .safeMinimum(catalogID: model.catalogItem.id)
+            let timeout = DeviceTier.current() == .compact ? 30.0 : (settings?.inferenceV2Timeout ?? AppSettings.default.inferenceV2Timeout)
+            let activeThinkFormats = Set(runtimeProfile.verifiedThinking.map { [$0] } ?? [])
+            let processor = StreamProcessor(
+                rawStream: rawStream,
+                leakTokens: runtimeProfile.knownLeakTokens,
+                v2Enabled: settings?.streamProcessorV2Enabled ?? AppSettings.default.streamProcessorV2Enabled,
+                hangTimeout: timeout,
+                repetitionNgram: 6,
+                repetitionCount: 3,
+                activeThinkFormats: activeThinkFormats
+            )
             return (messageID: messageID, stream: await processor.process())
         } catch {
             throw InferenceServiceError.runtimeUnavailable(Self.friendlyMLXError(error))
@@ -324,6 +398,11 @@ struct MLXInferenceService: InferenceService {
     /// consistent behavior across GGUF and MLX runtimes and to avoid wasting
     /// context window space with duplicate definitions.
     private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
+        if model.catalogItem.family == .openELM {
+            // OpenELM 270M is extremely small; long instruction blocks often get echoed.
+            // Keep this prompt minimal and deterministic instead of appending user-configured text.
+            return "Answer the latest user message in one short sentence."
+        }
         return base
     }
 
@@ -341,7 +420,7 @@ struct MLXInferenceService: InferenceService {
             return "HuggingFace authentication failed. Check your HF token in Settings → HuggingFace."
         }
         if desc.lowercased().contains("unsupported model type") {
-            return "This model architecture is not supported by the MLX runtime bundled in the app. Install one of the supported catalog models instead."
+            return "This model architecture is not supported by the bundled MLX runtime. Use a supported catalog model such as Qwen 3 VL 4B for image prompts."
         }
         // Network / timeout
         if nsError.domain == NSURLErrorDomain {
@@ -360,6 +439,12 @@ struct MLXInferenceService: InferenceService {
         model: InstalledModel,
         maxGeneratedTokens: Int
     ) -> String {
+        if model.catalogItem.family == .openELM {
+            // Keep OpenELM prompt tiny to avoid instruction-echo behavior.
+            return searchContext == nil
+                ? systemPrompt
+                : "\(systemPrompt)\nUse provided web snippets only when present."
+        }
         var result = "\(systemPrompt)\nYou are running locally on-device using MLX on Apple Silicon. Respond directly to the user's question. Do not hallucinate or fabricate information."
         if let searchContext {
             var parts: [String] = []
@@ -447,6 +532,10 @@ struct MLXInferenceService: InferenceService {
         searchContext: SearchContext?,
         maxGeneratedTokens: Int
     ) -> [Chat.Message] {
+        // OpenELM is very small-context; keeping long history causes topic drift/noise.
+        if model.catalogItem.family == .openELM {
+            return []
+        }
         let historyBudget = InferenceBudget.mlxHistoryBudget(
             for: model,
             searchContext: searchContext,
@@ -473,6 +562,13 @@ struct MLXInferenceService: InferenceService {
             usedTokens += cost
         }
         return turns
+    }
+
+    private func tunedMaxTokens(for model: InstalledModel, base: Int) -> Int {
+        if model.catalogItem.family == .openELM {
+            return min(base, 96)
+        }
+        return base
     }
 
     private static func stripHTML(_ text: String) -> String {
@@ -506,7 +602,8 @@ struct MLXInferenceService: InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        settings: AppSettings? = nil
     ) async throws -> ChatMessage {
         throw MLXInferenceError.runtimeUnavailable
     }
@@ -517,7 +614,8 @@ struct MLXInferenceService: InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        settings: AppSettings? = nil
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         throw MLXInferenceError.runtimeUnavailable
     }
