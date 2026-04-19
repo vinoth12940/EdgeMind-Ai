@@ -28,7 +28,8 @@ enum MockCatalogData {
             supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .standard
         ),
         ModelCatalogItem(
             displayName: "Gemma 4 E4B (GGUF)",
@@ -45,7 +46,8 @@ enum MockCatalogData {
             supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .pro
         ),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -66,7 +68,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .compact
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 1.7B (MLX)",
@@ -82,7 +85,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .standard
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B (MLX)",
@@ -98,7 +102,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .pro
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Instruct (MLX)",
@@ -113,7 +118,8 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
             supportsReasoning: true,
             supportsToolCalling: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .pro
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Thinking (MLX)",
@@ -129,7 +135,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .pro
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 8B (MLX)",
@@ -144,7 +151,8 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/Qwen3-8B-4bit",
             supportsReasoning: true,
             supportsToolCalling: true,
-            isThinkingModel: true
+            isThinkingModel: true,
+            minimumTier: .ultra
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Instruct (GGUF)",
@@ -159,7 +167,8 @@ enum MockCatalogData {
             runtimeType: .gguf,
             supportsReasoning: true,
             supportsToolCalling: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .pro
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Thinking (GGUF)",
@@ -175,7 +184,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .pro
         ),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -194,7 +204,8 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/LFM2.5-1.2B-Instruct-4bit",
             supportsToolCalling: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .standard
         ),
         ModelCatalogItem(
             displayName: "LFM2.5 VL 1.6B (MLX)",
@@ -209,7 +220,8 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/LFM2.5-VL-1.6B-4bit",
             supportsVision: true,
             supportsToolCalling: true,
-            recommendedForIPhone: true
+            recommendedForIPhone: true,
+            minimumTier: .standard
         ),
     ]
 
