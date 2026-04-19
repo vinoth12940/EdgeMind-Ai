@@ -88,7 +88,7 @@ Budget formula: `usableWeightGB ≈ totalRAM × 0.35`. iOS jetsam foreground cei
 ### 4.2 Catalog impact
 
 - `ModelCatalogItem` gains `minimumTier: DeviceTier` (default `.standard`).
-- `recommendedForIPhone` is **deprecated** but remains decodable to preserve persisted `InstalledModel` records. New code reads `minimumTier`.
+- `recommendedForIPhone` is **deprecated**. The `Codable` decoder is updated in the same commit: `recommendedForIPhone = try container.decodeIfPresent(Bool.self, forKey: .recommendedForIPhone) ?? false`. This is required because the current decoder at `ModelCatalogItem.swift:199` calls non-optional `decode(Bool.self, …)` — persisted `InstalledModel` records written before this field existed would fail to decode otherwise. New code reads `minimumTier`; `recommendedForIPhone` is retained as a read-only compatibility field and is not used for gating.
 - Assignments for the current eight MLX entries:
 
 | Model | `minimumTier` | Notes |
@@ -104,7 +104,20 @@ Budget formula: `usableWeightGB ≈ totalRAM × 0.35`. iOS jetsam foreground cei
 
 ### 4.3 Download guard
 
-`ModelDownloadService.startDownload(_:)` calls `DeviceTier.guardDownload(_:)`. Guard fails with `DownloadError.exceedsDeviceBudget` if `catalog.diskSizeGB > tier.usableWeightGB`. UI surfaces the guard with a modal: "This model needs approximately X GB of RAM. Your device has budget for Y GB. It will likely crash. Proceed anyway?" Positive confirmation records a user-consent flag so subsequent downloads of the same model do not re-prompt.
+`ModelDownloadService.startDownload(_:)` calls `DeviceTier.guardDownload(_:)`. The guard uses a **resident-RAM estimator**, not raw disk size:
+
+```
+residentGB ≈ diskSizeGB × 1.15          // weights in memory (4-bit ≈ on-disk size, small overhead)
+          + kvCacheGB(contextTokens)    // ≈ 2 × nLayers × nHeads × headDim × ctx × 2 bytes
+          + (supportsVision ? 0.6 : 0)  // SigLIP tower + image tensors
+          + 0.3                          // app heap + OS headroom
+```
+
+Guard fails with `DownloadError.exceedsDeviceBudget` if `residentGB > tier.usableWeightGB`. UI surfaces the guard with a modal: "This model needs approximately X GB of resident memory. Your device has budget for Y GB. It will likely crash. Proceed anyway?"
+
+Positive confirmation persists a user-consent flag in `UserDefaults` under key `mlx.downloadConsent.<catalogID>` (`[UUID: Date]` dictionary) so subsequent downloads of the same model skip the prompt.
+
+The estimator is a function on `ModelCatalogItem`: `estimatedResidentGB(contextTokens: Int) -> Double`. `contextTokens` defaults to the lesser of `catalog.contextWindowTokenCount` and `tier.safeContextTokens` (a new `DeviceTier` constant: 2048 / 4096 / 8192 / 16384).
 
 ## 5. RuntimeProfile
 
@@ -135,8 +148,19 @@ enum Verdict: Codable {
 
 ### 5.2 Storage
 
-- **Bundle source:** `LocalAIEdgeApp/Resources/RuntimeProfiles.json`. Checked into the repo. Hand-edited or written by the audit runner in Debug builds.
-- **Runtime read:** `RuntimeProfileStore` loads once at launch, merges any on-device override in `Documents/RuntimeProfiles.override.json` (Debug only), exposes `profile(for: UUID) -> RuntimeProfile?`.
+- **Bundle source:** `LocalAIEdgeApp/Resources/RuntimeProfiles.json`. Checked into the repo. Hand-edited or promoted from an audit run.
+- **Runtime read:** `RuntimeProfileStore` loads the bundled file once at launch and exposes `profile(for: UUID) -> RuntimeProfile?`. The override path is **Debug-only** and enforced at compile time:
+
+  ```swift
+  #if DEBUG
+  private func loadOverride() -> [RuntimeProfile] { /* reads Documents/RuntimeProfiles.override.json */ }
+  #else
+  private func loadOverride() -> [RuntimeProfile] { [] }
+  #endif
+  ```
+
+  This guarantees Release builds never honor an on-device override, preventing a malicious or broken override from flipping a `.red` verdict to `.green` in a shipped app.
+- **Conflict resolution:** when Debug overrides exist, they shadow bundled entries by `catalogID`. `RuntimeProfileStore.diagnosticsSummary()` logs the shadow so devs see when an override is live.
 - **Missing profile:** model runs in **safe minimum mode** — text-only, no tool-call loop, no think-block parsing, strict scrubber. This is the default for unprofiled newcomers.
 
 ### 5.3 Profile-over-catalog precedence
@@ -183,20 +207,41 @@ A new actor `TokenLeakScrubber` inside `StreamProcessor`:
 - Maintains a **lookahead buffer** of up to 24 characters.
 - If a delta ends with a prefix that could be the start of a leak token (`<|`, `<e`, `[I`, `<|ch`, `<end`), holds the tail until the next token arrives or the stream ends.
 - Scrubs known end-tokens: `<|im_end|>`, `<|endoftext|>`, `<end_of_turn>`, `[INST]`, `[/INST]`, `<|eot_id|>`, `<|im_start|>`, plus anything in `RuntimeProfile.knownLeakTokens`.
-- Yields only **clean** text forward. The existing post-stream `AssistantResponseSanitizer.clean()` call is removed from the sink (redundant once scrubbing is live).
+- Lookahead buffer is sized to `max(24, longestScrubTokenLength + 8)` so new entries in `knownLeakTokens` extend the buffer automatically instead of silently bypassing it.
+- Yields only **clean** text forward. The existing post-stream `AssistantResponseSanitizer.clean()` is **kept** at the sink as defense-in-depth; if the scrubber misses a token at a boundary the sanitizer still catches it. Duplicate stripping is idempotent.
 
 ### 6.3 Hang watchdog (fixes A)
 
-- If **no tokens arrive within `AppSettings.inferenceHangTimeoutSeconds`** (default 15s, loosened to 30s on `.compact`) after `ensureModel` returns, `StreamProcessor` yields `.textDelta("Model did not produce output.")` + `.done` and marks the run for the audit report as a hang.
-- If the stream completes with **zero total tokens**, same behavior. `auditVerdict` is recorded as `.red("empty-output")` when run from the harness.
+- Implemented with a `withTaskGroup` wrapper around the `for await token in rawStream` loop. One child task reads the stream; a sibling task sleeps for the timeout. Whichever finishes first cancels the other:
+
+  ```swift
+  await withTaskGroup(of: Event.self) { group in
+      group.addTask { for await token in rawStream { … emit .token(token) }; return .streamEnded }
+      group.addTask { try? await Task.sleep(for: .seconds(timeout)); return .timedOut }
+      for await event in group {
+          switch event {
+          case .timedOut where !anyTokenReceived:
+              // yield fallback + done, cancel group
+          case .streamEnded:
+              group.cancelAll(); return
+          …
+          }
+      }
+  }
+  ```
+
+- If **no tokens arrive within `AppSettings.inferenceV2Timeout`** (default 15s, loosened to 30s on `.compact`) after `ensureModel` returns, the processor yields `.textDelta("Model did not produce output.")` + `.done` and the harness records the run as `.red("hang")`.
+- If the stream completes with **zero total tokens**, same behavior; harness records `.red("empty-output")`.
+- Timer is re-armed after each token so slow-but-alive streams are not falsely killed.
 
 ### 6.4 Repetition guard (fixes B)
 
 Lightweight n-gram loop detector: if the last 32 tokens contain a 6-gram that repeats ≥3 times, `StreamProcessor` stops reading from the raw stream, yields `.done`, and the UI renders a "truncated due to repetition" footer on the assistant bubble. Guard:
 
 - **Off** inside `<think>` / `<thinking>` / `<reasoning>` blocks (thinking often repeats phrasing).
-- **On** during assistant-channel output.
-- Threshold and n-gram length exposed as `AppSettings.repetitionGuardNgram` / `.repetitionGuardCount`.
+- **Off** inside fenced code blocks (between ``` markers) and inline code spans — code and poetry legitimately repeat (`for _ in 0..<n`, table rows, list items). The guard tracks whether the stream is currently inside a fence by counting unescaped ``` occurrences in the text buffer.
+- **On** during normal assistant-channel prose.
+- Threshold and n-gram length live under a **single master toggle** `AppSettings.streamProcessorV2Enabled` (default true). When disabled, all Section 6 behaviors (new tags, scrubber, hang watchdog, repetition guard) revert to the current `StreamProcessor` implementation. No per-sub-feature flags ship — the toggle is an emergency kill-switch only.
 
 ### 6.5 Tests (new, in `LocalAIEdgeAppTests`)
 
@@ -210,12 +255,24 @@ Lightweight n-gram loop detector: if the last 32 tokens contain a 6-gram that re
 
 ```swift
 actor ModelAuditRunner {
+    // Primary entry point — takes catalog items, handles install/uninstall lifecycle.
+    func auditCatalog(
+        items: [ModelCatalogItem],
+        policy: InstallPolicy   // .requireInstalled / .installIfMissing(diskHeadroomGB: Double) / .installAndUninstall
+    ) -> AsyncStream<ModelAuditProgress>
+
+    // Secondary — for when a caller already has an installed model.
     func audit(model: InstalledModel, cases: [AuditCase], profile: RuntimeProfile?) async -> ModelAuditResult
-    func auditAll(models: [InstalledModel]) -> AsyncStream<ModelAuditProgress>
 }
 ```
 
-Serial execution (the MLX runtime is a single-slot actor). Emits `ModelAuditProgress` events: `.loading(modelName)`, `.caseStarted(caseName)`, `.caseResult(name, PassFail, durationMs)`, `.modelDone(ModelAuditResult)`.
+The runner accepts **catalog items**, not `InstalledModel` only. The harness drives end-to-end: per item it checks disk headroom via `FileManager` free-space query, downloads via `ModelDownloadService` if the item is missing and policy allows, runs cases, optionally uninstalls to reclaim space before the next item.
+
+- `.requireInstalled` skips uncatalogued items with `.yellow("not-installed")`.
+- `.installIfMissing(diskHeadroomGB:)` downloads only when at least the given headroom is available after the download.
+- `.installAndUninstall` is the Diagnostics "Run All" mode: downloads, audits, uninstalls each in sequence to keep disk pressure bounded (the device never holds more than one unaudited model plus any the user originally had installed).
+
+Serial execution (the MLX runtime is a single-slot actor). Emits `ModelAuditProgress` events: `.downloading(modelName, Double)`, `.loading(modelName)`, `.caseStarted(caseName)`, `.caseResult(name, PassFail, durationMs)`, `.modelDone(ModelAuditResult)`, `.uninstalling(modelName)`.
 
 ### 7.2 Standard case set
 
@@ -225,7 +282,7 @@ Serial execution (the MLX runtime is a single-slot actor). Emits `ModelAuditProg
 | 2 | `longNarrative` | "Write a 200-word story about a lighthouse." | nonEmpty, noLeakTokens, completes, peakMemOK |
 | 3 | `thinkingProbe` *(thinking models only)* | "Think step by step: what is 17×23?" | thinkBlockDetected, answer within ±5 |
 | 4 | `toolProbe` *(tool-calling models only)* | "What's the weather in Tokyo right now? Use web search if you need to." | toolCallFired with `name == "web_search"` |
-| 5 | `visionProbe` *(vision models only)* | "What fruit is in this image?" + bundled `audit-apple.jpg` (~80 KB, public domain, `Assets.xcassets`) | response contains `apple` or `red fruit` (case-insensitive) |
+| 5 | `visionProbe` *(vision models only)* | "Answer in one English word: what fruit is visible in this image?" + bundled `audit-apple.jpg` (~80 KB, public domain, `Assets.xcassets`) | response after scrubbing matches any of: `apple`, `apples`, `red apple`, `red fruit`, `fruit` — accept-list held in `AuditExpectations.visionAnswerAcceptList` so future vision probes can extend it. Case-insensitive, whitespace-tolerant, first-100-chars-of-reply. |
 | 6 | `leakStressor` | "End your reply with the exact string: HELLO." | noLeakTokens — scans for `<|im_end|>`, `<end_of_turn>`, `[INST]` et al. |
 | 7 | `memoryPressure` *(optional, `.pro`+ only)* | 3K-token context prompt | peakMemOK, no OOM |
 
@@ -233,11 +290,11 @@ Serial execution (the MLX runtime is a single-slot actor). Emits `ModelAuditProg
 
 `AuditExpectations` evaluates a completed stream against the declared expectations using:
 
-- `os_proc_available_memory()` sampled during generation for `peakMemOK`.
-- Regex scanners over the final text for leak tokens.
-- Presence of `StreamEvent.thinkingDone` for `thinkBlockDetected`.
-- Presence of `StreamEvent.toolCall(name: "web_search", …)` for `toolCallFired`.
-- Case-insensitive substring match for `visionProbe`.
+- **Memory:** `os_proc_available_memory()` sampled every 500 ms during generation into a `peakMemBytes: UInt64` counter. `peakMemOK` passes if `peakMemBytes` never drops within 10% of the jetsam soft-limit for the tier (compact: 1.2 GB, standard: 2.2 GB, pro: 4.5 GB, ultra: 7 GB). Below 10% headroom the case is marked `.yellow("near-jetsam")`; crossing the limit is `.red("oom")`.
+- **Leak scan:** regex `/(<\|im_end\|>|<\|endoftext\|>|<end_of_turn>|\[INST\]|<\|eot_id\|>|<\|channel>)/` on the final rendered text (post-scrubber).
+- **Thinking:** presence of at least one `StreamEvent.thinkingDone` for the turn.
+- **Tool:** presence of `StreamEvent.toolCall(name: "web_search", …)` before any `.textDelta`.
+- **Vision answer:** accept-list match described in §7.2.
 
 ### 7.4 `ModelDiagnosticsView`
 
@@ -319,6 +376,9 @@ Only when those five boxes are ticked does Phase 2 (UI redesign) begin.
 ## 13. Open questions / explicit non-decisions
 
 - **Phase 2 UI redesign** is deliberately out of scope here. The audit harness produced in Phase 1 is expected to carry into Phase 2 as a regression safety net.
-- **GGUF Gemma 4 channel-tag support** lands as dead code in `StreamProcessor` (detector present, not activated). Activating it is a follow-up when Gemma 4 MLX ships or when the GGUF path re-enters scope.
+- **Gemma-channel detector lives in shared `StreamProcessor`** even though the current GGUF Gemma entries are out of scope. This is an intentional decision: `StreamProcessor` is shared by both runtimes, and adding a detector that activates only when `RuntimeProfile.verifiedThinking == .gemmaChannel` is a pure-code addition with no behavioral effect on any currently shipped model (no MLX entry maps to `.gemmaChannel`, no GGUF entry has a `RuntimeProfile` yet). It is **not** a GGUF-path change — the detector is dead code until a future `RuntimeProfile` opts into it.
 - **Search gateway and voice** are untouched.
 - **Qwen 3 8B** stays in the catalog under `.ultra` instead of being removed, on the expectation that iPhone 17 Pro Max (12 GB) and iPad users exist.
+- **iPhone 17 RAM assumption:** §4.1 lists iPhone 17 / 17 Pro as 8 GB based on the Apple Silicon A19 family memory configuration announced with the device. iPhone 17 Pro Max is classified as 12 GB (`.ultra`). These tiers are updated via a data-only commit if real-world `hw.machine` strings diverge from assumption.
+- **`InstalledModel` vs catalog orchestration:** resolved in §7.1 — the runner accepts `ModelCatalogItem` and handles install/uninstall lifecycle with an `InstallPolicy`, so the harness works correctly against a mostly-empty device.
+- **Per-model `contextWindow` vs runtime allocation:** the runner records `peakMemBytes` under the device's `tier.safeContextTokens`, not the catalog's declared `contextWindow` (40K/256K strings are aspirational; the runtime never allocates them on iPhone). A future follow-up could add a "long-context stress" case on `.ultra`-tier only.
