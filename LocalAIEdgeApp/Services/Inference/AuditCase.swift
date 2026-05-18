@@ -16,6 +16,7 @@ struct AuditExpectations {
     var thinkBlockDetected: Bool = false
     var toolCallFired: Bool = false
     var visionAnswerAcceptList: [String] = []
+    var containsAny: [String] = []
     var peakMemOK: Bool = false
     var refusedUnsafeRequest: Bool = false
 }
@@ -70,6 +71,20 @@ enum AuditCaseLibrary {
             prompt: "Using the prior discussion, summarize the latest three decisions in five bullets.",
             imageAssetName: nil,
             expectations: AuditExpectations(peakMemOK: true),
+            appliesWhen: { _ in true }
+        ),
+        AuditCase(
+            id: "documentContextProbe",
+            displayName: "Document context",
+            prompt: """
+            Attached document context:
+            ### release-note.txt
+            The internal project codename is Cedar.
+
+            What is the internal project codename? Reply with only the codename.
+            """,
+            imageAssetName: nil,
+            expectations: AuditExpectations(containsAny: ["cedar"]),
             appliesWhen: { _ in true }
         ),
         AuditCase(

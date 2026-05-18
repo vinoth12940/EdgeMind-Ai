@@ -22,7 +22,8 @@ enum MockCatalogData {
             runtimeType: .foundationModels,
             supportsReasoning: true,
             supportsToolCalling: true,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("raiSafety"),
             minimumTier: .pro
         ),
 
@@ -45,7 +46,8 @@ enum MockCatalogData {
             supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: false,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("raiSafety"),
             minimumTier: .standard
         ),
         ModelCatalogItem(
@@ -63,7 +65,8 @@ enum MockCatalogData {
             supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: false,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("raiSafety"),
             minimumTier: .pro
         ),
 
@@ -84,6 +87,9 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/granite-3.3-2b-instruct-4bit",
             supportsReasoning: true,
             recommendedForIPhone: true,
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            testedDeviceTier: .pro,
             minimumTier: .standard
         ),
         ModelCatalogItem(
@@ -98,6 +104,7 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/granite-3.3-8b-instruct-4bit",
             supportsReasoning: true,
+            runtimeStatus: .unsupported,
             minimumTier: .ultra
         ),
 
@@ -117,6 +124,38 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3-VL-4B-Instruct-4bit",
             supportsVision: true,
+            runtimeStatus: .experimental,
+            auditVerdict: .red("signal-9-memory"),
+            minimumTier: .ultra
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 VL 0.8B (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX · Vision",
+            summary: "Compact Qwen 3.5 vision-language model for image + text prompts. Experimental until it passes the full on-device vision audit.",
+            parameterSize: "0.8B",
+            quantization: "MLX 4-bit",
+            diskSize: "~1.0 GB",
+            contextWindow: "256K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3.5-0.8B-MLX-4bit",
+            supportsVision: true,
+            runtimeStatus: .experimental,
+            minimumTier: .pro
+        ),
+        ModelCatalogItem(
+            displayName: "Qwen 3.5 VL 4B (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX · Vision",
+            summary: "Qwen 3.5 4B vision-language model for stronger image understanding. Ultra-tier only until real iPhone diagnostics prove memory safety.",
+            parameterSize: "4B",
+            quantization: "MLX 4-bit",
+            diskSize: "~3.0 GB",
+            contextWindow: "256K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3.5-4B-MLX-4bit",
+            supportsVision: true,
+            runtimeStatus: .experimental,
             minimumTier: .ultra
         ),
         ModelCatalogItem(
@@ -133,7 +172,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("longConversation"),
             minimumTier: .compact
         ),
         ModelCatalogItem(
@@ -150,7 +190,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("raiSafety"),
             minimumTier: .standard
         ),
         ModelCatalogItem(
@@ -229,7 +270,8 @@ enum MockCatalogData {
             runtimeType: .gguf,
             supportsReasoning: true,
             supportsToolCalling: true,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("raiSafety"),
             minimumTier: .pro
         ),
         ModelCatalogItem(
@@ -246,7 +288,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("toolProbe"),
             minimumTier: .pro
         ),
 
@@ -254,6 +297,21 @@ enum MockCatalogData {
         // LIQUID AI — LFM 2.5 MLX
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+        ModelCatalogItem(
+            displayName: "LFM2.5 VL 1.6B (MLX)",
+            family: .lfm,
+            variant: "4-bit MLX · Vision",
+            summary: "Liquid LFM2.5 vision-language model for local image + text prompts. Pro candidate, but experimental until it passes the full on-device vision audit.",
+            parameterSize: "1.6B",
+            quantization: "MLX 4-bit",
+            diskSize: "~1.5 GB",
+            contextWindow: "32K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/LFM2.5-VL-1.6B-4bit",
+            supportsVision: true,
+            runtimeStatus: .experimental,
+            minimumTier: .pro
+        ),
         ModelCatalogItem(
             displayName: "LFM2.5 350M (MLX)",
             family: .lfm,
@@ -266,6 +324,9 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/LFM2.5-350M-6bit",
             recommendedForIPhone: true,
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            testedDeviceTier: .pro,
             minimumTier: .compact
         ),
         ModelCatalogItem(
@@ -282,7 +343,8 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("longConversation"),
             minimumTier: .standard
         ),
         ModelCatalogItem(
@@ -297,7 +359,8 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/LFM2.5-1.2B-Instruct-4bit",
             supportsToolCalling: true,
-            recommendedForIPhone: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .red("toolProbe"),
             minimumTier: .standard
         ),
     ]

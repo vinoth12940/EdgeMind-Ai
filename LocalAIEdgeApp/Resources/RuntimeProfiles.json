@@ -168,5 +168,38 @@
     "recommendedMaxTokens": 1024,
     "auditedAt": "",
     "auditVerdict": { "kind": "yellow", "note": "manual-lfm-chat-template" }
+  },
+  {
+    "catalogID": "24909990-2689-505F-AFE9-EC84DEA3EA8A",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "imageAndText",
+    "verifiedInputModes": ["text", "image", "document"],
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-real-device-vision-audit" }
+  },
+  {
+    "catalogID": "D9FB3D90-8705-5FED-9978-FFBCE6121CED",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "imageAndText",
+    "verifiedInputModes": ["text", "image", "document"],
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "ultra-only-pending-real-device-vision-audit" }
+  },
+  {
+    "catalogID": "41A091D3-51AD-53C0-B65C-78D31B630A51",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "imageAndText",
+    "verifiedInputModes": ["text", "image", "document"],
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|tool_call_start|>", "<|tool_call_end|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-real-device-vision-audit" }
   }
 ]

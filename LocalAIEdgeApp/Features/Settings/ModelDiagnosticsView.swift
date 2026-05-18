@@ -14,6 +14,7 @@ struct ModelDiagnosticsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     hero
                     runControls
+                    readinessChecklist
                     resultsSection
                 }
                 .padding(.horizontal, 16)
@@ -137,6 +138,43 @@ struct ModelDiagnosticsView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private var readinessChecklist: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("App Review Readiness")
+                .font(.appDisplay(19))
+                .foregroundStyle(AppTheme.textPrimary)
+
+            diagnosticRow(icon: "photo.on.rectangle", title: "Vision probe", value: "Runs for MLX VLM models only", color: AppTheme.accent)
+            diagnosticRow(icon: "doc.text.magnifyingglass", title: "Document probe", value: "Text/PDF/CSV context included", color: AppTheme.success)
+            diagnosticRow(icon: "waveform", title: "Voice mode", value: store.settings.voiceModeEnabled ? "Enabled" : "Available in Settings", color: store.settings.voiceModeEnabled ? AppTheme.success : AppTheme.warning)
+            diagnosticRow(icon: "sparkles", title: "Shortcuts", value: "Ask, Diagnostics, Voice, Models intents installed", color: AppTheme.accent)
+            diagnosticRow(icon: "memorychip", title: "Idle unload", value: "Chat releases runtimes after 90 seconds idle", color: AppTheme.success)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(AppTheme.panelRaised.opacity(0.82))
+        )
+    }
+
+    private func diagnosticRow(icon: String, title: String, value: String, color: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(color)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.appBody(13))
+                    .foregroundStyle(AppTheme.textPrimary)
+                Text(value)
+                    .font(.appBody(11))
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+            Spacer()
         }
     }
 

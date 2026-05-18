@@ -19,6 +19,8 @@ struct ChatView: View {
     @State private var showModelPicker = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var attachedImage: UIImage?
+    @State private var attachedDocuments: [ChatAttachment] = []
+    @State private var idleRuntimeReleaseTask: Task<Void, Never>?
     @StateObject private var voiceController = VoiceInteractionController()
 
     private let profileStore = RuntimeProfileStore()
@@ -212,6 +214,7 @@ Rules:
                 prompt: $prompt,
                 liveSearchEnabled: $liveSearchEnabled,
                 attachedImage: $attachedImage,
+                attachedDocuments: $attachedDocuments,
                 isInputFocused: $isInputFocused,
                 voiceModeEnabled: store.settings.voiceModeEnabled,
                 isListening: voiceController.isListening,
@@ -237,6 +240,7 @@ Rules:
         }
         .onAppear {
             store.reconcileInstalledFiles()
+            applyIntentHandoff()
             // Auto-enable search when a provider is configured.
             // The user can still toggle it OFF per-chat via the composer "+" menu.
             if !searchAutoInitialized {
@@ -251,6 +255,9 @@ Rules:
                 prompt = voiceController.transcript
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            applyIntentHandoff()
+        }
         .onChange(of: store.settings.voiceModeEnabled) {
             if !store.settings.voiceModeEnabled {
                 voiceController.stopListening()
@@ -264,10 +271,27 @@ Rules:
                 attachedImage = nil
             }
         }
+        .onDisappear {
+            idleRuntimeReleaseTask?.cancel()
+            idleRuntimeReleaseTask = nil
+        }
     }
 
     private var activeMessages: [ChatMessage] {
         store.selectedSession?.messages ?? []
+    }
+
+    private func applyIntentHandoff() {
+        if let pendingPrompt = LocalAIIntentHandoffStore.consumePendingPrompt() {
+            prompt = pendingPrompt
+            isInputFocused = true
+        }
+
+        if LocalAIIntentHandoffStore.consumeVoiceRequest(), store.settings.voiceModeEnabled {
+            Task {
+                await voiceController.toggleListening(seedText: prompt)
+            }
+        }
     }
 
     private var compactTopBar: some View {
@@ -964,6 +988,7 @@ Rules:
         generationTask = nil
         activeGenerationID = nil
         isSending = false
+        scheduleIdleRuntimeRelease()
     }
 
     private func toggleVoiceInput() {
@@ -1072,6 +1097,16 @@ Rules:
     }
 
     @MainActor
+    private func scheduleIdleRuntimeRelease() {
+        idleRuntimeReleaseTask?.cancel()
+        idleRuntimeReleaseTask = Task {
+            try? await Task.sleep(nanoseconds: 90_000_000_000)
+            if Task.isCancelled { return }
+            await RuntimeMemoryCoordinator.releaseAll()
+        }
+    }
+
+    @MainActor
     private func updateStreamingMessage(_ text: String, messageID: UUID, sessionID: UUID, persist: Bool = false) {
         store.updateMessageText(messageID, in: sessionID, text: text, persist: persist)
     }
@@ -1082,6 +1117,7 @@ Rules:
         isSending = false
         generationTask = nil
         activeGenerationID = nil
+        scheduleIdleRuntimeRelease()
     }
 
     private func sendPrompt() {
@@ -1090,7 +1126,8 @@ Rules:
 
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let currentImage = attachedImage
-        guard !trimmedPrompt.isEmpty || currentImage != nil else { return }
+        let currentDocuments = attachedDocuments
+        guard !trimmedPrompt.isEmpty || currentImage != nil || !currentDocuments.isEmpty else { return }
         if store.selectedSession == nil {
             store.createSession(using: store.defaultModel?.catalogItem.id)
         }
@@ -1110,15 +1147,19 @@ Rules:
 
         // Encode image at bounded size to avoid memory spikes during persistence/inference.
         let jpegData = encodedAttachmentData(from: currentImage)
+        let attachments = ([jpegData.map { ChatAttachment.image($0) }].compactMap { $0 } + currentDocuments)
+        let documentContext = DocumentExtractionService.promptContext(from: attachments)
+        let inferencePrompt = documentContext.isEmpty ? trimmedPrompt : "\(trimmedPrompt)\n\n\(documentContext)"
 
         // Capture history BEFORE appending the current user message so inference
         // services receive clean prior context without needing to deduplicate.
         let conversation = store.selectedSession?.messages ?? []
-        let userMessage = ChatMessage(role: .user, text: trimmedPrompt, imageData: jpegData)
+        let userMessage = ChatMessage(role: .user, text: trimmedPrompt, attachments: attachments)
         store.appendMessage(userMessage, to: sessionID)
         isInputFocused = false
         prompt = ""
         attachedImage = nil
+        attachedDocuments = []
 
         let raiDecision = ResponsibleAIGuard.evaluate(prompt: trimmedPrompt)
         if raiDecision.isBlocked, let response = raiDecision.response {
@@ -1134,6 +1175,10 @@ Rules:
 
         let task = Task {
             do {
+                await MainActor.run {
+                    idleRuntimeReleaseTask?.cancel()
+                    idleRuntimeReleaseTask = nil
+                }
                 await RuntimeMemoryCoordinator.prepareForRuntime(model.catalogItem.runtimeType)
 
                 let searchContext: SearchContext?
@@ -1188,7 +1233,7 @@ Rules:
                 let service = inferenceServiceForModel(model)
                 let pendingCitations = searchContext?.citations ?? []
                 let (messageID, stream) = try await service.generateStream(
-                    prompt: trimmedPrompt,
+                    prompt: inferencePrompt,
                     model: model,
                     conversation: conversation,
                     searchContext: searchContext,
@@ -1312,7 +1357,7 @@ Rules:
                         let newPendingCitations = agenticSearchContext?.citations ?? []
                         chatLogger.log("Re-invoking inference with search context (nil=\(agenticSearchContext == nil))")
                         let (newMessageID, newStream) = try await service.generateStream(
-                            prompt: trimmedPrompt,
+                            prompt: inferencePrompt,
                             model: model,
                             conversation: conversation,
                             searchContext: agenticSearchContext,
@@ -1408,7 +1453,7 @@ Rules:
 
                     let newPendingCitations = agenticSearchContext?.citations ?? []
                     let (newMessageID, newStream) = try await service.generateStream(
-                        prompt: trimmedPrompt,
+                        prompt: inferencePrompt,
                         model: model,
                         conversation: conversation,
                         searchContext: agenticSearchContext,
@@ -1485,7 +1530,7 @@ Rules:
                     await MainActor.run { store.appendMessage(retryMsg, to: sessionID) }
 
                     let (retryMsgID, retryStream) = try await service.generateStream(
-                        prompt: trimmedPrompt,
+                        prompt: inferencePrompt,
                         model: model,
                         conversation: [],
                         searchContext: nil,
@@ -1551,7 +1596,7 @@ Rules:
 
                     let retryCitations = searchContext.citations
                     let (retryMsgID, retryStream) = try await service.generateStream(
-                        prompt: trimmedPrompt,
+                        prompt: inferencePrompt,
                         model: model,
                         conversation: conversation,
                         searchContext: searchContext,
@@ -1623,7 +1668,7 @@ Rules:
 
                         let retryCitations = searchContext?.citations ?? []
                         let (retryMsgID, retryStream) = try await service.generateStream(
-                            prompt: trimmedPrompt,
+                            prompt: inferencePrompt,
                             model: model,
                             conversation: conversation,
                             searchContext: searchContext,
@@ -1694,7 +1739,7 @@ Rules:
                         if let fallbackSearchContext {
                             let fallbackCitations = fallbackSearchContext.citations
                             let (fbMessageID, fbStream) = try await service.generateStream(
-                                prompt: trimmedPrompt,
+                                prompt: inferencePrompt,
                                 model: model,
                                 conversation: conversation,
                                 searchContext: fallbackSearchContext,

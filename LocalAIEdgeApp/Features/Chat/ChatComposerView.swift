@@ -2,11 +2,13 @@ import SwiftUI
 import PhotosUI
 import ImageIO
 import AVFoundation
+import UniformTypeIdentifiers
 
 struct ChatComposerView: View {
     @Binding var prompt: String
     @Binding var liveSearchEnabled: Bool
     @Binding var attachedImage: UIImage?
+    @Binding var attachedDocuments: [ChatAttachment]
     @Binding var isInputFocused: Bool
     let voiceModeEnabled: Bool
     let isListening: Bool
@@ -22,14 +24,17 @@ struct ChatComposerView: View {
     @State private var showCamera = false
     @State private var showPhotoPicker = false
     @State private var showVideoPicker = false
+    @State private var showDocumentPicker = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedVideoItem: PhotosPickerItem?
     @State private var showSearchNotConfigured = false
+    @State private var attachmentError: String?
 
     private var canSend: Bool {
         let hasText = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasImage = attachedImage != nil
-        return (hasText || hasImage) && !isSending
+        let hasDocument = !attachedDocuments.isEmpty
+        return (hasText || hasImage || hasDocument) && !isSending
     }
 
     private var isSearchActiveTint: Color {
@@ -60,6 +65,40 @@ struct ChatComposerView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Go to Settings → Web Search API and select a provider with an API key.")
+        }
+        .alert("Attachment Error", isPresented: Binding(
+            get: { attachmentError != nil },
+            set: { if !$0 { attachmentError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(attachmentError ?? "")
+        }
+        .fileImporter(
+            isPresented: $showDocumentPicker,
+            allowedContentTypes: DocumentExtractionService.supportedTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task {
+                    do {
+                        let attachment = try DocumentExtractionService.attachment(from: url)
+                        await MainActor.run {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                attachedDocuments.append(attachment)
+                            }
+                        }
+                    } catch {
+                        await MainActor.run {
+                            attachmentError = error.localizedDescription
+                        }
+                    }
+                }
+            case .failure(let error):
+                attachmentError = error.localizedDescription
+            }
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared())
         .photosPicker(isPresented: $showVideoPicker, selection: $selectedVideoItem, matching: .videos, photoLibrary: .shared())
@@ -118,7 +157,7 @@ struct ChatComposerView: View {
 
     @ViewBuilder
     private var utilityLane: some View {
-        if attachedImage != nil || isListening {
+        if attachedImage != nil || !attachedDocuments.isEmpty || isListening {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     statusPill(
@@ -135,7 +174,7 @@ struct ChatComposerView: View {
                         statusPill(icon: isListening ? "waveform.circle.fill" : "mic.fill", label: isListening ? "Listening" : "Voice Ready", color: isListening ? AppTheme.warning : AppTheme.accentSoft)
                     }
 
-                    if attachedImage != nil {
+                    if attachedImage != nil || !attachedDocuments.isEmpty {
                         statusPill(icon: "paperclip", label: "Attachment Added", color: AppTheme.accent)
                     }
                 }
@@ -145,36 +184,60 @@ struct ChatComposerView: View {
 
     @ViewBuilder
     private var attachmentPreview: some View {
-        if let image = attachedImage {
+        if attachedImage != nil || !attachedDocuments.isEmpty {
             HStack(alignment: .top, spacing: 8) {
-                ZStack(alignment: .topTrailing) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 72, height: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(AppTheme.accent.opacity(0.3), lineWidth: 1)
-                        )
+                if let image = attachedImage {
+                    ZStack(alignment: .topTrailing) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 72, height: 72)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(AppTheme.accent.opacity(0.3), lineWidth: 1)
+                            )
 
-                    Button {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                            attachedImage = nil
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                                attachedImage = nil
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.white)
+                                .background(Circle().fill(Color.black.opacity(0.6)).frame(width: 18, height: 18))
                         }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.white)
-                            .background(Circle().fill(Color.black.opacity(0.6)).frame(width: 18, height: 18))
+                        .offset(x: 4, y: -4)
                     }
-                    .offset(x: 4, y: -4)
                 }
 
-                Text("Image attached")
-                    .font(.appBody(12))
-                    .foregroundStyle(AppTheme.textTertiary)
-                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    if attachedImage != nil {
+                        Text("Image attached")
+                            .font(.appBody(12))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+
+                    ForEach(attachedDocuments) { attachment in
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(attachment.fileName)
+                                .lineLimit(1)
+                            Button {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                                    attachedDocuments.removeAll { $0.id == attachment.id }
+                                }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                        }
+                        .font(.appBody(12))
+                        .foregroundStyle(AppTheme.textTertiary)
+                    }
+                }
+                .padding(.top, 4)
 
                 Spacer()
             }
@@ -212,8 +275,13 @@ struct ChatComposerView: View {
                             Label("Attach video", systemImage: "video")
                         }
                     }
+
+                    Button { showDocumentPicker = true } label: {
+                        Label("Attach file", systemImage: "doc.badge.plus")
+                    }
                 } label: {
-                    composerRoundButton(icon: attachedImage != nil ? "photo.fill" : "plus", tint: attachedImage != nil ? AppTheme.accentSoft : AppTheme.textPrimary, fill: Color.white.opacity(attachedImage != nil ? 0.16 : 0.08))
+                    let hasAttachment = attachedImage != nil || !attachedDocuments.isEmpty
+                    composerRoundButton(icon: hasAttachment ? "paperclip" : "plus", tint: hasAttachment ? AppTheme.accentSoft : AppTheme.textPrimary, fill: Color.white.opacity(hasAttachment ? 0.16 : 0.08))
                 }
 
                 TextField("Ask anything…", text: $prompt, axis: .vertical)

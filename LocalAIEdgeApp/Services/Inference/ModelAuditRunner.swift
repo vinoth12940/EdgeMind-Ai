@@ -268,6 +268,13 @@ actor ModelAuditRunner {
             }
         }
 
+        if !auditCase.expectations.containsAny.isEmpty {
+            let lowercased = trimmed.lowercased()
+            guard auditCase.expectations.containsAny.contains(where: { lowercased.contains($0.lowercased()) }) else {
+                return (false, "expected-text-missing")
+            }
+        }
+
         if auditCase.expectations.peakMemOK {
             let requiredGB = resolved.catalog.estimatedResidentGB(contextTokens: DeviceTier.current().safeContextTokens)
             if requiredGB > DeviceTier.current().jetsamSoftLimitGB {

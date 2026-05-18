@@ -87,8 +87,24 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
         }
+        .onAppear(perform: applyIntentHandoff)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            applyIntentHandoff()
+        }
         .onPreferenceChange(FloatingDockHiddenPreferenceKey.self) { hidden in
             isFloatingDockHidden = hidden
+        }
+    }
+
+    private func applyIntentHandoff() {
+        guard let destination = LocalAIIntentHandoffStore.consumeDestination() else { return }
+        switch destination {
+        case .chat, .voice:
+            selectedTab = 0
+        case .models:
+            selectedTab = 1
+        case .diagnostics:
+            selectedTab = 3
         }
     }
 

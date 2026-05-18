@@ -2,6 +2,22 @@ import CommonCrypto
 import Foundation
 
 struct ModelCatalogItem: Identifiable, Hashable, Codable {
+    enum ModelRuntimeStatus: String, Codable, CaseIterable, Hashable {
+        case recommended
+        case worksWithWarnings
+        case experimental
+        case unsupported
+
+        var label: String {
+            switch self {
+            case .recommended: return "Recommended"
+            case .worksWithWarnings: return "Works with warnings"
+            case .experimental: return "Experimental"
+            case .unsupported: return "Unsupported on this phone"
+            }
+        }
+    }
+
     enum ModelFamily: String, Codable, CaseIterable, Hashable {
         case gemma = "Gemma"
         case granite = "Granite"
@@ -112,6 +128,10 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     let isThinkingModel: Bool
     let recommendedForIPhone: Bool
     let minimumTier: DeviceTier
+    let runtimeStatus: ModelRuntimeStatus
+    let auditVerdict: Verdict
+    let testedDeviceTier: DeviceTier?
+    let inputModes: [InputCategory]
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -135,6 +155,10 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         case isThinkingModel
         case recommendedForIPhone
         case minimumTier
+        case runtimeStatus
+        case auditVerdict
+        case testedDeviceTier
+        case inputModes
     }
 
     init(
@@ -158,7 +182,11 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         supportsToolCalling: Bool = false,
         isThinkingModel: Bool = false,
         recommendedForIPhone: Bool = false,
-        minimumTier: DeviceTier = .standard
+        runtimeStatus: ModelRuntimeStatus? = nil,
+        auditVerdict: Verdict? = nil,
+        testedDeviceTier: DeviceTier? = nil,
+        minimumTier: DeviceTier = .standard,
+        inputModes: [InputCategory]? = nil
     ) {
         self.id = id ?? Self.deterministicID(displayName: displayName, variant: variant)
         self.displayName = displayName
@@ -181,6 +209,14 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         self.isThinkingModel = isThinkingModel
         self.recommendedForIPhone = recommendedForIPhone
         self.minimumTier = minimumTier
+        self.runtimeStatus = runtimeStatus ?? (recommendedForIPhone ? .recommended : .experimental)
+        self.auditVerdict = auditVerdict ?? (recommendedForIPhone ? .green : .yellow("not-audited-for-recommendation"))
+        self.testedDeviceTier = testedDeviceTier
+        self.inputModes = inputModes ?? Self.defaultInputModes(
+            primaryUse: primaryUse,
+            runtimeType: runtimeType,
+            supportsVision: supportsVision
+        )
     }
 
     init(from decoder: Decoder) throws {
@@ -210,6 +246,13 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         isThinkingModel = try container.decode(Bool.self, forKey: .isThinkingModel)
         recommendedForIPhone = try container.decodeIfPresent(Bool.self, forKey: .recommendedForIPhone) ?? false
         minimumTier = try container.decodeIfPresent(DeviceTier.self, forKey: .minimumTier) ?? .standard
+        runtimeStatus = try container.decodeIfPresent(ModelRuntimeStatus.self, forKey: .runtimeStatus)
+            ?? (recommendedForIPhone ? .recommended : .experimental)
+        auditVerdict = try container.decodeIfPresent(Verdict.self, forKey: .auditVerdict)
+            ?? (recommendedForIPhone ? .green : .yellow("not-audited-for-recommendation"))
+        testedDeviceTier = try container.decodeIfPresent(DeviceTier.self, forKey: .testedDeviceTier)
+        inputModes = try container.decodeIfPresent([InputCategory].self, forKey: .inputModes)
+            ?? Self.defaultInputModes(primaryUse: primaryUse, runtimeType: runtimeType, supportsVision: supportsVision)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -235,6 +278,10 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         try container.encode(isThinkingModel, forKey: .isThinkingModel)
         try container.encode(recommendedForIPhone, forKey: .recommendedForIPhone)
         try container.encode(minimumTier, forKey: .minimumTier)
+        try container.encode(runtimeStatus, forKey: .runtimeStatus)
+        try container.encode(auditVerdict, forKey: .auditVerdict)
+        try container.encodeIfPresent(testedDeviceTier, forKey: .testedDeviceTier)
+        try container.encode(inputModes, forKey: .inputModes)
     }
 
     var downloadFileName: String? {
@@ -326,16 +373,18 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         }
     }
 
-    enum InputCategory: String, CaseIterable, Hashable {
+    enum InputCategory: String, Codable, CaseIterable, Hashable {
         case text = "Text"
         case image = "Image"
         case audio = "Audio"
+        case document = "Document"
 
         var icon: String {
             switch self {
             case .text: return "text.alignleft"
             case .image: return "photo"
             case .audio: return "waveform"
+            case .document: return "doc.text"
             }
         }
     }
@@ -349,6 +398,9 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         if sourceSupportsVision {
             result.append(.image)
         }
+        if inputModes.contains(.document) {
+            result.append(.document)
+        }
         return result
     }
 
@@ -358,10 +410,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             return [.audio]
         }
         // In this app, image input is available only for MLX vision models.
-        if runtimeType == .mlx && supportsVision {
-            return [.text, .image]
-        }
-        return [.text]
+        return inputModes
     }
 
     var inputCategoriesDifferByRuntime: Bool {
@@ -402,5 +451,20 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         default:                                      perTokenKB = 4
         }
         return (Double(contextTokens) * perTokenKB) / (1024 * 1024)
+    }
+
+    private static func defaultInputModes(
+        primaryUse: PrimaryUse,
+        runtimeType: RuntimeType,
+        supportsVision: Bool
+    ) -> [InputCategory] {
+        if primaryUse == .voice {
+            return [.audio]
+        }
+        var modes: [InputCategory] = [.text, .document]
+        if runtimeType == .mlx && supportsVision {
+            modes.append(.image)
+        }
+        return modes
     }
 }

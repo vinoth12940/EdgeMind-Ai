@@ -302,8 +302,8 @@ final class AppStateStore {
     }
 
     private static func sanitizedMessageForPersistence(_ message: ChatMessage) -> ChatMessage {
-        guard let imageData = message.imageData, imageData.count > maxPersistedImageBytes else {
-            return message
+        let sanitizedAttachments = message.attachments.map {
+            $0.sanitized(maxRawBytes: maxPersistedImageBytes, maxExtractedCharacters: 20_000)
         }
 
         return ChatMessage(
@@ -312,7 +312,7 @@ final class AppStateStore {
             text: message.text,
             createdAt: message.createdAt,
             citations: message.citations,
-            imageData: nil,
+            attachments: sanitizedAttachments,
             thinkingContent: message.thinkingContent,
             thinkingDurationSeconds: message.thinkingDurationSeconds
         )
@@ -358,6 +358,10 @@ final class AppStateStore {
 
         if firstUserMessage.imageData != nil {
             return "Image chat"
+        }
+
+        if firstUserMessage.attachments.contains(where: { $0.kind != .image }) {
+            return "Document chat"
         }
 
         return nil

@@ -89,6 +89,29 @@ final class ModelAuditRunnerTests: XCTestCase {
         XCTAssertGreaterThan(count, 20)
     }
 
+    func test_documentContextProbeRequiresExpectedText() async {
+        let runner = makeRunner(events: [.textDelta("Cedar"), .done])
+        let model = makeInstalledModel()
+        let resolved = makeResolvedModel()
+        let auditCase = requireCase("documentContextProbe")
+
+        let result = await runner.runCasePublic(auditCase, model: model, resolved: resolved)
+
+        XCTAssertTrue(result.pass)
+    }
+
+    func test_documentContextProbeFailsWhenAnswerMissesContext() async {
+        let runner = makeRunner(events: [.textDelta("I do not know."), .done])
+        let model = makeInstalledModel()
+        let resolved = makeResolvedModel()
+        let auditCase = requireCase("documentContextProbe")
+
+        let result = await runner.runCasePublic(auditCase, model: model, resolved: resolved)
+
+        XCTAssertFalse(result.pass)
+        XCTAssertEqual(result.note, "expected-text-missing")
+    }
+
     private func makeRunner(events: [StreamEvent]) -> ModelAuditRunner {
         makeRunner(service: ScriptedInferenceService(events: events))
     }

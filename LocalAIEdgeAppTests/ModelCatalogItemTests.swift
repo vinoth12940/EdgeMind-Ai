@@ -130,6 +130,7 @@ final class ModelCatalogItemTests: XCTestCase {
         XCTAssertEqual(
             lfmModelIDs,
             [
+                "mlx-community/LFM2.5-VL-1.6B-4bit",
                 "mlx-community/LFM2.5-350M-6bit",
                 "mlx-community/LFM2.5-1.2B-Thinking-6bit",
                 "mlx-community/LFM2.5-1.2B-Instruct-4bit"
@@ -149,5 +150,25 @@ final class ModelCatalogItemTests: XCTestCase {
         )
         XCTAssertTrue(graniteItems.allSatisfy { $0.runtimeType == .mlx })
         XCTAssertTrue(graniteItems.allSatisfy { !$0.supportsVision })
+    }
+
+    func test_recommendedCatalogRequiresGreenAuditVerdict() {
+        let unsafeRecommended = MockCatalogData.items.filter { item in
+            item.recommendedForIPhone
+                && (item.runtimeStatus != .recommended || item.auditVerdict != .green)
+        }
+
+        XCTAssertTrue(
+            unsafeRecommended.isEmpty,
+            "Recommended models must be green-audited: \(unsafeRecommended.map(\.displayName).joined(separator: ", "))"
+        )
+    }
+
+    func test_ggufVisionFamiliesAreTextOnlyInAppRuntime() {
+        let ggufVisionFamilyItems = MockCatalogData.items.filter { item in
+            item.runtimeType == .gguf && item.sourceSupportsVision
+        }
+
+        XCTAssertTrue(ggufVisionFamilyItems.allSatisfy { !$0.runtimeInputCategories.contains(.image) })
     }
 }

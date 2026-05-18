@@ -17,6 +17,10 @@ struct ModelLibraryView: View {
     @State private var pendingConsentRequiredGB: Double = 0
     @State private var pendingConsentAvailableGB: Double = 0
     @State private var showInstallConsent = false
+    @State private var discoveryService: any ModelDiscoveryService = HuggingFaceModelDiscoveryService()
+    @State private var discoveryResults: [ModelDiscoveryCandidate] = []
+    @State private var discoveryError: String?
+    @State private var isDiscovering = false
 
     var body: some View {
         ZStack {
@@ -720,6 +724,8 @@ struct ModelLibraryView: View {
             sectionHeader(title: "Discover", subtitle: hasActiveQuery ? "Filtered variants matching the current search lane." : "Search directly or filter into exact runtime capabilities.")
             searchBar
             capabilityFilterBar
+            discoveryActions
+            discoveryResultsView
         }
     }
 
@@ -769,6 +775,83 @@ struct ModelLibraryView: View {
         }
     }
 
+    private var discoveryActions: some View {
+        HStack(spacing: 10) {
+            Button {
+                Task { await runDiscoverySearch() }
+            } label: {
+                Label(isDiscovering ? "Searching Hugging Face..." : "Browse Hugging Face", systemImage: "globe")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.background)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(AppTheme.accentGradient)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(isDiscovering || searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if !discoveryResults.isEmpty || discoveryError != nil {
+                Button {
+                    discoveryResults = []
+                    discoveryError = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(AppTheme.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var discoveryResultsView: some View {
+        if let discoveryError {
+            Text(discoveryError)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(AppTheme.destructive)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppTheme.destructive.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        } else if !discoveryResults.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(discoveryResults.prefix(8)) { candidate in
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(candidate.displayName)
+                                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                                .foregroundStyle(AppTheme.textPrimary)
+                                .lineLimit(1)
+                            Text(candidate.modelID)
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(AppTheme.textTertiary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        Text(discoveryLabel(for: candidate.compatibility))
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(discoveryColor(for: candidate.compatibility))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(discoveryColor(for: candidate.compatibility).opacity(0.12))
+                            .clipShape(Capsule(style: .continuous))
+                    }
+                    .padding(12)
+                    .background(AppTheme.panelRaised.opacity(0.72))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+            }
+        }
+    }
+
     private func capToggle(label: String, icon: String, isOn: Binding<Bool>, color: Color) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -788,6 +871,45 @@ struct ModelLibraryView: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    private func runDiscoverySearch() async {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !isDiscovering else { return }
+        isDiscovering = true
+        discoveryError = nil
+
+        do {
+            let results = try await discoveryService.search(query: query)
+            discoveryResults = results.sorted {
+                if $0.isInstallable != $1.isInstallable {
+                    return $0.isInstallable && !$1.isInstallable
+                }
+                return $0.downloads > $1.downloads
+            }
+        } catch {
+            discoveryResults = []
+            discoveryError = "Hugging Face search failed: \(error.localizedDescription)"
+        }
+
+        isDiscovering = false
+    }
+
+    private func discoveryLabel(for compatibility: ModelDiscoveryCandidate.Compatibility) -> String {
+        switch compatibility {
+        case .mlxLLM: return "MLX LLM"
+        case .mlxVLM: return "MLX VLM"
+        case .ggufText: return "GGUF Text"
+        case .experimental: return "Experimental"
+        }
+    }
+
+    private func discoveryColor(for compatibility: ModelDiscoveryCandidate.Compatibility) -> Color {
+        switch compatibility {
+        case .mlxLLM, .mlxVLM: return .orange
+        case .ggufText: return AppTheme.accent
+        case .experimental: return AppTheme.warning
+        }
     }
 
     private var familyDirectorySection: some View {
@@ -1602,6 +1724,8 @@ private struct ModelTile: View {
 
     private var capabilityRow: some View {
         HStack(spacing: 6) {
+            statusPill
+
             ForEach(item.capabilities, id: \.self) { capability in
                 let color = AppTheme.capabilityColor(for: capability)
                 HStack(spacing: 4) {
@@ -1644,6 +1768,39 @@ private struct ModelTile: View {
                 .background(AppTheme.warning.opacity(0.12))
                 .clipShape(Capsule())
             }
+        }
+    }
+
+    private var statusPill: some View {
+        let color = runtimeStatusColor(item.runtimeStatus)
+        return HStack(spacing: 4) {
+            Image(systemName: runtimeStatusIcon(item.runtimeStatus))
+                .font(.system(size: 9, weight: .bold))
+            Text(item.runtimeStatus.label)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.12))
+        .clipShape(Capsule())
+    }
+
+    private func runtimeStatusColor(_ status: ModelCatalogItem.ModelRuntimeStatus) -> Color {
+        switch status {
+        case .recommended: return AppTheme.success
+        case .worksWithWarnings: return AppTheme.warning
+        case .experimental: return AppTheme.accent
+        case .unsupported: return AppTheme.destructive
+        }
+    }
+
+    private func runtimeStatusIcon(_ status: ModelCatalogItem.ModelRuntimeStatus) -> String {
+        switch status {
+        case .recommended: return "checkmark.seal.fill"
+        case .worksWithWarnings: return "exclamationmark.triangle.fill"
+        case .experimental: return "testtube.2"
+        case .unsupported: return "xmark.octagon.fill"
         }
     }
 

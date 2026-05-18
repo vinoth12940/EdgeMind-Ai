@@ -33,6 +33,10 @@ struct MessageBubbleView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
 
+                if !documentAttachments.isEmpty {
+                    attachmentChips
+                }
+
                 MarkdownTextView(text: message.text, isUser: true)
                     .textSelection(.enabled)
             }
@@ -77,6 +81,12 @@ struct MessageBubbleView: View {
                         .padding(.top, 10)
                 }
 
+                if !documentAttachments.isEmpty {
+                    attachmentChips
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                }
+
                 if isRecoveryMessage {
                     recoveryCard
                         .padding(.horizontal, 12)
@@ -103,6 +113,39 @@ struct MessageBubbleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 18)
+    }
+
+    private var documentAttachments: [ChatAttachment] {
+        message.attachments.filter { $0.kind != .image }
+    }
+
+    private var attachmentChips: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(documentAttachments) { attachment in
+                HStack(spacing: 5) {
+                    Image(systemName: icon(for: attachment.kind))
+                        .font(.system(size: 10, weight: .bold))
+                    Text(attachment.fileName)
+                        .lineLimit(1)
+                }
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(isUser ? Color.white.opacity(0.92) : AppTheme.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(isUser ? 0.16 : 0.06))
+                .clipShape(Capsule(style: .continuous))
+            }
+        }
+    }
+
+    private func icon(for kind: ChatAttachment.Kind) -> String {
+        switch kind {
+        case .image: return "photo"
+        case .text: return "doc.text"
+        case .pdf: return "doc.richtext"
+        case .csv: return "tablecells"
+        case .markdown: return "text.alignleft"
+        }
     }
 
     private var systemNotice: some View {
