@@ -1,7 +1,7 @@
 // LocalAIEdgeApp/Services/Inference/RuntimeProfile.swift
 import Foundation
 
-enum ThinkFormat: String, Codable {
+enum ThinkFormat: String, Codable, Hashable {
     case xmlThink      // <think>...</think>, <thinking>..., <reasoning>...
     case qwenNative    // <|im_start|>think ... <|im_end|> or <|think|>...<|/think|>
     case gemmaChannel  // <|channel>thought\n ... <|channel> (GGUF Gemma 4; dead code today)

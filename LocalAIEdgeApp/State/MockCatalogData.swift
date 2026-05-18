@@ -3,11 +3,28 @@ import Foundation
 enum MockCatalogData {
 
     // MARK: - Model Catalog
-    // Curated runnable set: Gemma 4 (GGUF) + Apple OpenELM + Qwen 3/Qwen 3 VL + LFM 2.5 (MLX).
+    // Curated runnable set: Gemma 4 (GGUF) + Qwen 3/Qwen 3 VL + LFM 2.5 (MLX/GGUF).
     // Capability flags reflect source vs runtime behavior in this app.
     // Capability flags reflect actual model card specs.
 
     static let items: [ModelCatalogItem] = [
+
+        ModelCatalogItem(
+            displayName: "Apple Intelligence",
+            family: .appleIntelligence,
+            provider: .localFile,
+            variant: "System Foundation Model",
+            summary: "Apple's on-device Foundation Models runtime. Uses the system Apple Intelligence language model when available; no separate model weights are downloaded by this app.",
+            parameterSize: "~3B system model",
+            quantization: "System managed",
+            diskSize: "System managed",
+            contextWindow: "System",
+            runtimeType: .foundationModels,
+            supportsReasoning: true,
+            supportsToolCalling: true,
+            recommendedForIPhone: true,
+            minimumTier: .pro
+        ),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // GOOGLE DEEPMIND — Gemma 4 GGUF
@@ -27,7 +44,7 @@ enum MockCatalogData {
             sourceSupportsVision: true,
             supportsVision: false,
             supportsReasoning: true,
-            supportsToolCalling: true,
+            supportsToolCalling: false,
             recommendedForIPhone: true,
             minimumTier: .standard
         ),
@@ -45,28 +62,43 @@ enum MockCatalogData {
             sourceSupportsVision: true,
             supportsVision: false,
             supportsReasoning: true,
-            supportsToolCalling: true,
+            supportsToolCalling: false,
             recommendedForIPhone: true,
             minimumTier: .pro
         ),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // APPLE — OpenELM MLX
+        // IBM — Granite MLX
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         ModelCatalogItem(
-            displayName: "OpenELM 270M Instruct (MLX)",
-            family: .openELM,
-            variant: "4-bit MLX · Latest Apple OpenELM",
-            summary: "Apple OpenELM instruct model in MLX format for fast, fully local edge inference on-device. Text-only lane for lightweight assistant tasks.",
-            parameterSize: "270M",
+            displayName: "Granite 3.3 2B Instruct (MLX)",
+            family: .granite,
+            variant: "4-bit MLX",
+            summary: "IBM Granite 3.3 instruct model converted by MLX Community. Text-only local chat model with Apache 2.0 licensing and a practical memory footprint for iPhone.",
+            parameterSize: "2B",
             quantization: "MLX 4-bit",
-            diskSize: "~0.3 GB",
-            contextWindow: "2K",
+            diskSize: "~1.4 GB",
+            contextWindow: "128K",
             runtimeType: .mlx,
-            mlxModelID: "mlx-community/OpenELM-270M-Instruct-4bit",
+            mlxModelID: "mlx-community/granite-3.3-2b-instruct-4bit",
+            supportsReasoning: true,
             recommendedForIPhone: true,
-            minimumTier: .compact
+            minimumTier: .standard
+        ),
+        ModelCatalogItem(
+            displayName: "Granite 3.3 8B Instruct (MLX)",
+            family: .granite,
+            variant: "4-bit MLX",
+            summary: "Larger IBM Granite 3.3 instruct model converted by MLX Community. Better quality than the 2B variant, but only suitable for high-memory devices.",
+            parameterSize: "8B",
+            quantization: "MLX 4-bit",
+            diskSize: "~4.6 GB",
+            contextWindow: "128K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/granite-3.3-8b-instruct-4bit",
+            supportsReasoning: true,
+            minimumTier: .ultra
         ),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -85,8 +117,7 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3-VL-4B-Instruct-4bit",
             supportsVision: true,
-            recommendedForIPhone: true,
-            minimumTier: .pro
+            minimumTier: .ultra
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 0.6B (MLX)",
@@ -136,8 +167,7 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true,
-            minimumTier: .pro
+            minimumTier: .ultra
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Instruct (MLX)",
@@ -152,8 +182,7 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
             supportsReasoning: true,
             supportsToolCalling: true,
-            recommendedForIPhone: true,
-            minimumTier: .pro
+            minimumTier: .ultra
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Thinking (MLX)",
@@ -169,8 +198,7 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            recommendedForIPhone: true,
-            minimumTier: .pro
+            minimumTier: .ultra
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 8B (MLX)",
@@ -230,14 +258,13 @@ enum MockCatalogData {
             displayName: "LFM2.5 350M (MLX)",
             family: .lfm,
             variant: "6-bit MLX · Latest",
-            summary: "Latest lightweight LFM2.5 release optimized for edge tool-use and structured outputs with very low memory overhead.",
+            summary: "Latest lightweight LFM2.5 release optimized for low-memory edge instruction following. Uses the LFM ChatML prompt path in this app.",
             parameterSize: "350M",
             quantization: "MLX 6-bit",
             diskSize: "~0.4 GB",
             contextWindow: "128K",
             runtimeType: .mlx,
             mlxModelID: "mlx-community/LFM2.5-350M-6bit",
-            supportsToolCalling: true,
             recommendedForIPhone: true,
             minimumTier: .compact
         ),
@@ -262,7 +289,7 @@ enum MockCatalogData {
             displayName: "LFM2.5 1.2B Instruct (MLX)",
             family: .lfm,
             variant: "4-bit MLX",
-            summary: "Liquid Foundation 2.5 text-only model on Apple Silicon. Optimised for agentic, RAG, and tool-calling tasks. Not suited for knowledge-intensive tasks or code. 32K context.",
+            summary: "Liquid Foundation 2.5 text-only model on Apple Silicon. Optimized for chat, instruction following, RAG, and tool-calling tasks. 32K context.",
             parameterSize: "1.2B",
             quantization: "MLX 4-bit",
             diskSize: "~0.7 GB",

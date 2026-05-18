@@ -10,7 +10,7 @@ struct InstalledModelsView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(AppTheme.success)
                 Text("Installed Models")
-                    .font(.title3.weight(.bold))
+                    .font(.appDisplay(20))
                     .foregroundStyle(AppTheme.textPrimary)
             }
 
@@ -22,13 +22,17 @@ struct InstalledModelsView: View {
                             .font(.title)
                             .foregroundStyle(AppTheme.textSecondary)
                         Text("No models installed yet")
-                            .font(.subheadline)
+                            .font(.appBody(14))
                             .foregroundStyle(AppTheme.textSecondary)
                     }
                     .padding(.vertical, 20)
                     Spacer()
                 }
-                .glassCard()
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(AppTheme.surfaceGradient)
+                )
             } else {
                 ForEach(installedModels) { model in
                     installedCard(model)
@@ -47,14 +51,14 @@ struct InstalledModelsView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.catalogItem.displayName)
-                    .font(.subheadline.weight(.bold))
+                    .font(.appDisplay(16))
                     .foregroundStyle(AppTheme.textPrimary)
                 HStack(spacing: 6) {
                     Text(model.catalogItem.parameterSize)
-                        .font(.caption2.weight(.semibold))
+                        .font(.appCaps(10))
                     Text("•")
                     Text(model.catalogItem.contextWindow + " ctx")
-                        .font(.caption2)
+                        .font(.appBody(10))
                     if !model.catalogItem.capabilities.isEmpty {
                         Text("•")
                         ForEach(model.catalogItem.capabilities, id: \.self) { cap in
@@ -72,7 +76,7 @@ struct InstalledModelsView: View {
             Button(model.isDefault ? "Default" : "Use") {
                 onSelectDefault(model.catalogItem.id)
             }
-            .font(.caption.weight(.bold))
+            .font(.appCaps(11))
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .background(model.isDefault ? AppTheme.success.opacity(0.2) : AppTheme.accent.opacity(0.15))

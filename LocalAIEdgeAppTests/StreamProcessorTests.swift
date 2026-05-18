@@ -4,12 +4,18 @@ import XCTest
 final class StreamProcessorTests: XCTestCase {
 
     // Helper: feed tokens into StreamProcessor, collect all events
-    private func process(tokens: [String]) async -> [StreamEvent] {
-        let stream = AsyncStream<String> { continuation in
-            for token in tokens { continuation.yield(token) }
-            continuation.finish()
-        }
-        let processor = StreamProcessor(rawStream: stream)
+    private func process(
+        tokens: [String],
+        v2Enabled: Bool = false,
+        activeThinkFormats: Set<ThinkFormat> = []
+    ) async -> [StreamEvent] {
+        let stream = mockStream(chunks: tokens)
+        let processor = StreamProcessor(
+            rawStream: stream,
+            v2Enabled: v2Enabled,
+            hangTimeout: 30,
+            activeThinkFormats: activeThinkFormats
+        )
         var events: [StreamEvent] = []
         for await event in await processor.process() {
             events.append(event)
@@ -108,5 +114,218 @@ final class StreamProcessorTests: XCTestCase {
         XCTAssertFalse(events.contains { if case .toolCall = $0 { return true }; return false })
         let text = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
         XCTAssertTrue(text.contains("garbage"))
+    }
+
+    func test_qwenNativeThinkFormat_extractedWhenActive() async throws {
+        let events = await process(
+            tokens: ["<|im_start|>think", "reasoning", "<|im_end|>", "final"],
+            activeThinkFormats: [.qwenNative]
+        )
+        let thinkText = events.compactMap { if case .thinkingDelta(let t) = $0 { return t } else { return nil } }.joined()
+        let answerText = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertEqual(thinkText, "reasoning")
+        XCTAssertTrue(answerText.contains("final"))
+    }
+
+    func test_gemmaChannelThinkFormat_acceptsNativeCloseToken() async throws {
+        let events = await process(
+            tokens: ["<|channel>thought\n", "reasoning", "<channel|>", "final"],
+            activeThinkFormats: [.gemmaChannel]
+        )
+        let thinkText = events.compactMap { if case .thinkingDelta(let t) = $0 { return t } else { return nil } }.joined()
+        let answerText = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertEqual(thinkText, "reasoning")
+        XCTAssertTrue(answerText.contains("final"))
+    }
+
+    func test_gemmaChannelThinkFormat_acceptsAlternateCloseToken() async throws {
+        let events = await process(
+            tokens: ["<|channel>thought\n", "reasoning", "<|channel>", "final"],
+            activeThinkFormats: [.gemmaChannel]
+        )
+        let thinkText = events.compactMap { if case .thinkingDelta(let t) = $0 { return t } else { return nil } }.joined()
+        let answerText = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertEqual(thinkText, "reasoning")
+        XCTAssertTrue(answerText.contains("final"))
+    }
+
+    func test_v2_stripsLeakTokensMidStream() async {
+        let raw = mockStream(chunks: ["Hello<|im_", "end|> world"])
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: ["<|im_end|>"],
+            v2Enabled: true,
+            hangTimeout: 30,
+            repetitionNgram: 6,
+            repetitionCount: 3
+        )
+        let text = await collectText(await processor.process())
+        XCTAssertEqual(text, "Hello world")
+    }
+
+    func test_v2_emptyStreamYieldsFallbackMessage() async {
+        let raw = mockStream(chunks: [])
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: [],
+            v2Enabled: true,
+            hangTimeout: 1,
+            repetitionNgram: 6,
+            repetitionCount: 3
+        )
+        let text = await collectText(await processor.process())
+        XCTAssertTrue(text.lowercased().contains("did not produce output"))
+    }
+
+    func test_v2_repetitionTrips() async {
+        let phrase = "I think this is right. "
+        let raw = mockStream(chunks: Array(repeating: phrase, count: 12))
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: [],
+            v2Enabled: true,
+            hangTimeout: 30,
+            repetitionNgram: 6,
+            repetitionCount: 3
+        )
+        let text = await collectText(await processor.process())
+        XCTAssertLessThan(text.count, phrase.count * 12)
+    }
+
+    func test_v2_codeBlockSuppressesRepetitionGuard() async {
+        let chunks = [
+            "```swift\n",
+            "for i in 0..<5 { print(i) }\n",
+            "for i in 0..<5 { print(i) }\n",
+            "for i in 0..<5 { print(i) }\n",
+            "for i in 0..<5 { print(i) }\n",
+            "```"
+        ]
+        let raw = mockStream(chunks: chunks)
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: [],
+            v2Enabled: true,
+            hangTimeout: 30,
+            repetitionNgram: 6,
+            repetitionCount: 3
+        )
+        let text = await collectText(await processor.process())
+        XCTAssertTrue(text.contains("```"))
+        XCTAssertTrue(text.contains("for i in 0..<5"))
+    }
+
+    func test_v2_unclosedCodeFenceKeepsGuardDisabledThroughEnd() async {
+        let chunks = [
+            "```swift\n",
+            "print(\"a\")\n",
+            "print(\"a\")\n",
+            "print(\"a\")\n",
+            "print(\"a\")\n",
+            "print(\"a\")\n"
+        ]
+        let raw = mockStream(chunks: chunks)
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: [],
+            v2Enabled: true,
+            hangTimeout: 30,
+            repetitionNgram: 4,
+            repetitionCount: 2
+        )
+        let text = await collectText(await processor.process())
+        let count = text.components(separatedBy: "print(\"a\")").count - 1
+        XCTAssertEqual(count, 5)
+    }
+
+    func test_v2_guardReengagesAfterClosedFence() async {
+        let prefix = "```swift\nlet x = 1\n```\n"
+        let phrase = "I think this is right. "
+        let raw = mockStream(chunks: [prefix] + Array(repeating: phrase, count: 12))
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: [],
+            v2Enabled: true,
+            hangTimeout: 30,
+            repetitionNgram: 6,
+            repetitionCount: 3
+        )
+        let text = await collectText(await processor.process())
+        XCTAssertTrue(text.contains("```swift"))
+        XCTAssertLessThan(text.count, prefix.count + phrase.count * 12)
+    }
+
+    func test_v2_disabledTogglePreservesV1Behavior() async {
+        let raw = mockStream(chunks: ["Hello <|im_end|> world"])
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: ["<|im_end|>"],
+            v2Enabled: false,
+            hangTimeout: 1,
+            repetitionNgram: 6,
+            repetitionCount: 3
+        )
+        let text = await collectText(await processor.process())
+        XCTAssertTrue(text.contains("<|im_end|>"))
+    }
+
+    func test_v2_hangWatchdogFiresOnSilentStream() async {
+        let raw = AsyncStream<String> { continuation in
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                continuation.finish()
+            }
+        }
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: [],
+            v2Enabled: true,
+            hangTimeout: 0.3,
+            repetitionNgram: 6,
+            repetitionCount: 3
+        )
+        let text = await collectText(await processor.process())
+        XCTAssertTrue(text.lowercased().contains("did not produce output"))
+    }
+
+    func test_v2_hangWatchdogReArmsOnActivity() async {
+        let raw = AsyncStream<String> { continuation in
+            Task {
+                for word in ["one ", "two ", "three ", "four "] {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    continuation.yield(word)
+                }
+                continuation.finish()
+            }
+        }
+        let processor = StreamProcessor(
+            rawStream: raw,
+            leakTokens: [],
+            v2Enabled: true,
+            hangTimeout: 0.3,
+            repetitionNgram: 6,
+            repetitionCount: 3
+        )
+        let text = await collectText(await processor.process())
+        XCTAssertFalse(text.lowercased().contains("did not produce output"))
+        XCTAssertTrue(text.contains("one"))
+        XCTAssertTrue(text.contains("four"))
+    }
+
+    private func mockStream(chunks: [String]) -> AsyncStream<String> {
+        AsyncStream { continuation in
+            for chunk in chunks { continuation.yield(chunk) }
+            continuation.finish()
+        }
+    }
+
+    private func collectText(_ events: AsyncStream<StreamEvent>) async -> String {
+        var output = ""
+        for await event in events {
+            if case .textDelta(let text) = event {
+                output += text
+            }
+        }
+        return output
     }
 }

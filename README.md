@@ -2,9 +2,9 @@
 
 A **privacy-first, on-device AI assistant** for iOS and iPadOS. All inference runs locally on Apple Silicon and no data leaves your device unless you explicitly enable live web search.
 
-Now includes a first-run authentication landing flow with **Sign in with Apple**, local credentials, device authentication (Face ID / Touch ID / passcode), and guest access.
+Now includes a first-run authentication landing flow with local credentials, device authentication (Face ID / Touch ID / passcode), and guest access. Sign in with Apple code is present but hidden in the App Store-ready build until the App ID entitlement is enabled.
 
-Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX** (MLX models), with a curated catalog of 35 models from 4 AI labs.
+Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX** (MLX models), with a curated chat catalog of 15 runtime-backed models from 4 AI labs.
 
 ---
 
@@ -19,10 +19,11 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX**
 - **Stop generation**: Cancel in-progress responses at any time
 
 ### Model Library
-- **35 models** from 4 labs: Google DeepMind (Gemma), Alibaba Cloud (Qwen), Liquid AI (LFM), Hexgrad (Kokoro)
-- **17 GGUF models** (llama.cpp runtime) + **18 MLX models** (Apple MLX runtime, including voice assets)
+- **15 chat models** from 4 labs: Google DeepMind (Gemma), Apple (OpenELM), Alibaba Cloud (Qwen), and Liquid AI (LFM)
+- **4 GGUF models** (llama.cpp runtime) + **11 MLX models** (Apple MLX runtime)
 - Filter by lab, capability (Thinking, Vision, Tool Calling), runtime type, iPhone compatibility
 - Capability badges grounded in actual model card specs: native tool-call tokens, vision encoders in weights
+- OpenELM runs through a plain completion prompt; LFM runs through the documented ChatML-style template
 - Model specs: parameter count, context window, disk size, quantization level
 - Expandable cards with model descriptions and capability badges
 - All download URLs verified and working against HuggingFace
@@ -36,7 +37,6 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX**
 
 ### Authentication & Profile
 - **Auth landing screen** before entering chat
-- **Sign in with Apple** (`AuthenticationServices`) for iCloud-backed identity
 - **Local credentials** (display name + optional email)
 - **Device authentication** using Face ID / Touch ID / passcode (`LocalAuthentication`)
 - **Guest mode** for quick offline usage
@@ -90,8 +90,8 @@ LocalAIEdgeApp/
 │
 ├── State/
 │   ├── AppStateStore.swift            # @Observable central state (catalog, installed, sessions)
-│   ├── AuthStateStore.swift           # @Observable auth/session state for Apple ID/device/guest login
-│   └── MockCatalogData.swift          # 35 curated model entries with verified URLs and accurate capability flags
+│   ├── AuthStateStore.swift           # @Observable auth/session state for local/device/guest login
+│   └── MockCatalogData.swift          # 15 curated chat model entries with runtime-grounded capability flags
 │
 ├── Services/
 │   ├── HFTokenManager.swift           # Keychain-backed HuggingFace token storage
@@ -127,7 +127,7 @@ LocalAIEdgeApp/
 │   │   └── ChatHistoryView.swift      # Session list with delete
 │   └── Settings/
 │       ├── SettingsView.swift         # All app configuration
-│       └── PrivacyExplainerView.swift # Privacy policy card
+│       └── PrivacyExplainerView.swift # In-app Privacy Policy
 │
 ├── DesignSystem/
 │   └── AppTheme.swift                 # Colors, gradients, shadows, view modifiers
@@ -154,15 +154,15 @@ LocalAIEdgeAppTests/
 
 | Lab | Family | Models | Runtimes |
 |-----|--------|--------|----------|
-| Google DeepMind | Gemma | 10 | GGUF, MLX |
-| Alibaba Cloud | Qwen | 18 | GGUF, MLX |
-| Liquid AI | LFM | 6 | GGUF, MLX |
-| Hexgrad / MLX Community | Kokoro | 1 | MLX (voice) |
+| Google DeepMind | Gemma | 2 | GGUF |
+| Apple | OpenELM | 1 | MLX |
+| Alibaba Cloud | Qwen | 9 | GGUF, MLX |
+| Liquid AI | LFM | 3 | MLX |
 
 ### Capabilities
-- **Thinking**: Native `/think` and `/no_think` soft switches (all Qwen 3 models). Produces `<think>...</think>` chain-of-thought blocks in the response.
-- **Vision**: Dedicated vision encoder in model weights. Gemma 3n (E2B/E4B): MatFormer multimodal (image + video + audio). Gemma 3 4B: SigLIP vision encoder (896×896). LFM2.5 VL 1.6B: multimodal vision-language.
-- **Tool Calling**: Native `<tool_call>` tokens in chat template (Qwen 3 all sizes, Qwen 2.5 3B+), or `<|tool_call_start|>` tokens (LFM2.5 1.2B). Reliable at 3B+.
+- **Thinking**: Native Qwen thinking blocks plus Gemma channel-style thinking output are parsed into the chat thinking lane.
+- **Vision**: Qwen 3 VL accepts image + text through MLX. Gemma GGUF entries disclose source vision capability but run as text-only in the app.
+- **Tool Calling**: Runtime profiles enable tool-call handling only for catalog entries with a verified app-side parser path.
 - **Reasoning**: Enhanced logical reasoning and instruction following
 
 ### Quantization
@@ -215,19 +215,21 @@ codesign --force \
 > | DerivedData folder | `LocalAIEdgeApp-gllewxtrntbibwghleczjzxazpss` |
 > | Simulator destination | `platform=iOS Simulator,name=iPhone 16 Pro Test` |
 
-### Sign in with Apple Capability (Required for Apple ID Login)
+### Sign in with Apple Capability (Optional)
 
-This app now includes `com.apple.developer.applesignin` entitlement.
+The App Store-ready build hides Sign in with Apple because the current entitlements file does not enable `com.apple.developer.applesignin`. This avoids exposing a broken login path to App Review.
+
+To re-enable Apple ID login for a paid developer team:
+1. Uncomment `com.apple.developer.applesignin` in `LocalAIEdgeApp/LocalAIEdgeApp.entitlements`.
+2. Open Apple Developer portal → **Identifiers** → your App ID.
+3. Enable **Sign In with Apple**.
+4. Regenerate or refresh provisioning profiles.
+5. Restore the Apple sign-in section in `AuthLandingView`.
 
 If device build fails with provisioning errors like:
 - `doesn't include the Sign In with Apple capability`
 - `doesn't include the com.apple.developer.applesignin entitlement`
-
-Do this:
-1. Open Apple Developer portal → **Identifiers** → your App ID.
-2. Enable **Sign In with Apple**.
-3. Regenerate or refresh provisioning profiles.
-4. In Xcode target → **Signing & Capabilities**, confirm **Sign In with Apple** is present.
+confirm the App ID and provisioning profile both include this capability.
 
 ### Build for Simulator (GGUF only, no MLX)
 
@@ -281,12 +283,15 @@ Customize the AI assistant's behavior in **Settings → Behavior → System Prom
 ### Authentication
 
 On launch, users land on an auth screen with:
-- **Apple ID** (Sign in with Apple)
 - **Credentials** (local profile)
 - **Device auth** (Face ID / Touch ID / passcode)
 - **Guest**
 
 Profile details are shown in **Settings → Profile**. Session is persisted locally on-device.
+
+### App Review Notes
+
+`APP_STORE_REVIEW_NOTES.md` contains reviewer instructions for guest access, optional model downloads, MLX-on-device behavior, Live Search, and privacy disclosures. Paste the relevant sections into App Store Connect before submitting.
 
 ---
 
@@ -329,13 +334,13 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 |--------|-------|
 | Swift files | ~36 |
 | Lines of code | ~6,000 |
-| Model catalog entries | 35 |
-| GGUF models | 17 |
-| MLX models | 18 |
+| Model catalog entries | 15 |
+| GGUF models | 4 |
+| MLX models | 11 |
 | AI Labs | 4 |
 | Search providers | 4 |
-| Unit tests | 14 (DeviceCapability + PromptRenderer) |
-| Bundle ID | `io.example.LocalAIEdgeApp` |
+| Unit tests | 40+ XCTest coverage across device capability, prompting, streaming, runtime profiles, and catalog migration |
+| Bundle ID | `com.vinothrajalingam.LocalAIEdgeApp` |
 | Min deployment target | iOS 17.0 |
 | Color scheme | Dark mode only |
 
@@ -360,6 +365,8 @@ No other third-party dependencies. All UI, networking, and search integrations u
 - **No telemetry, no analytics, no cloud sync.**
 - HuggingFace token stored in iOS Keychain (never transmitted except to HuggingFace for model downloads).
 - Search API keys stored locally in app settings.
+- In-app Privacy Policy is available at **Settings → Privacy → Privacy Policy**.
+- `PrivacyInfo.xcprivacy` declares required-reason API usage for app-local `UserDefaults` and disk-space checks.
 
 ---
 

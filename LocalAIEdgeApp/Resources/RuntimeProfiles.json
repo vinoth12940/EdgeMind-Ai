@@ -1,5 +1,35 @@
 [
   {
+    "catalogID": "088DAD16-6510-56FE-86C9-AEA507A22E2D",
+    "verifiedThinking": null,
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>", "</s>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "system-runtime-pending-audit" }
+  },
+  {
+    "catalogID": "9804C6F1-3AC0-5A2F-96DE-6302DD5B5A62",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "textOnlyInputs",
+    "knownLeakTokens": ["<|endoftext|>", "<end_of_turn>", "<|channel>", "<channel|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "AE6A1E26-CF23-5859-B797-8BADFCCA7DD4",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "textOnlyInputs",
+    "knownLeakTokens": ["<|endoftext|>", "<end_of_turn>", "<|channel>", "<channel|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
     "catalogID": "D28960C3-7F8A-51C1-BE61-BD08B57096FB",
     "verifiedThinking": "qwenNative",
     "verifiedToolCalling": "xmlToolCall",
@@ -60,32 +90,42 @@
     "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
   },
   {
-    "catalogID": "0E1B7E9D-3801-5762-AA65-41782FC9D8B3",
+    "catalogID": "46260A51-02F3-53B7-AFA9-77F154F39029",
     "verifiedThinking": null,
     "verifiedToolCalling": "xmlToolCall",
     "verifiedVision": "none",
-    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<end_of_turn>"],
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
     "recommendedMaxTokens": 1024,
     "auditedAt": "",
     "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
   },
   {
-    "catalogID": "D3A3A420-52F3-5F30-84BC-20FE0BA03F8B",
-    "verifiedThinking": null,
+    "catalogID": "708DD385-75C6-545F-9FEB-C975A06D13C1",
+    "verifiedThinking": "qwenNative",
     "verifiedToolCalling": "xmlToolCall",
-    "verifiedVision": "imageAndText",
-    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<end_of_turn>"],
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
     "recommendedMaxTokens": 1024,
     "auditedAt": "",
     "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
   },
   {
-    "catalogID": "CF11B1E9-337F-5818-B6D3-E30B84B89FA1",
+    "catalogID": "DE41E350-0A19-585E-A68F-84BC5010A379",
     "verifiedThinking": null,
     "verifiedToolCalling": null,
     "verifiedVision": "none",
-    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>"],
-    "recommendedMaxTokens": 256,
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>", "</s>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+  },
+  {
+    "catalogID": "BA6CFCB7-DE8A-5830-A904-40EECE765526",
+    "verifiedThinking": null,
+    "verifiedToolCalling": null,
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>", "</s>"],
+    "recommendedMaxTokens": 1024,
     "auditedAt": "",
     "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
   },
@@ -104,19 +144,29 @@
     "verifiedThinking": null,
     "verifiedToolCalling": null,
     "verifiedVision": "none",
-    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<end_of_turn>"],
-    "recommendedMaxTokens": 1024,
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|tool_call_start|>", "<|tool_call_end|>"],
+    "recommendedMaxTokens": 512,
     "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+    "auditVerdict": { "kind": "yellow", "note": "manual-lfm-chat-template" }
   },
   {
     "catalogID": "66BA9629-2F9C-5FB0-A30D-154AD7E017E5",
-    "verifiedThinking": null,
-    "verifiedToolCalling": null,
+    "verifiedThinking": "xmlThink",
+    "verifiedToolCalling": "xmlToolCall",
     "verifiedVision": "none",
-    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<end_of_turn>"],
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|tool_call_start|>", "<|tool_call_end|>"],
     "recommendedMaxTokens": 1024,
     "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+    "auditVerdict": { "kind": "yellow", "note": "manual-lfm-chat-template" }
+  },
+  {
+    "catalogID": "0E1B7E9D-3801-5762-AA65-41782FC9D8B3",
+    "verifiedThinking": null,
+    "verifiedToolCalling": "xmlToolCall",
+    "verifiedVision": "none",
+    "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|tool_call_start|>", "<|tool_call_end|>"],
+    "recommendedMaxTokens": 1024,
+    "auditedAt": "",
+    "auditVerdict": { "kind": "yellow", "note": "manual-lfm-chat-template" }
   }
 ]

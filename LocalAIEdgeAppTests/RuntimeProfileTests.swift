@@ -36,10 +36,39 @@ final class RuntimeProfileTests: XCTestCase {
 
     func test_bundledJSONLoads() throws {
         let store = RuntimeProfileStore()
-        let catalog = MockCatalogData.items.filter { $0.runtimeType == .mlx }
-        for item in catalog {
+        for item in MockCatalogData.items where item.primaryUse == .chat {
             let p = store.profile(for: item.id)
             XCTAssertNotNil(p, "Missing profile for \(item.displayName) (\(item.id))")
+        }
+    }
+
+    func test_bundledProfilesEnableCatalogRuntimeCapabilities() throws {
+        let store = RuntimeProfileStore()
+        for item in MockCatalogData.items where item.primaryUse == .chat {
+            let resolved = ModelRuntimeResolver.resolve(catalog: item, store: store)
+            if item.supportsToolCalling {
+                XCTAssertNotNil(resolved.tools, "Missing tool-call profile for \(item.displayName)")
+            }
+            if item.isThinkingModel {
+                XCTAssertNotNil(resolved.thinking, "Missing thinking profile for \(item.displayName)")
+            }
+            if item.supportsVision {
+                XCTAssertEqual(resolved.vision, .imageAndText, "Missing image runtime profile for \(item.displayName)")
+            } else if item.sourceSupportsVision && item.runtimeType == .gguf {
+                XCTAssertEqual(resolved.vision, .textOnlyInputs, "GGUF source-vision model should be profiled as text-only in app runtime")
+            }
+        }
+    }
+
+    func test_bundledJSONDoesNotContainStaleCatalogIDs() throws {
+        let url = try XCTUnwrap(
+            Bundle(for: RuntimeProfileTests.self).url(forResource: "RuntimeProfiles", withExtension: "json")
+                ?? Bundle.main.url(forResource: "RuntimeProfiles", withExtension: "json")
+        )
+        let profiles = try JSONDecoder().decode([RuntimeProfile].self, from: Data(contentsOf: url))
+        let catalogIDs = Set(MockCatalogData.items.map(\.id))
+        for profile in profiles {
+            XCTAssertTrue(catalogIDs.contains(profile.catalogID), "Stale profile for removed catalog ID \(profile.catalogID)")
         }
     }
 

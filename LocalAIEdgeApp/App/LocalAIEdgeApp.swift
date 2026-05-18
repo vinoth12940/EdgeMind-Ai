@@ -11,16 +11,31 @@ struct LocalAIEdgeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if authStore.isAuthenticated {
-                    RootView()
-                } else {
-                    AuthLandingView()
-                }
+            LaunchRootView()
+            .environment(store)
+            .environment(authStore)
+            .preferredColorScheme(.dark)
+        }
+    }
+}
+
+private struct LaunchRootView: View {
+    @Environment(AppStateStore.self) private var store
+    @Environment(AuthStateStore.self) private var authStore
+    @State private var didRunLaunchTasks = false
+
+    var body: some View {
+        Group {
+            if authStore.isAuthenticated {
+                RootView()
+            } else {
+                AuthLandingView()
             }
-                .environment(store)
-                .environment(authStore)
-                .preferredColorScheme(.dark)
+        }
+        .task {
+            guard !didRunLaunchTasks else { return }
+            didRunLaunchTasks = true
+            await HeadlessModelAuditLauncher.runIfRequested(store: store)
         }
     }
 }

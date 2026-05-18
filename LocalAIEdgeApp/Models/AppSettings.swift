@@ -18,6 +18,8 @@ struct AppSettings: Codable, Hashable {
 
     // HuggingFace Authentication
     var huggingFaceToken: String
+    var streamProcessorV2Enabled: Bool
+    var inferenceV2Timeout: TimeInterval
 
     enum VoiceModel: String, Codable, Hashable, CaseIterable {
         case kokoro82M = "Kokoro 82M"
@@ -87,7 +89,7 @@ struct AppSettings: Codable, Hashable {
 
     static let `default` = AppSettings(
         defaultModelID: nil,
-        systemPrompt: "You are a helpful AI assistant. Answer the user's question directly and accurately. Be concise but thorough. If you are unsure or do not know the answer, say so honestly instead of guessing. Do not repeat the question back. Do not add unnecessary filler or disclaimers. When web search results are provided, use them to give current and factual answers, citing sources by number.",
+        systemPrompt: "You are a helpful AI assistant. Answer the user's question directly and accurately. Be concise but thorough. If you are unsure or do not know the answer, say so honestly instead of guessing. Do not repeat the question back. Do not add unnecessary filler or disclaimers. Refuse requests for instructions that enable physical harm, weapon construction, cyber abuse, credential theft, or self-harm methods, and redirect to safety-focused help. When web search results are provided, use them to give current and factual answers, citing sources by number.",
         searchGatewayURL: URL(string: "http://localhost:8787/api/search"),
         privacyModeEnabled: true,
         useSearchByDefault: false,
@@ -98,6 +100,47 @@ struct AppSettings: Codable, Hashable {
         voiceResponseRate: 1.0,
         webSearchProvider: .none,
         webSearchAPIKey: "",
-        huggingFaceToken: ""
+        huggingFaceToken: "",
+        streamProcessorV2Enabled: true,
+        inferenceV2Timeout: 15
     )
+}
+
+extension AppSettings {
+    private enum CodingKeys: String, CodingKey {
+        case defaultModelID
+        case systemPrompt
+        case searchGatewayURL
+        case privacyModeEnabled
+        case useSearchByDefault
+        case voiceModeEnabled
+        case voiceModel
+        case voicePreset
+        case autoPlayVoiceResponses
+        case voiceResponseRate
+        case webSearchProvider
+        case webSearchAPIKey
+        case huggingFaceToken
+        case streamProcessorV2Enabled
+        case inferenceV2Timeout
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        defaultModelID = try container.decodeIfPresent(UUID.self, forKey: .defaultModelID)
+        systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? Self.default.systemPrompt
+        searchGatewayURL = try container.decodeIfPresent(URL.self, forKey: .searchGatewayURL)
+        privacyModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .privacyModeEnabled) ?? Self.default.privacyModeEnabled
+        useSearchByDefault = try container.decodeIfPresent(Bool.self, forKey: .useSearchByDefault) ?? Self.default.useSearchByDefault
+        voiceModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .voiceModeEnabled) ?? Self.default.voiceModeEnabled
+        voiceModel = try container.decodeIfPresent(VoiceModel.self, forKey: .voiceModel) ?? Self.default.voiceModel
+        voicePreset = try container.decodeIfPresent(VoicePreset.self, forKey: .voicePreset) ?? Self.default.voicePreset
+        autoPlayVoiceResponses = try container.decodeIfPresent(Bool.self, forKey: .autoPlayVoiceResponses) ?? Self.default.autoPlayVoiceResponses
+        voiceResponseRate = try container.decodeIfPresent(Double.self, forKey: .voiceResponseRate) ?? Self.default.voiceResponseRate
+        webSearchProvider = try container.decodeIfPresent(WebSearchProvider.self, forKey: .webSearchProvider) ?? Self.default.webSearchProvider
+        webSearchAPIKey = try container.decodeIfPresent(String.self, forKey: .webSearchAPIKey) ?? Self.default.webSearchAPIKey
+        huggingFaceToken = try container.decodeIfPresent(String.self, forKey: .huggingFaceToken) ?? Self.default.huggingFaceToken
+        streamProcessorV2Enabled = try container.decodeIfPresent(Bool.self, forKey: .streamProcessorV2Enabled) ?? true
+        inferenceV2Timeout = try container.decodeIfPresent(TimeInterval.self, forKey: .inferenceV2Timeout) ?? 15
+    }
 }

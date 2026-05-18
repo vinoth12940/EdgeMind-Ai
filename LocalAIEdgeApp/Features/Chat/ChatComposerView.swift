@@ -37,19 +37,19 @@ struct ChatComposerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             utilityLane
             attachmentPreview
             inputRow
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(AppTheme.surfaceGradient)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
         )
         .fullScreenCover(isPresented: $showCamera) {
@@ -100,7 +100,7 @@ struct ChatComposerView: View {
                 let storyboard: UIImage?
                 if let movieURL = try? await newItem.loadTransferable(type: URL.self) {
                     storyboard = await Task.detached(priority: .userInitiated) {
-                        Self.extractStoryboardImage(from: movieURL, frameCount: 4, maxDimension: 1024)
+                        await Self.extractStoryboardImage(from: movieURL, frameCount: 4, maxDimension: 1024)
                     }.value
                 } else {
                     storyboard = nil
@@ -118,7 +118,7 @@ struct ChatComposerView: View {
 
     @ViewBuilder
     private var utilityLane: some View {
-        if isSearchConfigured || isVisionModel || voiceModeEnabled || attachedImage != nil {
+        if attachedImage != nil || isListening {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     statusPill(
@@ -172,7 +172,7 @@ struct ChatComposerView: View {
                 }
 
                 Text("Image attached")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.appBody(12))
                     .foregroundStyle(AppTheme.textTertiary)
                     .padding(.top, 4)
 
@@ -186,8 +186,8 @@ struct ChatComposerView: View {
     }
 
     private var inputRow: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .bottom, spacing: 10) {
+        VStack(spacing: 6) {
+            HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     Button {
                         if !liveSearchEnabled && !isSearchConfigured {
@@ -218,14 +218,14 @@ struct ChatComposerView: View {
 
                 TextField("Ask anything…", text: $prompt, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.appBody(16))
                     .lineLimit(1...6)
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .focused($isFocused)
                     .foregroundStyle(.white)
                     .tint(AppTheme.accent)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 9)
                     .background(
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .fill(Color.white.opacity(0.06))
@@ -240,7 +240,7 @@ struct ChatComposerView: View {
                             )
                             .animation(.easeOut(duration: 0.2), value: isFocused)
                     )
-                    .frame(minHeight: 48)
+                    .frame(minHeight: 42)
                     .submitLabel(.send)
                     .onSubmit {
                         if canSend {
@@ -270,7 +270,7 @@ struct ChatComposerView: View {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background(
                                 Circle().fill(AppTheme.accentGradient)
                             )
@@ -311,7 +311,7 @@ struct ChatComposerView: View {
         Image(systemName: icon)
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(tint)
-            .frame(width: 44, height: 44)
+            .frame(width: 40, height: 40)
             .background(Circle().fill(fill))
     }
 
@@ -320,7 +320,7 @@ struct ChatComposerView: View {
             Image(systemName: icon)
                 .font(.system(size: 10, weight: .bold))
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.appCaps(10))
         }
         .foregroundStyle(color)
         .padding(.horizontal, 10)
@@ -329,7 +329,7 @@ struct ChatComposerView: View {
         .clipShape(Capsule())
     }
 
-    private static func downsample(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+    nonisolated private static func downsample(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
         let size = image.size
         let maxSide = max(size.width, size.height)
         guard maxSide > maxDimension else { return image }
@@ -354,9 +354,10 @@ struct ChatComposerView: View {
         return UIImage(cgImage: cgImage)
     }
 
-    private static func extractStoryboardImage(from videoURL: URL, frameCount: Int, maxDimension: CGFloat) -> UIImage? {
+    nonisolated private static func extractStoryboardImage(from videoURL: URL, frameCount: Int, maxDimension: CGFloat) async -> UIImage? {
         let asset = AVURLAsset(url: videoURL)
-        let durationSeconds = max(0.1, CMTimeGetSeconds(asset.duration))
+        let duration = (try? await asset.load(.duration)) ?? .zero
+        let durationSeconds = max(0.1, CMTimeGetSeconds(duration))
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
 
@@ -385,7 +386,7 @@ struct ChatComposerView: View {
         return makeCollage(from: frames, maxDimension: maxDimension)
     }
 
-    private static func makeCollage(from images: [UIImage], maxDimension: CGFloat) -> UIImage? {
+    nonisolated private static func makeCollage(from images: [UIImage], maxDimension: CGFloat) -> UIImage? {
         let columns = 2
         let rows = Int(ceil(Double(images.count) / Double(columns)))
         let tile = maxDimension / CGFloat(columns)

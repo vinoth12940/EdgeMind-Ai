@@ -9,8 +9,8 @@ configs:
 settings:
   base:
     SWIFT_VERSION: 5.10
-    PRODUCT_BUNDLE_IDENTIFIER: io.example.LocalAIEdgeApp
-    DEVELOPMENT_TEAM: "3TUK6Q66NM"
+    PRODUCT_BUNDLE_IDENTIFIER: com.vinothrajalingam.LocalAIEdgeApp
+    DEVELOPMENT_TEAM: "43NV5DTHKG"
     CODE_SIGN_STYLE: Automatic
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 0.1.0
@@ -35,7 +35,7 @@ targets:
     dependencies:
       - framework: Vendor/build-apple/llama.xcframework
         embed: true
-        codeSign: false
+        codeSign: true
       - package: mlx-swift-examples
         product: MLXLLM
       - package: mlx-swift-examples
@@ -48,6 +48,15 @@ targets:
         INFOPLIST_KEY_CFBundleName: LocalAIEdgeApp
         INFOPLIST_KEY_LSRequiresIPhoneOS: YES
         INFOPLIST_KEY_UIRequiresFullScreen: NO
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_NSCameraUsageDescription: "Take a photo to ask AI about what you see"
         INFOPLIST_KEY_NSFaceIDUsageDescription: "Use Face ID to unlock your local profile"
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Use the microphone to dictate prompts for on-device voice chat"
@@ -67,6 +76,8 @@ targets:
     platform: iOS
     sources:
       - path: LocalAIEdgeAppTests
+    resources:
+      - path: LocalAIEdgeApp/Resources/RuntimeProfiles.json
     dependencies:
       - target: LocalAIEdgeApp
     settings:

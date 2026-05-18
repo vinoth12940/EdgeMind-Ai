@@ -72,6 +72,7 @@ struct RootView: View {
             }
             .toolbar(.hidden, for: .tabBar)
             .environment(\.selectedTab, $selectedTab)
+            .font(.appBody(15))
 
             if !isKeyboardVisible && selectedTab != 0 && !isFloatingDockHidden {
                 floatingTabBar
@@ -108,7 +109,7 @@ struct RootView: View {
 
                         if isActive {
                             Text(tab.label)
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .font(.appCaps(12))
                                 .foregroundStyle(AppTheme.background)
                                 .transition(.opacity.combined(with: .scale(scale: 0.92)))
                         }
@@ -120,6 +121,7 @@ struct RootView: View {
                         if isActive {
                             Capsule(style: .continuous)
                                 .fill(AppTheme.accentGradient)
+                                .shadow(color: AppTheme.accent.opacity(0.45), radius: 8, x: 0, y: 4)
                         }
                     }
                 }
@@ -138,14 +140,14 @@ struct RootView: View {
                     Capsule(style: .continuous)
                         .stroke(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
+                                colors: [Color.white.opacity(0.15), Color.white.opacity(0.03)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
                             lineWidth: 0.8
                         )
                 )
-                .shadow(color: Color.black.opacity(0.42), radius: 34, x: 0, y: 10)
+                .shadow(color: Color.black.opacity(0.50), radius: 34, x: 0, y: 10)
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 6)

@@ -1,4 +1,3 @@
-import AuthenticationServices
 import SwiftUI
 
 struct AuthLandingView: View {
@@ -11,12 +10,11 @@ struct AuthLandingView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.background.ignoresSafeArea()
+            AppBackdropView()
 
             ScrollView {
                 VStack(spacing: 16) {
                     headerSection
-                    appleSignInSection
                     credentialsSection
                     deviceAuthenticationSection
                     guestSection
@@ -39,13 +37,13 @@ struct AuthLandingView: View {
                 .foregroundStyle(AppTheme.accent)
 
             Text("Welcome to Local AI Edge")
-                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .font(.appDisplay(30))
                 .foregroundStyle(AppTheme.textPrimary)
                 .multilineTextAlignment(.center)
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
 
-            Text("Sign in with Apple (iCloud), local credentials, or iPhone authentication to continue.")
-                .font(.system(size: 14))
+            Text("Use a local profile, iPhone authentication, or guest access to continue.")
+                .font(.appBody(14))
                 .foregroundStyle(AppTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 8)
@@ -54,41 +52,10 @@ struct AuthLandingView: View {
         .padding(.bottom, 4)
     }
 
-    private var appleSignInSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Apple ID")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(AppTheme.textPrimary)
-
-            Text("Uses your iCloud/Apple account through Sign in with Apple.")
-                .font(.system(size: 12))
-                .foregroundStyle(AppTheme.textTertiary)
-
-            SignInWithAppleButton(.continue) { request in
-                request.requestedScopes = [.fullName, .email]
-            } onCompletion: { result in
-                switch result {
-                case .success(let authorization):
-                    guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-                        authStore.lastErrorMessage = "Unable to read Apple sign-in response."
-                        return
-                    }
-                    authStore.handleAppleSignIn(credential)
-                case .failure(let error):
-                    authStore.lastErrorMessage = error.localizedDescription
-                }
-            }
-            .signInWithAppleButtonStyle(.white)
-            .frame(height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .glassCard(cornerRadius: 18, padding: 14)
-    }
-
     private var credentialsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Credentials")
-                .font(.system(size: 14, weight: .bold))
+                .font(.appCaps(14))
                 .foregroundStyle(AppTheme.textPrimary)
 
             TextField("Display name", text: $displayName)
@@ -129,11 +96,11 @@ struct AuthLandingView: View {
     private var deviceAuthenticationSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("iPhone Authentication")
-                .font(.system(size: 14, weight: .bold))
+                .font(.appCaps(14))
                 .foregroundStyle(AppTheme.textPrimary)
 
             Text("Authenticate with \(authStore.deviceAuthLabel) or your device passcode.")
-                .font(.system(size: 12))
+                .font(.appBody(12))
                 .foregroundStyle(AppTheme.textTertiary)
 
             TextField("Name for device profile (optional)", text: $deviceAuthNameHint)
@@ -199,7 +166,7 @@ struct AuthLandingView: View {
                 .foregroundStyle(AppTheme.warning)
 
             Text(error)
-                .font(.system(size: 12))
+                .font(.appBody(12))
                 .foregroundStyle(AppTheme.textSecondary)
 
             Spacer()

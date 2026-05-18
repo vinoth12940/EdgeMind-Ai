@@ -42,4 +42,50 @@ final class AssistantResponseSanitizerTests: XCTestCase {
         let answer = "I am doing well, thanks for asking. How can I help you today?"
         XCTAssertFalse(AssistantResponseFallback.isInstructionEcho(answer, systemPrompt: systemPrompt))
     }
+
+    func test_offTopicDetection_flagsLongIrrelevantReplyForHi() {
+        let response = "I'm a newbie to this subreddit and I've been lurking for a while. Let's say you have the following user message and need to answer them."
+        XCTAssertTrue(AssistantResponseFallback.isLikelyOffTopicReply(response, prompt: "Hi"))
+    }
+
+    func test_offTopicDetection_flagsObservedOpenELMTrainingContinuation() {
+        let response = "I'm a newbie to this subreddit, and I've been lurking for a while. I've gotten quite a few messages asking for help with a particular problem, so I thought I'd try my hand at answering them."
+        XCTAssertTrue(AssistantResponseFallback.isLikelyOffTopicReply(response, prompt: "What are you doing?"))
+    }
+
+    func test_offTopicDetection_flagsGreetingEchoInsidePromptTemplateContinuation() {
+        let response = "Let's say you have the following user message:\n\nHi, I'm having a really weird issue with my game."
+        XCTAssertTrue(AssistantResponseFallback.isLikelyOffTopicReply(response, prompt: "Hi"))
+    }
+
+    func test_offTopicDetection_allowsSimpleGreetingReply() {
+        let response = "Hi! I am doing well. How can I help you?"
+        XCTAssertFalse(AssistantResponseFallback.isLikelyOffTopicReply(response, prompt: "Hi"))
+    }
+
+    func test_openELMSafeFallback_forGreeting() {
+        XCTAssertEqual(
+            AssistantResponseFallback.openELMSafeFallback(for: "Hi"),
+            "Hi! I am doing well. How can I help you?"
+        )
+    }
+
+    func test_openELMPromptTemplate_usesPlainCompletionPrompt() {
+        XCTAssertEqual(
+            OpenELMPromptTemplate.render(prompt: " Hi \n"),
+            """
+            Answer the question directly and concisely.
+
+            Question: Hi
+            Answer:
+            """
+        )
+    }
+
+    func test_lfmPromptTemplate_usesChatMLFormat() {
+        XCTAssertEqual(
+            LFMPromptTemplate.render(systemPrompt: "Be brief.", prompt: " Hi \n"),
+            "<|startoftext|><|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\nHi<|im_end|>\n<|im_start|>assistant\n"
+        )
+    }
 }

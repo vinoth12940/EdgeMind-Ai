@@ -23,8 +23,8 @@ struct MessageBubbleView: View {
     }
 
     private var userRow: some View {
-        VStack(alignment: .trailing, spacing: 3) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .leading, spacing: 6) {
                 if let imageData = message.imageData, let uiImage = previewImage(from: imageData) {
                     Image(uiImage: uiImage)
                         .resizable()
@@ -36,8 +36,8 @@ struct MessageBubbleView: View {
                 MarkdownTextView(text: message.text, isUser: true)
                     .textSelection(.enabled)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(AppTheme.userBubbleGradient)
@@ -46,11 +46,11 @@ struct MessageBubbleView: View {
             messageTimestamp
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.leading, 50)
+        .padding(.leading, 42)
     }
 
     private var assistantRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             VStack(alignment: .leading, spacing: 0) {
                 if !message.citations.isEmpty {
                     SearchDisclosureRow(
@@ -74,18 +74,18 @@ struct MessageBubbleView: View {
                         .frame(maxWidth: 220, maxHeight: 220)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .padding(.horizontal, 14)
-                        .padding(.top, 12)
+                        .padding(.top, 10)
                 }
 
                 if isRecoveryMessage {
                     recoveryCard
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                 } else if !message.text.isEmpty {
                     MarkdownTextView(text: message.text, isUser: false, citations: message.citations)
                         .textSelection(.enabled)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                 } else if message.thinkingContent != nil && message.thinkingDurationSeconds == nil {
                     Color.clear.frame(height: 4)
                 }
@@ -102,7 +102,7 @@ struct MessageBubbleView: View {
             messageTimestamp
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, 28)
+        .padding(.trailing, 18)
     }
 
     private var systemNotice: some View {
@@ -130,14 +130,14 @@ struct MessageBubbleView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(AppTheme.warning)
             Text("No visible answer. Try a shorter prompt, switch models, or keep search enabled for live questions.")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.appBody(13))
                 .foregroundStyle(AppTheme.textSecondary)
         }
     }
 
     private var messageTimestamp: some View {
         Text(message.createdAt.formatted(date: .omitted, time: .shortened))
-            .font(.system(size: 10))
+            .font(.appBody(10))
             .foregroundStyle(AppTheme.textTertiary.opacity(0.5))
             .padding(.horizontal, 4)
     }
@@ -188,13 +188,13 @@ struct ThinkingDisclosureRow: View {
                     if isStreaming {
                         HStack(spacing: 4) {
                             Text("Thinking")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.appCaps(11))
                                 .foregroundStyle(thinkingColor)
                             ThinkingDotsView()
                         }
                     } else {
                         Text("Thought for \(durationSeconds!)s")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.appCaps(11))
                             .foregroundStyle(thinkingColor)
                     }
 
@@ -222,7 +222,7 @@ struct ThinkingDisclosureRow: View {
 
                     VStack(alignment: .leading, spacing: 0) {
                         Text(thinkingContent + (isStreaming ? "​" : ""))
-                            .font(.system(size: 12, weight: .regular, design: .default))
+                            .font(.appBody(12))
                             .italic()
                             .foregroundStyle(thinkingColor.opacity(0.88))
                             .lineSpacing(4)
@@ -268,7 +268,7 @@ struct SearchDisclosureRow: View {
                         .foregroundStyle(searchColor)
 
                     Text("Web Search")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.appCaps(11))
                         .foregroundStyle(searchColor)
 
                     Spacer()

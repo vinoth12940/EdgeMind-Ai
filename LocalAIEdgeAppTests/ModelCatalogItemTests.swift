@@ -72,4 +72,82 @@ final class ModelCatalogItemTests: XCTestCase {
         XCTAssertFalse(decoded.recommendedForIPhone)
         XCTAssertEqual(decoded.minimumTier, .standard)
     }
+
+    func test_parsedDiskSizeGB_handlesMegabytes() {
+        let item = ModelCatalogItem(
+            displayName: "Tiny",
+            family: .qwen,
+            variant: "4-bit MLX",
+            summary: "",
+            parameterSize: "0.6B",
+            quantization: "MLX 4-bit",
+            diskSize: "~600 MB",
+            contextWindow: "40K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/tiny",
+            minimumTier: .compact
+        )
+
+        XCTAssertEqual(item.parsedDiskSizeGBForEstimator, 600.0 / 1024.0, accuracy: 0.01)
+    }
+
+    func test_catalogExcludesOpenELMChatModels() {
+        let openELMItems = MockCatalogData.items.filter { $0.family == .openELM }
+        XCTAssertTrue(openELMItems.isEmpty)
+    }
+
+    func test_proTierRecommendedCatalogFitsProMemoryBudget() {
+        let proTier = DeviceTier.pro
+        let riskyItems = MockCatalogData.items.filter { item in
+            item.minimumTier <= proTier
+                && item.estimatedResidentGB(contextTokens: proTier.safeContextTokens) > proTier.jetsamSoftLimitGB
+        }
+
+        XCTAssertTrue(
+            riskyItems.isEmpty,
+            "Pro-tier catalog includes memory-risky models: \(riskyItems.map(\.displayName).joined(separator: ", "))"
+        )
+    }
+
+    func test_proTierCatalogExcludesFourBMLXModels() {
+        let proUnsafeMLXItems = MockCatalogData.items.filter { item in
+            item.runtimeType == .mlx
+                && item.parameterSize == "4B"
+                && item.minimumTier <= .pro
+        }
+
+        XCTAssertTrue(
+            proUnsafeMLXItems.isEmpty,
+            "4B MLX models are not stable on 8 GB iPhone long-conversation runs: \(proUnsafeMLXItems.map(\.displayName).joined(separator: ", "))"
+        )
+    }
+
+    func test_catalogKeepsLFMModelsIncluding350M() {
+        let lfmModelIDs = MockCatalogData.items
+            .filter { $0.family == .lfm }
+            .compactMap(\.mlxModelID)
+
+        XCTAssertEqual(
+            lfmModelIDs,
+            [
+                "mlx-community/LFM2.5-350M-6bit",
+                "mlx-community/LFM2.5-1.2B-Thinking-6bit",
+                "mlx-community/LFM2.5-1.2B-Instruct-4bit"
+            ]
+        )
+    }
+
+    func test_catalogIncludesGraniteMLXModels() {
+        let graniteItems = MockCatalogData.items.filter { $0.family == .granite }
+
+        XCTAssertEqual(
+            graniteItems.compactMap(\.mlxModelID),
+            [
+                "mlx-community/granite-3.3-2b-instruct-4bit",
+                "mlx-community/granite-3.3-8b-instruct-4bit"
+            ]
+        )
+        XCTAssertTrue(graniteItems.allSatisfy { $0.runtimeType == .mlx })
+        XCTAssertTrue(graniteItems.allSatisfy { !$0.supportsVision })
+    }
 }

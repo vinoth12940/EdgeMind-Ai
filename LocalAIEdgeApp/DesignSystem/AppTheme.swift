@@ -1,22 +1,22 @@
 import SwiftUI
 
 enum AppTheme {
-    // MARK: - Core Palette (Obsidian / Neon Tide)
-    static let background = Color(red: 0.02, green: 0.03, blue: 0.05)
-    static let panel = Color(red: 0.05, green: 0.07, blue: 0.10)
-    static let panelRaised = Color(red: 0.08, green: 0.10, blue: 0.14)
-    static let panelHover = Color(red: 0.12, green: 0.14, blue: 0.18)
-    static let accent = Color(red: 0.24, green: 0.82, blue: 1.0)
-    static let accentSoft = Color(red: 0.38, green: 0.94, blue: 0.76)
-    static let accentWarm = Color(red: 1.0, green: 0.60, blue: 0.32)
-    static let success = Color(red: 0.20, green: 0.88, blue: 0.62)
-    static let warning = Color(red: 1.0, green: 0.78, blue: 0.32)
-    static let destructive = Color(red: 1.0, green: 0.34, blue: 0.38)
-    static let textPrimary = Color(red: 0.96, green: 0.96, blue: 0.98)
-    static let textSecondary = Color.white.opacity(0.50)
-    static let textTertiary = Color.white.opacity(0.26)
-    static let hairline = Color.white.opacity(0.07)
-    static let divider = Color.white.opacity(0.04)
+    // MARK: - Core Palette (Carbon / Ember / Cyan)
+    static let background = Color(red: 0.03, green: 0.03, blue: 0.04)
+    static let panel = Color(red: 0.08, green: 0.08, blue: 0.10)
+    static let panelRaised = Color(red: 0.12, green: 0.11, blue: 0.13)
+    static let panelHover = Color(red: 0.17, green: 0.16, blue: 0.18)
+    static let accent = Color(red: 0.13, green: 0.79, blue: 0.84)
+    static let accentSoft = Color(red: 0.85, green: 0.57, blue: 0.34)
+    static let accentWarm = Color(red: 1.0, green: 0.41, blue: 0.22)
+    static let success = Color(red: 0.37, green: 0.87, blue: 0.49)
+    static let warning = Color(red: 1.0, green: 0.70, blue: 0.24)
+    static let destructive = Color(red: 1.0, green: 0.33, blue: 0.31)
+    static let textPrimary = Color(red: 0.97, green: 0.96, blue: 0.94)
+    static let textSecondary = Color(red: 0.81, green: 0.78, blue: 0.74)
+    static let textTertiary = Color(red: 0.57, green: 0.55, blue: 0.53)
+    static let hairline = Color.white.opacity(0.10)
+    static let divider = Color.white.opacity(0.06)
 
     // MARK: - Gradients
     static let glow = LinearGradient(
@@ -27,9 +27,9 @@ enum AppTheme {
 
     static let meshBackground = LinearGradient(
         colors: [
-            Color(red: 0.03, green: 0.05, blue: 0.08),
-            Color(red: 0.02, green: 0.08, blue: 0.11),
-            Color(red: 0.02, green: 0.03, blue: 0.05)
+            Color(red: 0.05, green: 0.04, blue: 0.03),
+            Color(red: 0.07, green: 0.06, blue: 0.07),
+            Color(red: 0.03, green: 0.03, blue: 0.04)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -37,8 +37,8 @@ enum AppTheme {
 
     static let userBubbleGradient = LinearGradient(
         colors: [
-            Color(red: 0.18, green: 0.61, blue: 0.98),
-            Color(red: 0.14, green: 0.84, blue: 0.78)
+            Color(red: 0.14, green: 0.74, blue: 0.80),
+            Color(red: 0.80, green: 0.45, blue: 0.26)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -63,7 +63,7 @@ enum AppTheme {
     )
 
     static let dockGradient = LinearGradient(
-        colors: [panelRaised.opacity(0.94), panel.opacity(0.92)],
+        colors: [panelRaised.opacity(0.95), panel.opacity(0.95)],
         startPoint: .top,
         endPoint: .bottom
     )
@@ -85,6 +85,7 @@ enum AppTheme {
 
     // MARK: - Lab Colors
     static let labGoogle = Color(red: 0.26, green: 0.52, blue: 0.96)
+    static let labIBM = Color(red: 0.35, green: 0.55, blue: 1.00)
     static let labMeta = Color(red: 0.10, green: 0.47, blue: 0.95)
     static let labAlibaba = Color(red: 1.00, green: 0.42, blue: 0.00)
     static let labMicrosoft = Color(red: 0.00, green: 0.74, blue: 0.95)
@@ -105,6 +106,7 @@ enum AppTheme {
     static func labColor(for family: ModelCatalogItem.ModelFamily) -> Color {
         switch family {
         case .gemma: return labGoogle
+        case .granite: return labIBM
         case .llama: return labMeta
         case .qwen: return labAlibaba
         case .phi: return labMicrosoft
@@ -112,7 +114,7 @@ enum AppTheme {
         case .deepSeek: return labDeepSeek
         case .smolLM, .smolVLM: return labHuggingFace
         case .stableLM: return labStability
-        case .openELM: return labApple
+        case .openELM, .appleIntelligence: return labApple
         case .tinyLlama: return labStatNLP
         case .lfm: return Color(red: 0.0, green: 0.75, blue: 0.85) // Liquid AI teal
         case .kokoro: return labKokoro
@@ -130,27 +132,31 @@ enum AppTheme {
 }
 
 struct AppBackdropView: View {
+    @State private var drift = false
+
     var body: some View {
         ZStack {
             AppTheme.meshBackground.ignoresSafeArea()
 
-            Circle()
-                .fill(AppTheme.accent.opacity(0.18))
-                .frame(width: 340, height: 340)
-                .blur(radius: 130)
-                .offset(x: -120, y: -300)
+            RoundedRectangle(cornerRadius: 180, style: .continuous)
+                .fill(AppTheme.accent.opacity(0.16))
+                .frame(width: 340, height: 260)
+                .rotationEffect(.degrees(16))
+                .blur(radius: 110)
+                .offset(x: drift ? -145 : -105, y: -310)
 
-            Circle()
-                .fill(AppTheme.accentSoft.opacity(0.16))
+            RoundedRectangle(cornerRadius: 180, style: .continuous)
+                .fill(AppTheme.accentSoft.opacity(0.14))
                 .frame(width: 260, height: 260)
-                .blur(radius: 120)
-                .offset(x: 150, y: -180)
+                .rotationEffect(.degrees(-20))
+                .blur(radius: 105)
+                .offset(x: drift ? 170 : 130, y: -160)
 
             Circle()
                 .fill(AppTheme.accentWarm.opacity(0.10))
-                .frame(width: 240, height: 240)
-                .blur(radius: 120)
-                .offset(x: 120, y: 330)
+                .frame(width: 250, height: 250)
+                .blur(radius: 110)
+                .offset(x: drift ? 140 : 95, y: 320)
 
             LinearGradient(
                 colors: [Color.white.opacity(0.05), Color.clear, Color.clear],
@@ -159,6 +165,11 @@ struct AppBackdropView: View {
             )
             .blendMode(.screen)
             .ignoresSafeArea()
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 7.5).repeatForever(autoreverses: true)) {
+                drift = true
+            }
         }
     }
 }
@@ -177,19 +188,19 @@ struct GlassCardModifier: ViewModifier {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(AppTheme.panel.opacity(0.6))
+                            .fill(AppTheme.panel.opacity(0.74))
                     )
-                    .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
+                    .shadow(color: Color.black.opacity(0.35), radius: 24, x: 0, y: 12)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
+                            colors: [Color.white.opacity(0.15), Color.white.opacity(0.03)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 0.5
+                        lineWidth: 0.7
                     )
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -208,19 +219,19 @@ struct AccentGlassCardModifier: ViewModifier {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(AppTheme.panel.opacity(0.65))
+                            .fill(AppTheme.panel.opacity(0.78))
                     )
-                    .shadow(color: accentColor.opacity(0.06), radius: 16, x: 0, y: 8)
+                    .shadow(color: accentColor.opacity(0.10), radius: 18, x: 0, y: 8)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [accentColor.opacity(0.35), Color.white.opacity(0.04)],
+                            colors: [accentColor.opacity(0.45), Color.white.opacity(0.05)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 0.5
+                        lineWidth: 0.7
                     )
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -309,5 +320,19 @@ extension View {
 
     func pulseGlow(_ color: Color) -> some View {
         modifier(PulseGlow(color: color))
+    }
+}
+
+extension Font {
+    static func appDisplay(_ size: CGFloat) -> Font {
+        .custom("AvenirNext-DemiBold", size: size, relativeTo: .title2)
+    }
+
+    static func appBody(_ size: CGFloat) -> Font {
+        .custom("AvenirNext-Regular", size: size, relativeTo: .body)
+    }
+
+    static func appCaps(_ size: CGFloat) -> Font {
+        .custom("AvenirNextCondensed-DemiBold", size: size, relativeTo: .caption)
     }
 }

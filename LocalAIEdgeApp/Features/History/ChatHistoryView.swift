@@ -35,10 +35,10 @@ struct ChatHistoryView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("History")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.appDisplay(18))
                     .foregroundStyle(AppTheme.textPrimary)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button {
                     store.createSession(using: store.defaultModel?.catalogItem.id)
                 } label: {
@@ -49,6 +49,9 @@ struct ChatHistoryView: View {
                 }
                 .buttonStyle(.plain)
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                TabSwitcherMenuButton()
+            }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
     }
@@ -58,11 +61,11 @@ struct ChatHistoryView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Session Archive")
-                        .font(.system(size: 30, weight: .heavy, design: .rounded))
+                        .font(.appDisplay(32))
                         .foregroundStyle(AppTheme.textPrimary)
 
                     Text("Jump back into previous local runs, inspect how they ended, and branch into a fresh chat without losing context.")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(.appBody(14))
                         .foregroundStyle(AppTheme.textSecondary)
                 }
 
@@ -93,10 +96,10 @@ struct ChatHistoryView: View {
     private func statPill(value: String, label: String) -> some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(.system(size: 17, weight: .heavy, design: .rounded).monospacedDigit())
+                .font(.appDisplay(18).monospacedDigit())
                 .foregroundStyle(AppTheme.textPrimary)
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.appCaps(10))
                 .foregroundStyle(AppTheme.textTertiary)
                 .textCase(.uppercase)
         }
@@ -111,7 +114,7 @@ struct ChatHistoryView: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .bold))
             Text(text)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(.appCaps(11))
         }
         .foregroundStyle(color)
         .padding(.horizontal, 10)
@@ -141,17 +144,17 @@ struct ChatHistoryView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(session.title)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.appDisplay(18))
                         .foregroundStyle(AppTheme.textPrimary)
                         .lineLimit(1)
 
                     Text(modelName)
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(.appCaps(11))
                         .foregroundStyle(AppTheme.warning)
 
                     if let lastMessage = session.messages.last {
                         Text(lastMessage.text)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.appBody(13))
                             .foregroundStyle(AppTheme.textSecondary)
                             .lineLimit(2)
                     }
@@ -161,11 +164,11 @@ struct ChatHistoryView: View {
 
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(session.updatedAt.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.appBody(11))
                         .foregroundStyle(AppTheme.textTertiary)
 
                     Text("\(session.messages.count)")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.appCaps(10))
                         .foregroundStyle(AppTheme.textTertiary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -199,11 +202,11 @@ struct ChatHistoryView: View {
                 .foregroundStyle(AppTheme.accent)
 
             Text("No conversations yet")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .font(.appDisplay(20))
                 .foregroundStyle(AppTheme.textPrimary)
 
             Text("Your local sessions will appear here once you start chatting.")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.appBody(13))
                 .foregroundStyle(AppTheme.textSecondary)
         }
         .frame(maxWidth: .infinity)

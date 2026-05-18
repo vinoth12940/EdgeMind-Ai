@@ -9,7 +9,8 @@ struct MockInferenceService: InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        settings: AppSettings? = nil
     ) async throws -> ChatMessage {
         try await Task.sleep(for: .milliseconds(350))
 
@@ -30,7 +31,8 @@ struct MockInferenceService: InferenceService {
         conversation: [ChatMessage],
         searchContext: SearchContext?,
         systemPrompt: String,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        settings: AppSettings? = nil
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         let messageID = UUID()
         let eventsToEmit: [StreamEvent] = events.isEmpty

@@ -49,6 +49,7 @@ final class AppStateStore {
             self.installedModels = installedModels
         }
 
+        reconcilePersistedInstalledModelsWithCurrentCatalog()
         migrateUnsupportedCatalogEntriesIfNeeded()
     }
 
@@ -243,6 +244,14 @@ final class AppStateStore {
             guard let localPath = URLModelDownloadService.installedLocalPath(for: item) else { continue }
             markInstallCompleted(for: item, localPath: localPath)
         }
+
+        for item in catalog where item.runtimeType == .mlx {
+            guard let mlxModelID = item.mlxModelID,
+                  MLXModelCache.isDownloaded(mlxModelID) else {
+                continue
+            }
+            markInstallCompleted(for: item, localPath: mlxModelID)
+        }
     }
 
     func persistSettings() {
@@ -362,13 +371,93 @@ final class AppStateStore {
 
         switch model.catalogItem.runtimeType {
         case .gguf:
-            return model.fileURL != nil
+            guard let fileURL = model.fileURL else { return false }
+            return FileManager.default.fileExists(atPath: fileURL.path)
         case .mlx:
 #if targetEnvironment(simulator)
             return false
 #else
+            guard let mlxModelID = model.catalogItem.mlxModelID,
+                  model.localPath == mlxModelID else {
+                return false
+            }
             return true
 #endif
+        case .foundationModels:
+            return model.localPath == AppleFoundationModelService.localPathMarker
+        }
+    }
+
+    private func reconcilePersistedInstalledModelsWithCurrentCatalog() {
+        var didChange = false
+        installedModels = installedModels.map { model in
+            guard let currentCatalogItem = currentCatalogItem(for: model) else {
+                return model
+            }
+            let reconciledPath = reconciledLocalPath(model: model, currentCatalogItem: currentCatalogItem)
+            guard currentCatalogItem != model.catalogItem || reconciledPath != model.localPath else {
+                return model
+            }
+
+            didChange = true
+            let updated = InstalledModel(
+                id: model.id,
+                catalogItem: currentCatalogItem,
+                installState: model.installState,
+                progress: model.progress,
+                installedAt: model.installedAt,
+                localPath: reconciledPath,
+                isDefault: model.isDefault,
+                statusMessage: model.statusMessage
+            )
+
+            if settings.defaultModelID == model.catalogItem.id {
+                settings.defaultModelID = currentCatalogItem.id
+            }
+
+            return updated
+        }
+
+        if didChange {
+            saveInstalledModels()
+            saveSettings()
+        }
+    }
+
+    private func currentCatalogItem(for model: InstalledModel) -> ModelCatalogItem? {
+        if let byID = catalog.first(where: { $0.id == model.catalogItem.id }) {
+            return byID
+        }
+
+        switch model.catalogItem.runtimeType {
+        case .gguf:
+            guard let localPath = model.localPath else { return nil }
+            let fileName = URL(fileURLWithPath: localPath).lastPathComponent
+            return catalog.first {
+                $0.runtimeType == .gguf &&
+                $0.downloadFileName == fileName
+            }
+        case .mlx:
+            guard let mlxModelID = model.catalogItem.mlxModelID ?? model.localPath else {
+                return nil
+            }
+            return catalog.first {
+                $0.runtimeType == .mlx &&
+                $0.mlxModelID == mlxModelID
+            }
+        case .foundationModels:
+            return catalog.first { $0.runtimeType == .foundationModels }
+        }
+    }
+
+    private func reconciledLocalPath(model: InstalledModel, currentCatalogItem: ModelCatalogItem) -> String? {
+        switch currentCatalogItem.runtimeType {
+        case .gguf:
+            return model.localPath
+        case .mlx:
+            return currentCatalogItem.mlxModelID
+        case .foundationModels:
+            return AppleFoundationModelService.localPathMarker
         }
     }
 
@@ -386,7 +475,9 @@ final class AppStateStore {
             "mlx-community/Qwen3.5-4B-MLX-4bit",
             "mlx-community/Qwen3.5-9B-MLX-4bit",
             "mlx-community/Qwen3.5-4B-4bit",
-            "mlx-community/LFM2.5-VL-1.6B-4bit"
+            "mlx-community/LFM2.5-VL-1.6B-4bit",
+            "mlx-community/OpenELM-270M-Instruct-4bit",
+            "mlx-community/OpenELM-1_1B-Instruct-4bit"
         ]
 
         var didChange = false

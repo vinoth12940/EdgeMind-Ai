@@ -4,6 +4,7 @@ import Foundation
 struct ModelCatalogItem: Identifiable, Hashable, Codable {
     enum ModelFamily: String, Codable, CaseIterable, Hashable {
         case gemma = "Gemma"
+        case granite = "Granite"
         case llama = "Llama"
         case qwen = "Qwen"
         case phi = "Phi"
@@ -13,6 +14,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         case smolVLM = "SmolVLM"
         case stableLM = "StableLM"
         case openELM = "OpenELM"
+        case appleIntelligence = "Apple Intelligence"
         case tinyLlama = "TinyLlama"
         case lfm = "LFM"
         case kokoro = "Kokoro"
@@ -20,6 +22,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         var lab: String {
             switch self {
             case .gemma: return "Google DeepMind"
+            case .granite: return "IBM"
             case .llama: return "Meta"
             case .qwen: return "Alibaba Cloud"
             case .phi: return "Microsoft"
@@ -27,7 +30,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             case .deepSeek: return "DeepSeek"
             case .smolLM, .smolVLM: return "Hugging Face"
             case .stableLM: return "Stability AI"
-            case .openELM: return "Apple"
+            case .openELM, .appleIntelligence: return "Apple"
             case .tinyLlama: return "StatNLP"
             case .lfm: return "Liquid AI"
             case .kokoro: return "Hexgrad / MLX Community"
@@ -37,6 +40,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         var labIcon: String {
             switch self {
             case .gemma: return "brain.head.profile"
+            case .granite: return "building.columns.fill"
             case .llama: return "bolt.fill"
             case .qwen: return "cloud.fill"
             case .phi: return "square.grid.3x3.fill"
@@ -45,6 +49,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             case .smolLM, .smolVLM: return "face.smiling"
             case .stableLM: return "waveform"
             case .openELM: return "apple.logo"
+            case .appleIntelligence: return "apple.intelligence"
             case .tinyLlama: return "hare.fill"
             case .lfm: return "drop.fill"
             case .kokoro: return "waveform.path"
@@ -67,11 +72,13 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     enum RuntimeType: String, Codable, Hashable {
         case gguf = "GGUF"
         case mlx = "MLX"
+        case foundationModels = "FoundationModels"
 
         var label: String {
             switch self {
             case .gguf: return "llama.cpp"
             case .mlx: return "MLX"
+            case .foundationModels: return "Apple Intelligence"
             }
         }
 
@@ -79,6 +86,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             switch self {
             case .gguf: return "cpu"
             case .mlx: return "apple.logo"
+            case .foundationModels: return "apple.intelligence"
             }
         }
     }
@@ -364,14 +372,14 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     /// weights ≈ disk × 1.15  +  KV cache (layer count × head dim × ctx)
     ///         + vision tower (0.6 GB if applicable)  +  app heap headroom (0.3 GB).
     func estimatedResidentGB(contextTokens: Int) -> Double {
-        let weightsGB = parsedDiskSizeGB * 1.15
+        let weightsGB = parsedDiskSizeGBForEstimator * 1.15
         let kvCacheGB = kvCacheEstimateGB(contextTokens: contextTokens)
         let visionGB: Double = supportsVision ? 0.6 : 0.0
         let heapGB = 0.3
         return weightsGB + kvCacheGB + visionGB + heapGB
     }
 
-    private var parsedDiskSizeGB: Double {
+    var parsedDiskSizeGBForEstimator: Double {
         // diskSize is a string like "~1.7 GB" / "2.5 GB" / "~600 MB".
         let upper = diskSize.uppercased()
         let numericPortion = upper.filter { $0.isNumber || $0 == "." }

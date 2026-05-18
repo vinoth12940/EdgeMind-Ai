@@ -43,6 +43,7 @@ enum AssistantResponseFallback {
     static let emptyOutput = "No visible answer was produced. Try a shorter prompt, turn off search, or switch models."
     static let emptyOutputAfterThinking = "The model reasoned, but it never produced a final answer. Try a shorter prompt, turn off search, or switch models."
     static let instructionEcho = "The model repeated internal instructions instead of answering. Please resend your message or switch models."
+    static let unreliableOpenELM = "OpenELM is not reliable enough for this app's chat runtime. Install and select Qwen 3 1.7B, Qwen 3 4B, or LFM2.5 instead."
 
     static func emptyOutputMessage(thinkingSeen: Bool) -> String {
         thinkingSeen ? emptyOutputAfterThinking : emptyOutput
@@ -57,7 +58,7 @@ enum AssistantResponseFallback {
     }
 
     static func shouldSkipInHistory(_ message: ChatMessage) -> Bool {
-        message.role == .assistant && (isEmptyOutputMessage(message.text) || isInstructionEchoMessage(message.text))
+        message.role == .assistant && (isEmptyOutputMessage(message.text) || isInstructionEchoMessage(message.text) || message.text == unreliableOpenELM)
     }
 
     static func isPromptEcho(_ response: String, prompt: String) -> Bool {
@@ -124,6 +125,76 @@ enum AssistantResponseFallback {
             && !groundingSignals.contains(where: normalized.contains)
     }
 
+    static func isLikelyOffTopicReply(_ response: String, prompt: String) -> Bool {
+        let p = normalized(prompt)
+        let r = normalized(response)
+        guard !p.isEmpty, !r.isEmpty else { return false }
+
+        let stronglyOffTopicMarkers = [
+            "subreddit",
+            "let's say you have the following user message",
+            "following user message",
+            "user message:",
+            "i've gotten quite a few messages",
+            "whenever i play a level",
+            "lurking for a while",
+            "messages asking for help",
+            "particular problem",
+            "try my hand at answering",
+            "answering them"
+        ]
+        if stronglyOffTopicMarkers.contains(where: r.contains) {
+            return true
+        }
+
+        let greetingInputs: Set<String> = ["hi", "hello", "hey", "yo", "sup", "how are you", "how are you doing"]
+        let responseWords = Set(
+            r.components(separatedBy: .alphanumerics.inverted)
+                .filter { !$0.isEmpty }
+        )
+        let hasGreetingWord = responseWords.contains("hi")
+            || responseWords.contains("hello")
+            || responseWords.contains("hey")
+        let hasGreetingPhrase = r.contains("doing well")
+            || r.contains("how can i help")
+            || r.contains("i am doing")
+        if greetingInputs.contains(p) || p.hasPrefix("hi ") || p.hasPrefix("hello ") || p.hasPrefix("hey ") {
+            return r.count > 180 || !(hasGreetingWord || hasGreetingPhrase)
+        }
+
+        if p.count <= 16 && r.count >= 220 {
+            return true
+        }
+
+        let stopWords: Set<String> = [
+            "the", "a", "an", "is", "are", "was", "were", "in", "on", "at", "to", "for",
+            "of", "with", "by", "from", "and", "or", "not", "what", "who", "how", "when",
+            "where", "which", "that", "this", "do", "does", "did", "will", "can", "could",
+            "would", "should", "have", "has", "had", "be", "been", "being", "it", "its",
+            "me", "my", "you", "your", "i", "am"
+        ]
+        let keywords = p
+            .components(separatedBy: .alphanumerics.inverted)
+            .filter { $0.count > 2 && !stopWords.contains($0) }
+
+        if !keywords.isEmpty {
+            let overlap = keywords.filter { r.contains($0) }.count
+            if overlap == 0 && r.count > 160 {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    static func openELMSafeFallback(for prompt: String) -> String {
+        let p = normalized(prompt)
+        if p == "hi" || p == "hello" || p == "hey" || p == "how are you" || p == "how are you doing" {
+            return "Hi! I am doing well. How can I help you?"
+        }
+        return "I could not produce a reliable short answer on OpenELM for that prompt. Please switch to Qwen 3 1.7B, Qwen 3 4B, or LFM2.5 for better quality."
+    }
+
     static func isInstructionEcho(_ response: String, systemPrompt: String) -> Bool {
         let responseNormalized = normalized(response)
         let promptNormalized = normalized(systemPrompt)
@@ -157,6 +228,32 @@ enum AssistantResponseFallback {
         text
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+    }
+}
+
+enum OpenELMPromptTemplate {
+    static func render(prompt: String) -> String {
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return """
+        Answer the question directly and concisely.
+
+        Question: \(trimmedPrompt)
+        Answer:
+        """
+    }
+}
+
+enum LFMPromptTemplate {
+    static func render(systemPrompt: String, prompt: String) -> String {
+        let system = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let user = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        var parts: [String] = ["<|startoftext|>"]
+        if !system.isEmpty {
+            parts.append("<|im_start|>system\n\(system)<|im_end|>\n")
+        }
+        parts.append("<|im_start|>user\n\(user)<|im_end|>\n")
+        parts.append("<|im_start|>assistant\n")
+        return parts.joined()
     }
 }
 
@@ -311,6 +408,8 @@ enum InferenceBudget {
             return max(512, deviceContext)
         case .mlx:
             return max(4_096, catalogContext > 0 ? catalogContext : 8_192)
+        case .foundationModels:
+            return max(4_096, catalogContext > 0 ? catalogContext : 4_096)
         }
     }
 

@@ -504,4 +504,10 @@ actor LocalLlamaRuntime {
         let preparedPrompt = await ctx.preparePrompt(chat: chat, fallback: fallbackPrompt)
         return try await ctx.generateStream(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
     }
+
+    func unload() {
+        activeContext = nil
+        activeModelPath = nil
+        activeMaxGeneratedTokens = nil
+    }
 }

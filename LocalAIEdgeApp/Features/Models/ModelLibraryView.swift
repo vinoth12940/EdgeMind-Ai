@@ -10,8 +10,13 @@ struct ModelLibraryView: View {
     @State private var filterTools = false
     @State private var filterPhoneOnly = false
     @State private var filterMLX = false
+    @State private var showAllTiers = false
     @State private var modelToDelete: InstalledModel? = nil
     @State private var showDeleteConfirmation = false
+    @State private var pendingConsentItem: ModelCatalogItem?
+    @State private var pendingConsentRequiredGB: Double = 0
+    @State private var pendingConsentAvailableGB: Double = 0
+    @State private var showInstallConsent = false
 
     var body: some View {
         ZStack {
@@ -47,8 +52,11 @@ struct ModelLibraryView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("Models")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.appDisplay(18))
                     .foregroundStyle(AppTheme.textPrimary)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                TabSwitcherMenuButton()
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -67,6 +75,27 @@ struct ModelLibraryView: View {
                 Text("Remove \"\(model.catalogItem.displayName)\" (\(model.catalogItem.diskSize)) from this device? You can re-download it later.")
             }
         }
+        .alert("High Memory Risk", isPresented: $showInstallConsent) {
+            Button("Cancel", role: .cancel) {
+                pendingConsentItem = nil
+            }
+            Button("Proceed anyway", role: .destructive) {
+                guard let item = pendingConsentItem else { return }
+                ModelDownloadConsentStore.recordConsent(for: item)
+                pendingConsentItem = nil
+                if item.runtimeType == .foundationModels {
+                    startFoundationModelsInstall(for: item)
+                } else if item.runtimeType == .mlx {
+                    startMLXInstall(for: item)
+                } else {
+                    startInstall(for: item)
+                }
+            }
+        } message: {
+            if let item = pendingConsentItem {
+                Text("\"\(item.displayName)\" is estimated at ~\(String(format: "%.1f", pendingConsentRequiredGB)) GB resident memory, above this device budget of ~\(String(format: "%.1f", pendingConsentAvailableGB)) GB.")
+            }
+        }
     }
 
     private var installedModels: [InstalledModel] {
@@ -74,11 +103,18 @@ struct ModelLibraryView: View {
     }
 
     private var hasActiveQuery: Bool {
-        !searchText.isEmpty || filterVision || filterThinking || filterTools || filterPhoneOnly || filterMLX
+        !searchText.isEmpty || filterVision || filterThinking || filterTools || filterPhoneOnly || filterMLX || showAllTiers
+    }
+
+    private var tierFilteredCatalog: [ModelCatalogItem] {
+        let currentTier = DeviceTier.current()
+        return store.catalog.filter { item in
+            showAllTiers || item.minimumTier <= currentTier
+        }
     }
 
     private var filteredCatalog: [ModelCatalogItem] {
-        store.catalog.filter { item in
+        tierFilteredCatalog.filter { item in
             if !searchText.isEmpty {
                 let query = searchText.lowercased()
                 let matches = item.displayName.lowercased().contains(query) ||
@@ -100,20 +136,20 @@ struct ModelLibraryView: View {
     }
 
     private var featuredFamilies: [ModelCatalogItem.ModelFamily] {
-        let preferred: [ModelCatalogItem.ModelFamily] = [.gemma, .qwen, .lfm, .openELM]
-        let available = Set(store.catalog.map(\.family))
+        let preferred: [ModelCatalogItem.ModelFamily] = [.gemma, .granite, .qwen, .lfm]
+        let available = Set(tierFilteredCatalog.map(\.family))
         return preferred.filter { available.contains($0) }
     }
 
     private var latestReleaseModels: [ModelCatalogItem] {
-        store.catalog
+        tierFilteredCatalog
             .filter(\.isLatestRelease)
             .sorted(by: sortModels)
     }
 
     private var allFamilies: [ModelCatalogItem.ModelFamily] {
-        let preferred: [ModelCatalogItem.ModelFamily] = [.gemma, .qwen, .lfm, .openELM, .phi, .llama, .deepSeek, .mistral, .smolLM, .smolVLM, .stableLM, .tinyLlama, .kokoro]
-        let available = Set(store.catalog.map(\.family))
+        let preferred: [ModelCatalogItem.ModelFamily] = [.gemma, .granite, .qwen, .lfm, .openELM, .phi, .llama, .deepSeek, .mistral, .smolLM, .smolVLM, .stableLM, .tinyLlama, .kokoro]
+        let available = Set(tierFilteredCatalog.map(\.family))
         let ordered = preferred.filter { available.contains($0) }
         let remainder = available.subtracting(preferred).sorted { $0.rawValue < $1.rawValue }
         return ordered + remainder
@@ -156,11 +192,11 @@ struct ModelLibraryView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Model Studio")
-                        .font(.system(size: 30, weight: .heavy, design: .rounded))
+                        .font(.appDisplay(32))
                         .foregroundStyle(AppTheme.textPrimary)
 
                     Text("Curated local families, newest on-device releases, and honest runtime boundaries.")
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .font(.appBody(15))
                         .foregroundStyle(AppTheme.textSecondary)
                 }
 
@@ -181,11 +217,15 @@ struct ModelLibraryView: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(AppTheme.panel)
+                .fill(AppTheme.surfaceGradient)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(AppTheme.heroGradient.opacity(0.55))
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(Color.white.opacity(0.10), lineWidth: 0.7)
         )
     }
 
@@ -723,6 +763,7 @@ struct ModelLibraryView: View {
                 capToggle(label: "Tools", icon: "wrench.and.screwdriver.fill", isOn: $filterTools, color: AppTheme.capTools)
                 capToggle(label: "MLX", icon: "apple.logo", isOn: $filterMLX, color: .orange)
                 capToggle(label: "iPhone", icon: "iphone", isOn: $filterPhoneOnly, color: AppTheme.success)
+                capToggle(label: "All Tiers", icon: "exclamationmark.triangle", isOn: $showAllTiers, color: AppTheme.warning)
             }
             .padding(.vertical, 2)
         }
@@ -873,12 +914,9 @@ struct ModelLibraryView: View {
             installedModels: installedModels,
             activeDownloads: activeDownloads,
             mlxRuntimeAvailable: mlxRuntimeAvailable,
+            currentTier: DeviceTier.current(),
             onInstall: { item in
-                if item.runtimeType == .mlx {
-                    startMLXInstall(for: item)
-                } else {
-                    startInstall(for: item)
-                }
+                attemptInstall(for: item)
             },
             onUse: { modelID in
                 store.setDefaultModel(id: modelID)
@@ -895,13 +933,8 @@ struct ModelLibraryView: View {
             item: item,
             installed: installedModel(for: item),
             isDownloading: activeDownloads.contains(item.id),
-            onInstall: {
-                if item.runtimeType == .mlx {
-                    startMLXInstall(for: item)
-                } else {
-                    startInstall(for: item)
-                }
-            },
+            currentTier: DeviceTier.current(),
+            onInstall: { attemptInstall(for: item) },
             onUse: {
                 store.setDefaultModel(id: item.id)
             },
@@ -918,7 +951,7 @@ struct ModelLibraryView: View {
     }
 
     private func items(for family: ModelCatalogItem.ModelFamily) -> [ModelCatalogItem] {
-        store.catalog.filter { $0.family == family }.sorted(by: sortModels)
+        tierFilteredCatalog.filter { $0.family == family }.sorted(by: sortModels)
     }
 
     private func familyHighlight(for family: ModelCatalogItem.ModelFamily) -> ModelCatalogItem? {
@@ -957,10 +990,10 @@ struct ModelLibraryView: View {
     private func sectionHeader(title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 21, weight: .heavy, design: .rounded))
+                .font(.appDisplay(22))
                 .foregroundStyle(AppTheme.textPrimary)
             Text(subtitle)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.appBody(13))
                 .foregroundStyle(AppTheme.textSecondary)
         }
     }
@@ -983,9 +1016,20 @@ struct ModelLibraryView: View {
             return lhs.recommendedForIPhone && !rhs.recommendedForIPhone
         }
         if lhs.runtimeType != rhs.runtimeType {
-            return lhs.runtimeType == .mlx && rhs.runtimeType != .mlx
+            let rank: (ModelCatalogItem.RuntimeType) -> Int = {
+                switch $0 {
+                case .foundationModels: return 0
+                case .mlx: return 1
+                case .gguf: return 2
+                }
+            }
+            return rank(lhs.runtimeType) < rank(rhs.runtimeType)
         }
         return lhs.displayName < rhs.displayName
+    }
+
+    private func startFoundationModelsInstall(for item: ModelCatalogItem) {
+        store.markInstallCompleted(for: item, localPath: AppleFoundationModelService.localPathMarker)
     }
 
     private func startMLXInstall(for item: ModelCatalogItem) {
@@ -1060,7 +1104,11 @@ struct ModelLibraryView: View {
         guard let model else { return }
 
         Task {
-            if model.catalogItem.runtimeType == .mlx {
+            if model.catalogItem.runtimeType == .foundationModels {
+                await MainActor.run {
+                    store.removeInstalledModel(model.catalogItem)
+                }
+            } else if model.catalogItem.runtimeType == .mlx {
                 #if canImport(MLXLLM) && !targetEnvironment(simulator)
                 if let mlxModelID = model.catalogItem.mlxModelID {
                     await MLXRuntime.shared.removeModelCache(for: mlxModelID)
@@ -1083,6 +1131,32 @@ struct ModelLibraryView: View {
             }
         }
     }
+
+    private func attemptInstall(for item: ModelCatalogItem) {
+        if let consent = requiresInstallConsent(for: item) {
+            pendingConsentItem = item
+            pendingConsentRequiredGB = consent.required
+            pendingConsentAvailableGB = consent.available
+            showInstallConsent = true
+            return
+        }
+
+        if item.runtimeType == .foundationModels {
+            startFoundationModelsInstall(for: item)
+        } else if item.runtimeType == .mlx {
+            startMLXInstall(for: item)
+        } else {
+            startInstall(for: item)
+        }
+    }
+
+    private func requiresInstallConsent(for item: ModelCatalogItem) -> (required: Double, available: Double)? {
+        let tier = DeviceTier.current()
+        let required = item.estimatedResidentGB(contextTokens: tier.safeContextTokens)
+        guard required > tier.usableWeightGB else { return nil }
+        guard !ModelDownloadConsentStore.hasConsent(for: item) else { return nil }
+        return (required, tier.usableWeightGB)
+    }
 }
 
 private struct FamilyDetailView: View {
@@ -1091,6 +1165,7 @@ private struct FamilyDetailView: View {
     let installedModels: [InstalledModel]
     let activeDownloads: Set<UUID>
     let mlxRuntimeAvailable: Bool
+    let currentTier: DeviceTier
     let onInstall: (ModelCatalogItem) -> Void
     let onUse: (UUID) -> Void
     let onDeleteRequest: (InstalledModel?) -> Void
@@ -1132,6 +1207,7 @@ private struct FamilyDetailView: View {
                             item: item,
                             installed: installedModel(for: item),
                             isDownloading: activeDownloads.contains(item.id),
+                            currentTier: currentTier,
                             onInstall: { onInstall(item) },
                             onUse: { onUse(item.id) },
                             onDelete: { onDeleteRequest(installedModel(for: item)) }
@@ -1146,6 +1222,11 @@ private struct FamilyDetailView: View {
         .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle(family.rawValue)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                TabSwitcherMenuButton()
+            }
+        }
         .floatingDockHidden()
     }
 
@@ -1355,6 +1436,7 @@ private struct ModelTile: View {
     let item: ModelCatalogItem
     let installed: InstalledModel?
     let isDownloading: Bool
+    let currentTier: DeviceTier
     let onInstall: () -> Void
     let onUse: () -> Void
     let onDelete: () -> Void
@@ -1546,6 +1628,20 @@ private struct ModelTile: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(AppTheme.success.opacity(0.12))
+                .clipShape(Capsule())
+            }
+
+            if item.minimumTier > currentTier {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("Needs \(item.minimumTier.displayName)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(AppTheme.warning)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(AppTheme.warning.opacity(0.12))
                 .clipShape(Capsule())
             }
         }

@@ -15,6 +15,7 @@ struct ChatView: View {
     @State private var activeGenerationID: UUID?
     @State private var inferenceService: InferenceService = LocalLlamaInferenceService()
     @State private var mlxInferenceService: InferenceService = MLXInferenceService()
+    @State private var appleFoundationInferenceService: InferenceService = AppleFoundationInferenceService()
     @State private var showModelPicker = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var attachedImage: UIImage?
@@ -102,7 +103,19 @@ Rules:
             return "This model is running locally through llama.cpp. Text chat is supported on this runtime path."
         }
 
+        if model.catalogItem.runtimeType == .foundationModels {
+            return AppleFoundationModelService.availabilityMessage ?? "This model uses Apple's system Foundation Models runtime. The app does not download or own these weights."
+        }
+
         return nil
+    }
+
+    private func memoryGuardMessage(for model: InstalledModel) -> String? {
+        let tier = DeviceTier.current()
+        let estimatedGB = model.catalogItem.estimatedResidentGB(contextTokens: tier.safeContextTokens)
+        guard estimatedGB > tier.jetsamSoftLimitGB else { return nil }
+
+        return "\(model.catalogItem.displayName) is above the safe memory budget for this device tier (\(String(format: "%.1f", estimatedGB)) GB estimated vs \(String(format: "%.1f", tier.jetsamSoftLimitGB)) GB safe). Pick a smaller model to avoid an iOS memory kill."
     }
 
     private var lastAssistantResponseText: String? {
@@ -113,7 +126,14 @@ Rules:
     }
 
     private func inferenceServiceForModel(_ model: InstalledModel) -> InferenceService {
-        model.catalogItem.runtimeType == .mlx ? mlxInferenceService : inferenceService
+        switch model.catalogItem.runtimeType {
+        case .gguf:
+            return inferenceService
+        case .mlx:
+            return mlxInferenceService
+        case .foundationModels:
+            return appleFoundationInferenceService
+        }
     }
 
     var body: some View {
@@ -1083,6 +1103,11 @@ Rules:
             return
         }
 
+        if let memoryGuardMessage = memoryGuardMessage(for: model) {
+            store.appendMessage(ChatMessage(role: .assistant, text: memoryGuardMessage), to: sessionID)
+            return
+        }
+
         // Encode image at bounded size to avoid memory spikes during persistence/inference.
         let jpegData = encodedAttachmentData(from: currentImage)
 
@@ -1094,6 +1119,14 @@ Rules:
         isInputFocused = false
         prompt = ""
         attachedImage = nil
+
+        let raiDecision = ResponsibleAIGuard.evaluate(prompt: trimmedPrompt)
+        if raiDecision.isBlocked, let response = raiDecision.response {
+            chatLogger.log("RAI guard blocked prompt: \(raiDecision.reason ?? "unknown", privacy: .public)")
+            store.appendMessage(ChatMessage(role: .assistant, text: response), to: sessionID)
+            return
+        }
+
         isSending = true
 
         let taskID = UUID()
@@ -1101,6 +1134,8 @@ Rules:
 
         let task = Task {
             do {
+                await RuntimeMemoryCoordinator.prepareForRuntime(model.catalogItem.runtimeType)
+
                 let searchContext: SearchContext?
                 // Search flow:
                 // - liveSearchEnabled/useSearchByDefault arms web search for this turn
@@ -1177,19 +1212,22 @@ Rules:
                     if Task.isCancelled {
                         accumulated += "\n\n*(Response stopped by user)*"
                         stoppedByUser = true
-                        await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID, persist: true)
+                        updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID, persist: true)
                         break
                     }
 
                     switch event {
                     case .textDelta(let chunk):
                         accumulated += chunk
+                        if model.catalogItem.family == .openELM {
+                            break
+                        }
                         let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
                             || chunk.contains(where: \.isNewline)
                             || accumulated.count <= 48
                         if shouldFlush {
                             lastFlush = clock.now
-                            await updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
+                            updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
                         }
 
                     case .thinkingDelta(let chunk):
@@ -1297,7 +1335,7 @@ Rules:
                                     || accumulated.count <= 48
                                 if shouldFlush {
                                     lastFlush = clock.now
-                                    await updateStreamingMessage(accumulated, messageID: newMessageID, sessionID: sessionID)
+                                    updateStreamingMessage(accumulated, messageID: newMessageID, sessionID: sessionID)
                                 }
                             case .thinkingDelta(let chunk):
                                 thinkingAccumulated += chunk
@@ -1320,7 +1358,7 @@ Rules:
                             thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                             searchContext: agenticSearchContext
                         )
-                        await updateStreamingMessage(
+                        updateStreamingMessage(
                             finalText2,
                             messageID: newMessageID, sessionID: sessionID, persist: true
                         )
@@ -1393,7 +1431,7 @@ Rules:
                                 || accumulated.count <= 48
                             if shouldFlush {
                                 lastFlush = clock.now
-                                await updateStreamingMessage(accumulated, messageID: newMessageID, sessionID: sessionID)
+                                updateStreamingMessage(accumulated, messageID: newMessageID, sessionID: sessionID)
                             }
                         case .thinkingDelta(let chunk):
                             thinkingAccumulated += chunk
@@ -1416,7 +1454,7 @@ Rules:
                         thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                         searchContext: agenticSearchContext
                     )
-                    await updateStreamingMessage(
+                    updateStreamingMessage(
                         finalText2,
                         messageID: newMessageID, sessionID: sessionID, persist: true
                     )
@@ -1438,7 +1476,8 @@ Rules:
                 // retry once with an ultra-minimal system prompt and no history/search.
                 if !stoppedByUser,
                    model.catalogItem.family == .openELM,
-                   AssistantResponseFallback.isInstructionEchoMessage(finalText) {
+                   (AssistantResponseFallback.isInstructionEchoMessage(finalText)
+                        || AssistantResponseFallback.isLikelyOffTopicReply(finalText, prompt: trimmedPrompt)) {
                     chatLogger.log("OpenELM instruction-echo retry triggered.")
                     await MainActor.run { store.removeMessage(messageID, from: sessionID) }
 
@@ -1464,12 +1503,15 @@ Rules:
                         switch retryEvent {
                         case .textDelta(let chunk):
                             accumulated += chunk
+                            if model.catalogItem.family == .openELM {
+                                break
+                            }
                             let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
                                 || chunk.contains(where: \.isNewline)
                                 || accumulated.count <= 48
                             if shouldFlush {
                                 lastFlush = clock.now
-                                await updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
+                                updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
                             }
                         case .thinkingDelta(let chunk):
                             thinkingAccumulated += chunk
@@ -1482,7 +1524,14 @@ Rules:
                         prompt: trimmedPrompt,
                         thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
-                    await updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
+                    let stabilizedRetryText: String
+                    if AssistantResponseFallback.isInstructionEchoMessage(retryFinalText)
+                        || AssistantResponseFallback.isLikelyOffTopicReply(retryFinalText, prompt: trimmedPrompt) {
+                        stabilizedRetryText = AssistantResponseFallback.openELMSafeFallback(for: trimmedPrompt)
+                    } else {
+                        stabilizedRetryText = retryFinalText
+                    }
+                    updateStreamingMessage(stabilizedRetryText, messageID: retryMsgID, sessionID: sessionID, persist: true)
                     await MainActor.run { finishGenerationIfCurrent(taskID) }
                     return
                 }
@@ -1525,7 +1574,7 @@ Rules:
                                 || accumulated.count <= 48
                             if shouldFlush {
                                 lastFlush = clock.now
-                                await updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
+                                updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
                             }
                         case .thinkingDelta(let chunk):
                             thinkingAccumulated += chunk
@@ -1548,7 +1597,7 @@ Rules:
                         thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                         searchContext: searchContext
                     )
-                    await updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
+                    updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
                     await MainActor.run { finishGenerationIfCurrent(taskID) }
                     return
                 }
@@ -1597,7 +1646,7 @@ Rules:
                                     || accumulated.count <= 48
                                 if shouldFlush {
                                     lastFlush = clock.now
-                                    await updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
+                                    updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
                                 }
                             case .thinkingDelta(let chunk):
                                 thinkingAccumulated += chunk
@@ -1620,7 +1669,7 @@ Rules:
                             thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                             searchContext: searchContext
                         )
-                        await updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
+                        updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
                         await MainActor.run { finishGenerationIfCurrent(taskID) }
                         return
 
@@ -1668,7 +1717,7 @@ Rules:
                                         || accumulated.count <= 48
                                     if shouldFlush {
                                         lastFlush = clock.now
-                                        await updateStreamingMessage(accumulated, messageID: fbMessageID, sessionID: sessionID)
+                                        updateStreamingMessage(accumulated, messageID: fbMessageID, sessionID: sessionID)
                                     }
                                 case .thinkingDelta(let chunk):
                                     thinkingAccumulated += chunk
@@ -1691,7 +1740,7 @@ Rules:
                                 thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                                 searchContext: fallbackSearchContext
                             )
-                            await updateStreamingMessage(fbFinalText, messageID: fbMessageID, sessionID: sessionID, persist: true)
+                            updateStreamingMessage(fbFinalText, messageID: fbMessageID, sessionID: sessionID, persist: true)
                             await MainActor.run { finishGenerationIfCurrent(taskID) }
                             return
                         }
@@ -1705,7 +1754,7 @@ Rules:
                     searchContext: searchContext
                 )
 
-                await updateStreamingMessage(persistedFinalText, messageID: messageID, sessionID: sessionID, persist: true)
+                updateStreamingMessage(persistedFinalText, messageID: messageID, sessionID: sessionID, persist: true)
 
                 if !stoppedByUser,
                    store.settings.voiceModeEnabled,

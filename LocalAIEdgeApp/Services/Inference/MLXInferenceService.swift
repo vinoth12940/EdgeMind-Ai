@@ -26,6 +26,19 @@ actor MLXRuntime {
     private var activeContainer: ModelContainer?
     private var activeIsVision: Bool = false
 
+    private func isOpenELM(_ modelID: String) -> Bool {
+        modelID.lowercased().contains("openelm")
+    }
+
+    private func isLFM(_ modelID: String) -> Bool {
+        modelID.lowercased().contains("lfm2.5")
+    }
+
+    private func registerTokenizerCompatibility(for modelID: String) {
+        guard isLFM(modelID) else { return }
+        replacementTokenizers["TokenizersBackend"] = "PreTrainedTokenizer"
+    }
+
     private struct SamplingPreset {
         let temperature: Float
         let topP: Float
@@ -48,12 +61,24 @@ actor MLXRuntime {
     private func samplingPreset(for modelID: String) -> SamplingPreset {
         let normalized = modelID.lowercased()
         if normalized.contains("openelm") {
-            // OpenELM 270M drifts quickly with high-entropy sampling.
+            // Apple documents OpenELM generation as plain prompt completion with
+            // repetition_penalty=1.2. Avoid chat-template wrapping here.
             return SamplingPreset(
-                temperature: 0.2,
-                topP: 0.8,
-                repetitionPenalty: 1.12,
-                repetitionContextSize: 64
+                temperature: 0.0,
+                topP: 1.0,
+                repetitionPenalty: 1.2,
+                repetitionContextSize: 128
+            )
+        }
+        if normalized.contains("lfm2.5") {
+            // Liquid recommends low-temperature LFM2.5 generation for stable
+            // instruction following. The MLX conversions do not ship a chat
+            // template, so deterministic sampling helps the manual template.
+            return SamplingPreset(
+                temperature: 0.1,
+                topP: 0.9,
+                repetitionPenalty: 1.05,
+                repetitionContextSize: 128
             )
         }
         return SamplingPreset(
@@ -78,6 +103,7 @@ actor MLXRuntime {
             GPU.set(cacheLimit: (isVision ? 768 : 512) * 1024 * 1024)
             let hub = authenticatedHubApi()
             let configuration = ModelConfiguration(id: modelID)
+            registerTokenizerCompatibility(for: modelID)
 
             // Retry up to 2 times for transient failures (rate limits, network blips)
             var lastError: Error?
@@ -133,15 +159,22 @@ actor MLXRuntime {
         )
         // Never attach images to non-vision containers.
         let images = isVision ? Self.ciImages(from: imageData) : []
-        // Build proper multi-turn chat: optional system + history + current user message.
-        var chat: [Chat.Message] = []
-        if !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            chat.append(.system(systemPrompt))
+        let userInput: UserInput
+        if isOpenELM(modelID) {
+            userInput = UserInput(prompt: .text(OpenELMPromptTemplate.render(prompt: prompt)))
+        } else if isLFM(modelID) {
+            userInput = UserInput(prompt: .text(LFMPromptTemplate.render(systemPrompt: systemPrompt, prompt: prompt)))
+        } else {
+            // Build proper multi-turn chat: optional system + history + current user message.
+            var chat: [Chat.Message] = []
+            if !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                chat.append(.system(systemPrompt))
+            }
+            chat.append(contentsOf: chatHistory)
+            chat.append(.user(prompt, images: images))
+            // Let the VLM processor handle its own image sizing — don't force a resize
+            userInput = UserInput(chat: chat)
         }
-        chat.append(contentsOf: chatHistory)
-        chat.append(.user(prompt, images: images))
-        // Let the VLM processor handle its own image sizing — don't force a resize
-        let userInput = UserInput(chat: chat)
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
         }
@@ -189,15 +222,22 @@ actor MLXRuntime {
         )
         // Never attach images to non-vision containers.
         let images = isVision ? Self.ciImages(from: imageData) : []
-        // Build proper multi-turn chat: optional system + history + current user message.
-        var chat: [Chat.Message] = []
-        if !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            chat.append(.system(systemPrompt))
+        let userInput: UserInput
+        if isOpenELM(modelID) {
+            userInput = UserInput(prompt: .text(OpenELMPromptTemplate.render(prompt: prompt)))
+        } else if isLFM(modelID) {
+            userInput = UserInput(prompt: .text(LFMPromptTemplate.render(systemPrompt: systemPrompt, prompt: prompt)))
+        } else {
+            // Build proper multi-turn chat: optional system + history + current user message.
+            var chat: [Chat.Message] = []
+            if !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                chat.append(.system(systemPrompt))
+            }
+            chat.append(contentsOf: chatHistory)
+            chat.append(.user(prompt, images: images))
+            // Let the VLM processor handle its own image sizing — don't force a resize
+            userInput = UserInput(chat: chat)
         }
-        chat.append(contentsOf: chatHistory)
-        chat.append(.user(prompt, images: images))
-        // Let the VLM processor handle its own image sizing — don't force a resize
-        let userInput = UserInput(chat: chat)
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
         }
@@ -223,15 +263,15 @@ actor MLXRuntime {
         activeIsVision = false
     }
 
+    func unloadAndClearCache() {
+        unload()
+        GPU.clearCache()
+    }
+
     /// Delete the on-disk Hub snapshot cache for a downloaded MLX model.
     /// The cache lives at `<CachesDir>/huggingface/hub/models--<org>--<repo>/`.
     func removeModelCache(for modelID: String) {
-        guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
-        let dirName = "models--" + modelID.replacingOccurrences(of: "/", with: "--")
-        let cacheDir = base
-            .appending(path: "huggingface", directoryHint: .isDirectory)
-            .appending(path: "hub", directoryHint: .isDirectory)
-            .appending(path: dirName, directoryHint: .isDirectory)
+        guard let cacheDir = MLXModelCache.cacheDirectory(for: modelID) else { return }
         try? FileManager.default.removeItem(at: cacheDir)
         mlxLogger.log("MLX Hub cache removed for: \(modelID, privacy: .public)")
     }
@@ -242,6 +282,7 @@ actor MLXRuntime {
         mlxLogger.log("Downloading MLX model (no GPU load): \(modelID, privacy: .public)")
         let hub = authenticatedHubApi()
         let configuration = ModelConfiguration(id: modelID)
+        registerTokenizerCompatibility(for: modelID)
         // Use downloadModel() which only downloads files via hub.snapshot() —
         // does NOT load weights into GPU memory, avoiding OOM on 8GB devices.
         _ = try await downloadModel(hub: hub, configuration: configuration) { p in
@@ -279,6 +320,13 @@ struct MLXInferenceService: InferenceService {
     ) async throws -> ChatMessage {
         guard let mlxModelID = model.catalogItem.mlxModelID else {
             throw InferenceServiceError.missingLocalModelFile
+        }
+        if Self.isUnreliableOpenELM(model) {
+            return ChatMessage(
+                role: .assistant,
+                text: AssistantResponseFallback.unreliableOpenELM,
+                citations: []
+            )
         }
         if imageData != nil && model.catalogItem.supportsVision == false {
             throw InferenceServiceError.runtimeUnavailable(
@@ -337,6 +385,15 @@ struct MLXInferenceService: InferenceService {
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         guard let mlxModelID = model.catalogItem.mlxModelID else {
             throw InferenceServiceError.missingLocalModelFile
+        }
+        if Self.isUnreliableOpenELM(model) {
+            let messageID = UUID()
+            let stream = AsyncStream<StreamEvent> { continuation in
+                continuation.yield(.textDelta(AssistantResponseFallback.unreliableOpenELM))
+                continuation.yield(.done)
+                continuation.finish()
+            }
+            return (messageID: messageID, stream: stream)
         }
         if imageData != nil && model.catalogItem.supportsVision == false {
             throw InferenceServiceError.runtimeUnavailable(
@@ -399,9 +456,8 @@ struct MLXInferenceService: InferenceService {
     /// context window space with duplicate definitions.
     private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
         if model.catalogItem.family == .openELM {
-            // OpenELM 270M is extremely small; long instruction blocks often get echoed.
-            // Keep this prompt minimal and deterministic instead of appending user-configured text.
-            return "Answer the latest user message in one short sentence."
+            // OpenELM lane bypasses system-role injection entirely.
+            return ""
         }
         return base
     }
@@ -422,6 +478,9 @@ struct MLXInferenceService: InferenceService {
         if desc.lowercased().contains("unsupported model type") {
             return "This model architecture is not supported by the bundled MLX runtime. Use a supported catalog model such as Qwen 3 VL 4B for image prompts."
         }
+        if desc.contains("TokenizersBackend") {
+            return "This LFM model needs the tokenizer compatibility patch. Install the latest build and try the model again."
+        }
         // Network / timeout
         if nsError.domain == NSURLErrorDomain {
             return "Network error while loading model. Check your connection and try again."
@@ -440,10 +499,7 @@ struct MLXInferenceService: InferenceService {
         maxGeneratedTokens: Int
     ) -> String {
         if model.catalogItem.family == .openELM {
-            // Keep OpenELM prompt tiny to avoid instruction-echo behavior.
-            return searchContext == nil
-                ? systemPrompt
-                : "\(systemPrompt)\nUse provided web snippets only when present."
+            return ""
         }
         var result = "\(systemPrompt)\nYou are running locally on-device using MLX on Apple Silicon. Respond directly to the user's question. Do not hallucinate or fabricate information."
         if let searchContext {
@@ -566,9 +622,16 @@ struct MLXInferenceService: InferenceService {
 
     private func tunedMaxTokens(for model: InstalledModel, base: Int) -> Int {
         if model.catalogItem.family == .openELM {
-            return min(base, 96)
+            return min(base, 64)
+        }
+        if model.catalogItem.family == .lfm && model.catalogItem.parameterSize == "350M" {
+            return min(base, 512)
         }
         return base
+    }
+
+    private static func isUnreliableOpenELM(_ model: InstalledModel) -> Bool {
+        model.catalogItem.family == .openELM
     }
 
     private static func stripHTML(_ text: String) -> String {

@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var isReauthenticating = false
     @State private var hfTokenDraft = ""
     @State private var tokenDebounceTask: Task<Void, Never>?
+    @State private var showingPrivacyPolicy = false
 
     private var selectedVoiceAsset: InstalledModel? {
         store.installedModels.first(where: {
@@ -34,6 +35,7 @@ struct SettingsView: View {
                     webSearchSection
                     backendSection
                     aboutSection
+                    developerSection
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -44,14 +46,22 @@ struct SettingsView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("Settings")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.appDisplay(18))
                     .foregroundStyle(AppTheme.textPrimary)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                TabSwitcherMenuButton()
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
             // Initialize draft token value
             hfTokenDraft = store.settings.huggingFaceToken
+        }
+        .sheet(isPresented: $showingPrivacyPolicy) {
+            NavigationStack {
+                PrivacyExplainerView()
+            }
         }
     }
 
@@ -60,11 +70,11 @@ struct SettingsView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Control Center")
-                        .font(.system(size: 29, weight: .heavy, design: .rounded))
+                        .font(.appDisplay(31))
                         .foregroundStyle(AppTheme.textPrimary)
 
                     Text("Tune the device stack, search lane, and download credentials from one place.")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(.appBody(14))
                         .foregroundStyle(AppTheme.textSecondary)
                 }
 
@@ -105,11 +115,11 @@ struct SettingsView: View {
     private func statusPill(value: String, label: String) -> some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(.system(size: 14, weight: .heavy, design: .rounded))
+                .font(.appDisplay(15))
                 .foregroundStyle(AppTheme.textPrimary)
                 .lineLimit(1)
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.appCaps(10))
                 .foregroundStyle(AppTheme.textTertiary)
                 .textCase(.uppercase)
         }
@@ -126,12 +136,12 @@ struct SettingsView: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(color)
                 Text(title)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.appCaps(12))
                     .foregroundStyle(AppTheme.textSecondary)
             }
 
             Text(value)
-                .font(.system(size: 15, weight: .heavy, design: .rounded))
+                .font(.appDisplay(16))
                 .foregroundStyle(AppTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -248,7 +258,7 @@ struct SettingsView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.textSecondary)
 
-                Text("Required to download gated models (Phi-4, LFM, OpenELM). Get yours at huggingface.co/settings/tokens")
+                Text("Required to download gated Hugging Face models. Get yours at huggingface.co/settings/tokens")
                     .font(.system(size: 12))
                     .foregroundStyle(AppTheme.textTertiary)
 
@@ -298,6 +308,26 @@ struct SettingsView: View {
 
     private var privacySection: some View {
         settingsSection(icon: "lock.shield.fill", title: "Privacy", iconColor: AppTheme.success) {
+            Button {
+                showingPrivacyPolicy = true
+            } label: {
+                HStack {
+                    Label("Privacy Policy", systemImage: "doc.text.magnifyingglass")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Privacy Policy")
+
+            Divider().foregroundStyle(AppTheme.divider)
+
             settingsToggle(
                 "Local-first privacy mode",
                 isOn: Binding(
@@ -629,7 +659,7 @@ struct SettingsView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(AppTheme.textSecondary)
                 Spacer()
-                Text("1.0.0")
+                Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
                     .font(.system(size: 14, design: .monospaced))
                     .foregroundStyle(AppTheme.textTertiary)
             }
@@ -648,6 +678,30 @@ struct SettingsView: View {
         }
     }
 
+    private var developerSection: some View {
+        settingsSection(icon: "hammer.fill", title: "Developer", iconColor: AppTheme.warning) {
+            NavigationLink {
+                ModelDiagnosticsView()
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Model Diagnostics")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                        Text("Run on-device audit cases and inspect per-model verdicts.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     // MARK: - Helpers
 
     private func settingsSection<Content: View>(
@@ -658,13 +712,17 @@ struct SettingsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(iconColor)
-                    .frame(width: 22, height: 22)
+                ZStack {
+                    Circle()
+                        .fill(iconColor.opacity(0.16))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(iconColor)
+                }
 
                 Text(title)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.appDisplay(16))
                     .foregroundStyle(AppTheme.textPrimary)
             }
             .padding(.horizontal, 2)
@@ -673,13 +731,21 @@ struct SettingsView: View {
                 content()
             }
         }
-        .glassCard(cornerRadius: 18, padding: 16)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.surfaceGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.7)
+        )
     }
 
     private func settingsToggle(_ label: String, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
             Text(label)
-                .font(.system(size: 14))
+                .font(.appBody(14))
                 .foregroundStyle(AppTheme.textPrimary)
         }
         .tint(AppTheme.accent)

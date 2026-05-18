@@ -17,6 +17,34 @@ protocol ModelDownloadService {
     func removeInstall(for model: InstalledModel) async throws
 }
 
+enum ModelDownloadError: LocalizedError {
+    case exceedsDeviceBudget(required: Double, available: Double)
+
+    var errorDescription: String? {
+        switch self {
+        case .exceedsDeviceBudget(let required, let available):
+            return "This model needs about \(String(format: "%.1f", required)) GB. This device budget is about \(String(format: "%.1f", available)) GB."
+        }
+    }
+}
+
+enum ModelDownloadConsentStore {
+    private static let key = "mlx.downloadConsent"
+
+    static func hasConsent(for item: ModelCatalogItem) -> Bool {
+        guard let dictionary = UserDefaults.standard.dictionary(forKey: key) as? [String: Date] else {
+            return false
+        }
+        return dictionary[item.id.uuidString] != nil
+    }
+
+    static func recordConsent(for item: ModelCatalogItem) {
+        var dictionary = UserDefaults.standard.dictionary(forKey: key) as? [String: Date] ?? [:]
+        dictionary[item.id.uuidString] = Date()
+        UserDefaults.standard.set(dictionary, forKey: key)
+    }
+}
+
 enum ModelDownloadServiceError: LocalizedError {
     case missingDownloadURL
 
@@ -25,6 +53,35 @@ enum ModelDownloadServiceError: LocalizedError {
         case .missingDownloadURL:
             return "This model is missing a direct GGUF download URL."
         }
+    }
+}
+
+enum MLXModelCache {
+    static func cacheDirectory(for modelID: String) -> URL? {
+        guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+
+        let directoryName = "models--" + modelID.replacingOccurrences(of: "/", with: "--")
+        return base
+            .appending(path: "huggingface", directoryHint: .isDirectory)
+            .appending(path: "hub", directoryHint: .isDirectory)
+            .appending(path: directoryName, directoryHint: .isDirectory)
+    }
+
+    static func isDownloaded(_ modelID: String) -> Bool {
+        guard let cacheDirectory = cacheDirectory(for: modelID) else { return false }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cacheDirectory.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return false
+        }
+
+        let snapshotsDirectory = cacheDirectory.appending(path: "snapshots", directoryHint: .isDirectory)
+        var snapshotsIsDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: snapshotsDirectory.path, isDirectory: &snapshotsIsDirectory)
+            && snapshotsIsDirectory.boolValue
     }
 }
 
@@ -84,6 +141,8 @@ final class URLModelDownloadService: NSObject, ModelDownloadService {
         for model: ModelCatalogItem,
         onEvent: @escaping @Sendable (ModelDownloadEvent) -> Void
     ) async throws -> InstalledModel {
+        try guardBudget(for: model)
+
         guard let downloadURL = model.downloadURL else {
             throw ModelDownloadServiceError.missingDownloadURL
         }
@@ -137,6 +196,14 @@ final class URLModelDownloadService: NSObject, ModelDownloadService {
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private func guardBudget(for item: ModelCatalogItem) throws {
+        let tier = DeviceTier.current()
+        let required = item.estimatedResidentGB(contextTokens: tier.safeContextTokens)
+        guard required <= tier.usableWeightGB || ModelDownloadConsentStore.hasConsent(for: item) else {
+            throw ModelDownloadError.exceedsDeviceBudget(required: required, available: tier.usableWeightGB)
+        }
     }
 }
 
