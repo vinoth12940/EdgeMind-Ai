@@ -1,5 +1,6 @@
 import CoreImage
 import Foundation
+import ImageIO
 import OSLog
 import UIKit
 
@@ -163,6 +164,31 @@ actor MLXRuntime {
         return normalized.contains("lfm2.5") && !normalized.contains("-vl-")
     }
 
+    private func gpuCacheLimit(modelID: String, isVision: Bool) -> Int {
+        let tier = DeviceTier.current()
+        let normalized = modelID.lowercased()
+        let isLarge = normalized.contains("4b") || normalized.contains("8b") || normalized.contains("9b")
+        
+        switch tier {
+        case .compact:
+            return isVision ? 128 : 64
+        case .standard:
+            if isLarge {
+                return isVision ? 192 : 128
+            } else {
+                return isVision ? 384 : 256
+            }
+        case .pro:
+            if isLarge {
+                return isVision ? 256 : 192
+            } else {
+                return isVision ? 512 : 384
+            }
+        case .ultra:
+            return isVision ? 768 : 512
+        }
+    }
+
     private struct SamplingPreset {
         let temperature: Float
         let topP: Float
@@ -232,8 +258,9 @@ actor MLXRuntime {
             }
 
             mlxLogger.log("Loading MLX model: \(modelID, privacy: .public) (vision: \(isVision))")
-            // Vision models need more GPU cache for the SigLIP vision tower + image tensors
-            GPU.set(cacheLimit: (isVision ? 768 : 512) * 1024 * 1024)
+            let limitMB = gpuCacheLimit(modelID: modelID, isVision: isVision)
+            mlxLogger.log("Setting MLX GPU cache limit to \(limitMB) MB")
+            GPU.set(cacheLimit: limitMB * 1024 * 1024)
             let downloader = HuggingFaceDownloader(authenticatedHubClient())
             let tokenizerLoader = HuggingFaceTokenizerLoader()
             let configuration = ModelConfiguration(id: modelID)
@@ -326,15 +353,24 @@ actor MLXRuntime {
     /// Convert JPEG Data to CIImage array, handling edge cases robustly.
     private static func ciImages(from imageData: Data?) -> [UserInput.Image] {
         guard let imageData else { return [] }
-        // CIImage(data:) can fail on certain JPEG encodings — fall back to UIImage path
-        if let ciImage = CIImage(data: imageData) {
-            return [.ciImage(ciImage)]
+        return autoreleasepool {
+            // Downsample to max 512 to match our mediaProcessing target and minimize memory
+            let options = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 512
+            ] as CFDictionary
+
+            if let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
+               let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options) {
+                return [.ciImage(CIImage(cgImage: cgImage))]
+            }
+            // Fallback: decode via UIImage → CGImage → CIImage
+            if let uiImage = UIImage(data: imageData), let cgImage = uiImage.cgImage {
+                return [.ciImage(CIImage(cgImage: cgImage))]
+            }
+            return []
         }
-        // Fallback: decode via UIImage → CGImage → CIImage
-        if let uiImage = UIImage(data: imageData), let cgImage = uiImage.cgImage {
-            return [.ciImage(CIImage(cgImage: cgImage))]
-        }
-        return []
     }
 
     private static func mediaProcessing(isVision: Bool) -> UserInput.Processing {

@@ -149,6 +149,17 @@ final class StreamProcessorTests: XCTestCase {
         XCTAssertTrue(answerText.contains("final"))
     }
 
+    func test_gemmaChannelThinkFormat_withoutNewline_acceptsNativeCloseToken() async throws {
+        let events = await process(
+            tokens: ["<|channel>thought", "reasoning", "<channel|>", "final"],
+            activeThinkFormats: [.gemmaChannel]
+        )
+        let thinkText = events.compactMap { if case .thinkingDelta(let t) = $0 { return t } else { return nil } }.joined()
+        let answerText = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertEqual(thinkText, "reasoning")
+        XCTAssertTrue(answerText.contains("final"))
+    }
+
     func test_v2_stripsLeakTokensMidStream() async {
         let raw = mockStream(chunks: ["Hello<|im_", "end|> world"])
         let processor = StreamProcessor(

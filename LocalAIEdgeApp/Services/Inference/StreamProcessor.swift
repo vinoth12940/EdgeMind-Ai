@@ -25,7 +25,7 @@ actor StreamProcessor {
     ]
     fileprivate static let qwenNativeOpenTags = ["<|im_start|>think", "<|think|>"]
     fileprivate static let qwenNativeCloseTags = ["<|im_end|>", "<|/think|>"]
-    fileprivate static let gemmaChannelOpenTag = "<|channel>thought\n"
+    fileprivate static let gemmaChannelOpenTags = ["<|channel>thought\n", "<|channel>thought"]
     fileprivate static let gemmaChannelCloseTags = ["<|channel>", "<channel|>"]
 
     init(
@@ -422,7 +422,7 @@ private struct ParserState {
         }
 
         if activeThinkFormats.contains(.gemmaChannel),
-           let match = StreamProcessor.earliestMatch(in: text, candidates: [StreamProcessor.gemmaChannelOpenTag]) {
+           let match = StreamProcessor.earliestMatch(in: text, candidates: StreamProcessor.gemmaChannelOpenTags) {
             matches.append((match, .gemmaChannel))
         }
 

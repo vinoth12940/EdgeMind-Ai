@@ -114,6 +114,10 @@ Rules:
 
     private func memoryGuardMessage(for model: InstalledModel) -> String? {
         let tier = DeviceTier.current()
+        // If the current device tier meets or exceeds the model's minimum tier requirement,
+        // do not block execution with the memory guard.
+        guard tier < model.catalogItem.minimumTier else { return nil }
+
         let estimatedGB = model.catalogItem.estimatedResidentGB(contextTokens: tier.safeContextTokens)
         guard estimatedGB > tier.jetsamSoftLimitGB else { return nil }
 

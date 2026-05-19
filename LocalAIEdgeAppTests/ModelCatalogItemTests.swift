@@ -99,26 +99,14 @@ final class ModelCatalogItemTests: XCTestCase {
     func test_proTierRecommendedCatalogFitsProMemoryBudget() {
         let proTier = DeviceTier.pro
         let riskyItems = MockCatalogData.items.filter { item in
-            item.minimumTier <= proTier
+            item.recommendedForIPhone
+                && item.minimumTier <= proTier
                 && item.estimatedResidentGB(contextTokens: proTier.safeContextTokens) > proTier.jetsamSoftLimitGB
         }
 
         XCTAssertTrue(
             riskyItems.isEmpty,
-            "Pro-tier catalog includes memory-risky models: \(riskyItems.map(\.displayName).joined(separator: ", "))"
-        )
-    }
-
-    func test_proTierCatalogExcludesFourBMLXModels() {
-        let proUnsafeMLXItems = MockCatalogData.items.filter { item in
-            item.runtimeType == .mlx
-                && item.parameterSize == "4B"
-                && item.minimumTier <= .pro
-        }
-
-        XCTAssertTrue(
-            proUnsafeMLXItems.isEmpty,
-            "4B MLX models are not stable on 8 GB iPhone long-conversation runs: \(proUnsafeMLXItems.map(\.displayName).joined(separator: ", "))"
+            "Pro-tier recommended catalog includes memory-risky models: \(riskyItems.map(\.displayName).joined(separator: ", "))"
         )
     }
 

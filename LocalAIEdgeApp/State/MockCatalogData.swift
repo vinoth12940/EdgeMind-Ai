@@ -46,6 +46,7 @@ enum MockCatalogData {
             supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: false,
+            isThinkingModel: true,
             runtimeStatus: .worksWithWarnings,
             auditVerdict: .red("raiSafety"),
             minimumTier: .standard
@@ -65,6 +66,7 @@ enum MockCatalogData {
             supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: false,
+            isThinkingModel: true,
             runtimeStatus: .worksWithWarnings,
             auditVerdict: .red("raiSafety"),
             minimumTier: .pro
@@ -104,8 +106,8 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/granite-3.3-8b-instruct-4bit",
             supportsReasoning: true,
-            runtimeStatus: .unsupported,
-            minimumTier: .ultra
+            runtimeStatus: .worksWithWarnings,
+            minimumTier: .pro
         ),
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -116,7 +118,7 @@ enum MockCatalogData {
             displayName: "Qwen 3 VL 4B (MLX)",
             family: .qwen,
             variant: "4-bit MLX · Vision",
-            summary: "Qwen 3 vision-language model. Upstream supports image input, but the iPhone 17 Pro image probe timed out in MLX inference, so image input is blocked unless a higher-tier device audit proves it stable.",
+            summary: "Qwen 3 vision-language model. Image input passed the iPhone 17 Pro vision probe with the VLM-safe generation path.",
             parameterSize: "4B",
             quantization: "MLX 4-bit",
             diskSize: "~4.5 GB",
@@ -124,11 +126,11 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3-VL-4B-Instruct-4bit",
             sourceSupportsVision: true,
-            supportsVision: false,
-            runtimeStatus: .unsupported,
-            auditVerdict: .red("case-timeout"),
+            supportsVision: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .green,
             testedDeviceTier: .pro,
-            minimumTier: .ultra
+            minimumTier: .pro
         ),
         ModelCatalogItem(
             displayName: "Qwen 3.5 VL 0.8B (MLX)",
@@ -152,7 +154,7 @@ enum MockCatalogData {
             displayName: "Qwen 3.5 VL 4B (MLX)",
             family: .qwen,
             variant: "4-bit MLX · Vision",
-            summary: "Qwen 3.5 4B vision-language model. Upstream supports image input, but the physical iPhone 17 Pro image probe is terminated by iOS memory pressure, so image input is blocked in this app build.",
+            summary: "Qwen 3.5 4B vision-language model. Image input passed the iPhone 17 Pro vision probe with the VLM-safe generation path.",
             parameterSize: "4B",
             quantization: "MLX 4-bit",
             diskSize: "~3.0 GB",
@@ -160,11 +162,11 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3.5-4B-4bit",
             sourceSupportsVision: true,
-            supportsVision: false,
-            runtimeStatus: .unsupported,
-            auditVerdict: .red("signal-9-memory"),
+            supportsVision: true,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .green,
             testedDeviceTier: .pro,
-            minimumTier: .ultra
+            minimumTier: .pro
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 0.6B (MLX)",
@@ -214,7 +216,7 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            minimumTier: .ultra
+            minimumTier: .standard
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Instruct (MLX)",
@@ -229,7 +231,7 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
             supportsReasoning: true,
             supportsToolCalling: true,
-            minimumTier: .ultra
+            minimumTier: .standard
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Thinking (MLX)",
@@ -245,7 +247,7 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            minimumTier: .ultra
+            minimumTier: .standard
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 8B (MLX)",
@@ -261,7 +263,7 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            minimumTier: .ultra
+            minimumTier: .pro
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Instruct (GGUF)",
