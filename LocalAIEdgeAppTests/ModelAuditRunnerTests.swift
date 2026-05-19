@@ -112,6 +112,33 @@ final class ModelAuditRunnerTests: XCTestCase {
         XCTAssertEqual(result.note, "expected-text-missing")
     }
 
+    func test_auditCatalogSkipsRemainingCasesAfterFirstFailure() async {
+        let item = makeCatalogItem()
+        let runner = ModelAuditRunner(
+            inferenceFactory: { _ in ScriptedInferenceService(events: [.done]) },
+            downloader: MockAuditDownloader(),
+            store: AppStateStore(),
+            profileStore: RuntimeProfileStore(bundleLoader: { [] }, overrideLoader: { [] })
+        )
+
+        var startedCases: [String] = []
+        var skippedCases: [String] = []
+        for await progress in await runner.auditCatalog(items: [item], policy: .installIfMissing(diskHeadroomGB: 0)) {
+            switch progress {
+            case .caseStarted(_, let caseName):
+                startedCases.append(caseName)
+            case .caseResult(_, let caseName, _, _, let note) where note == "skipped-after-failure":
+                skippedCases.append(caseName)
+            default:
+                break
+            }
+        }
+
+        XCTAssertEqual(startedCases, ["shortFactual"])
+        XCTAssertFalse(skippedCases.isEmpty)
+        XCTAssertTrue(skippedCases.contains("longNarrative"))
+    }
+
     private func makeRunner(events: [StreamEvent]) -> ModelAuditRunner {
         makeRunner(service: ScriptedInferenceService(events: events))
     }

@@ -3,6 +3,9 @@ import OSLog
 import UIKit
 
 actor ModelAuditRunner {
+    private static let caseTimeoutNanoseconds: UInt64 = 120_000_000_000
+    private static let maxAuditOutputCharacters = 2_000
+
     private let inferenceFactory: (InstalledModel) -> any InferenceService
     private let downloader: AuditDownloader
     private let store: AppStateStore
@@ -136,7 +139,8 @@ actor ModelAuditRunner {
         }
 
         continuation.yield(.loading(modelName: item.displayName))
-        for auditCase in applicableCases {
+        var remainingCases = applicableCases[...]
+        while let auditCase = remainingCases.popFirst() {
             continuation.yield(.caseStarted(modelName: item.displayName, caseName: auditCase.id))
             let (pass, durationMs, note) = await runCase(auditCase, model: model, resolved: resolved)
             caseResults[auditCase.id] = pass
@@ -151,6 +155,21 @@ actor ModelAuditRunner {
                 note: note
             ))
             await RuntimeMemoryCoordinator.releaseAfterAudit(item.runtimeType)
+
+            guard pass else {
+                for skippedCase in remainingCases {
+                    caseResults[skippedCase.id] = false
+                    notes[skippedCase.id] = "skipped-after-failure"
+                    continuation.yield(.caseResult(
+                        modelName: item.displayName,
+                        caseName: skippedCase.id,
+                        pass: false,
+                        durationMs: 0,
+                        note: "skipped-after-failure"
+                    ))
+                }
+                break
+            }
         }
 
         let verdict: Verdict
@@ -188,6 +207,30 @@ actor ModelAuditRunner {
         resolved: ResolvedModel
     ) async -> (pass: Bool, durationMs: Int, note: String?) {
         let start = Date()
+        return await withTaskGroup(of: (pass: Bool, durationMs: Int, note: String?).self) { group in
+            group.addTask {
+                await self.runCaseBody(auditCase, model: model, resolved: resolved)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: Self.caseTimeoutNanoseconds)
+                let durationMs = Int(Date().timeIntervalSince(start) * 1000)
+                return (false, durationMs, "case-timeout")
+            }
+
+            guard let result = await group.next() else {
+                return (false, 0, "case-timeout")
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func runCaseBody(
+        _ auditCase: AuditCase,
+        model: InstalledModel,
+        resolved: ResolvedModel
+    ) async -> (pass: Bool, durationMs: Int, note: String?) {
+        let start = Date()
         let inference = inferenceFactory(model)
         let imageData = Self.imageData(named: auditCase.imageAssetName)
         let conversation = auditCase.id == "longConversation" ? Self.longConversationFixture() : []
@@ -207,10 +250,13 @@ actor ModelAuditRunner {
                 settings: .default
             )
 
-            for await event in stream {
+            eventLoop: for await event in stream {
                 switch event {
                 case .textDelta(let chunk):
                     text += chunk
+                    if Self.shouldStopEarly(auditCase: auditCase, text: text) {
+                        break eventLoop
+                    }
                 case .thinkingDelta:
                     thinkingSeen = true
                 case .thinkingDone:
@@ -230,6 +276,22 @@ actor ModelAuditRunner {
         let durationMs = Int(Date().timeIntervalSince(start) * 1000)
         let evaluation = evaluate(auditCase: auditCase, text: text, thinkingSeen: thinkingSeen, toolCallName: toolCallName, resolved: resolved)
         return (evaluation.pass, durationMs, evaluation.note)
+    }
+
+    private static func shouldStopEarly(auditCase: AuditCase, text: String) -> Bool {
+        let normalized = text.lowercased()
+        if !auditCase.expectations.containsAny.isEmpty,
+           auditCase.expectations.containsAny.contains(where: { normalized.contains($0.lowercased()) }) {
+            return true
+        }
+        if !auditCase.expectations.visionAnswerAcceptList.isEmpty,
+           auditCase.expectations.visionAnswerAcceptList.contains(where: { normalized.contains($0.lowercased()) }) {
+            return true
+        }
+        if auditCase.id == "leakStressor", normalized.contains("hello") {
+            return true
+        }
+        return text.count >= maxAuditOutputCharacters
     }
 
     private func evaluate(

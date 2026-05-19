@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum HeadlessModelAuditLauncher {
     private static let runArgument = "--localai-run-model-audit"
@@ -64,6 +65,7 @@ enum HeadlessModelAuditLauncher {
         }
 
         print("[MODEL_AUDIT] FINISHED")
+        exit(0)
     }
 }
 
