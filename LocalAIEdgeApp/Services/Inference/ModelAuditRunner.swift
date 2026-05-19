@@ -10,6 +10,7 @@ actor ModelAuditRunner {
     private let downloader: AuditDownloader
     private let store: AppStateStore
     private let profileStore: RuntimeProfileStore
+    private let auditCases: [AuditCase]
     private let reportRunID: String
     private let logger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "ModelAuditRunner")
 
@@ -17,12 +18,14 @@ actor ModelAuditRunner {
         inferenceFactory: @escaping (InstalledModel) -> any InferenceService,
         downloader: AuditDownloader,
         store: AppStateStore,
-        profileStore: RuntimeProfileStore
+        profileStore: RuntimeProfileStore,
+        auditCases: [AuditCase] = AuditCaseLibrary.standardCases
     ) {
         self.inferenceFactory = inferenceFactory
         self.downloader = downloader
         self.store = store
         self.profileStore = profileStore
+        self.auditCases = auditCases
         self.reportRunID = Self.nowIso()
     }
 
@@ -44,7 +47,7 @@ actor ModelAuditRunner {
         continuation: AsyncStream<AuditProgress>.Continuation
     ) async {
         let resolved = ModelRuntimeResolver.resolve(catalog: item, store: profileStore)
-        let applicableCases = AuditCaseLibrary.standardCases.filter { $0.appliesWhen(resolved) }
+        let applicableCases = auditCases.filter { $0.appliesWhen(resolved) }
         var caseResults: [String: Bool] = [:]
         var notes: [String: String] = [:]
 

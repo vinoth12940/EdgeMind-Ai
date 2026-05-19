@@ -178,34 +178,37 @@
     "verifiedThinking": null,
     "verifiedToolCalling": null,
     "verifiedVision": "none",
-    "verifiedInputModes": [],
+    "verifiedInputModes": ["text", "document"],
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
     "recommendedMaxTokens": 1024,
     "auditedAt": "2026-05-18T00:00:00Z",
-    "auditVerdict": { "kind": "red", "note": "unsupported-mlx-architecture" },
-    "lastAuditedDeviceTier": "pro"
+    "auditVerdict": { "kind": "red", "note": "mlx-swift-lm-qwen35-vlm-shape-crash" },
+    "lastAuditedDeviceTier": "pro",
+    "lastCrashSignal": 5
   },
   {
     "catalogID": "D9FB3D90-8705-5FED-9978-FFBCE6121CED",
     "verifiedThinking": null,
     "verifiedToolCalling": null,
     "verifiedVision": "none",
-    "verifiedInputModes": [],
+    "verifiedInputModes": ["text", "document"],
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
     "recommendedMaxTokens": 1024,
     "auditedAt": "2026-05-18T00:00:00Z",
-    "auditVerdict": { "kind": "red", "note": "unsupported-mlx-architecture" }
+    "auditVerdict": { "kind": "red", "note": "mlx-swift-lm-qwen35-vlm-shape-crash" },
+    "lastCrashSignal": 5
   },
   {
     "catalogID": "41A091D3-51AD-53C0-B65C-78D31B630A51",
     "verifiedThinking": null,
     "verifiedToolCalling": null,
     "verifiedVision": "none",
-    "verifiedInputModes": [],
+    "verifiedInputModes": ["text", "document"],
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|tool_call_start|>", "<|tool_call_end|>"],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-05-18T00:00:00Z",
-    "auditVerdict": { "kind": "red", "note": "unsupported-mlx-architecture" },
-    "lastAuditedDeviceTier": "pro"
+    "auditedAt": "2026-05-19T00:00:00Z",
+    "auditVerdict": { "kind": "red", "note": "mlx-swift-lm-lfm25-vlm-shape-crash" },
+    "lastAuditedDeviceTier": "pro",
+    "lastCrashSignal": 5
   }
 ]

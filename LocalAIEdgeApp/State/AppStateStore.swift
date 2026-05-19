@@ -474,12 +474,6 @@ final class AppStateStore {
             "mlx-community/gemma-3n-E4B-it-4bit",
             "mlx-community/gemma-3n-E2B-it-lm-4bit",
             "mlx-community/gemma-3n-E4B-it-lm-4bit",
-            "mlx-community/Qwen3.5-0.8B-MLX-4bit",
-            "mlx-community/Qwen3.5-2B-MLX-4bit",
-            "mlx-community/Qwen3.5-4B-MLX-4bit",
-            "mlx-community/Qwen3.5-9B-MLX-4bit",
-            "mlx-community/Qwen3.5-4B-4bit",
-            "mlx-community/LFM2.5-VL-1.6B-4bit",
             "mlx-community/OpenELM-270M-Instruct-4bit",
             "mlx-community/OpenELM-1_1B-Instruct-4bit"
         ]

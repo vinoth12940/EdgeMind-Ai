@@ -4,19 +4,147 @@ import OSLog
 import UIKit
 
 #if canImport(MLXLLM) && !targetEnvironment(simulator)
-import Hub
+import HuggingFace
 import MLX
 import MLXLLM
 import MLXLMCommon
 import MLXVLM
+import Tokenizers
 
 private let mlxLogger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "MLXRuntime")
 
-/// Builds an authenticated HubApi using the user's stored HF token (if any).
-private func authenticatedHubApi() -> HubApi {
+/// Builds an authenticated Hugging Face Hub client using the user's stored HF token (if any).
+private func authenticatedHubClient() -> HubClient {
     let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    let cache = base.map { HubCache(cacheDirectory: $0.appending(path: "huggingface")) } ?? HubCache.default
     let token = HFTokenManager.token
-    return HubApi(downloadBase: base, hfToken: token)
+    return HubClient(host: URL(string: "https://huggingface.co")!, bearerToken: token, cache: cache)
+}
+
+private enum HuggingFaceDownloaderError: LocalizedError {
+    case invalidRepositoryID(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidRepositoryID(let id):
+            return "Invalid Hugging Face repository ID: \(id)"
+        }
+    }
+}
+
+private let mlxSnapshotFilePatterns = [
+    "*.safetensors",
+    "*.json",
+    "*.jinja",
+    "*.model",
+    "*.txt",
+    "*.tiktoken"
+]
+
+private struct HuggingFaceDownloader: MLXLMCommon.Downloader {
+    private let upstream: HubClient
+
+    init(_ upstream: HubClient) {
+        self.upstream = upstream
+    }
+
+    func download(
+        id: String,
+        revision: String?,
+        matching patterns: [String],
+        useLatest: Bool,
+        progressHandler: @Sendable @escaping (Progress) -> Void
+    ) async throws -> URL {
+        guard let repoID = HuggingFace.Repo.ID(rawValue: id) else {
+            throw HuggingFaceDownloaderError.invalidRepositoryID(id)
+        }
+        var lastError: (any Error)?
+        for attempt in 1...3 {
+            do {
+                return try await upstream.downloadSnapshot(
+                    of: repoID,
+                    revision: revision ?? "main",
+                    matching: patterns,
+                    maxConcurrentDownloads: 1,
+                    progressHandler: { @MainActor progress in
+                        progressHandler(progress)
+                    }
+                )
+            } catch {
+                lastError = error
+                guard attempt < 3, Self.shouldRetry(error) else { throw error }
+                try await Task.sleep(for: .seconds(2 * attempt))
+            }
+        }
+        throw lastError ?? CancellationError()
+    }
+
+    private static func shouldRetry(_ error: any Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            switch URLError.Code(rawValue: nsError.code) {
+            case .networkConnectionLost, .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet:
+                return true
+            default:
+                break
+            }
+        }
+        let description = error.localizedDescription.lowercased()
+        return description.contains("network connection was lost")
+            || description.contains("timed out")
+            || description.contains("internet connection appears to be offline")
+    }
+}
+
+private struct HuggingFaceTokenizerBridge: MLXLMCommon.Tokenizer {
+    private let upstream: any Tokenizers.Tokenizer
+
+    init(_ upstream: any Tokenizers.Tokenizer) {
+        self.upstream = upstream
+    }
+
+    func encode(text: String, addSpecialTokens: Bool) -> [Int] {
+        upstream.encode(text: text, addSpecialTokens: addSpecialTokens)
+    }
+
+    func decode(tokenIds: [Int], skipSpecialTokens: Bool) -> String {
+        upstream.decode(tokens: tokenIds, skipSpecialTokens: skipSpecialTokens)
+    }
+
+    func convertTokenToId(_ token: String) -> Int? {
+        upstream.convertTokenToId(token)
+    }
+
+    func convertIdToToken(_ id: Int) -> String? {
+        upstream.convertIdToToken(id)
+    }
+
+    var bosToken: String? { upstream.bosToken }
+    var eosToken: String? { upstream.eosToken }
+    var unknownToken: String? { upstream.unknownToken }
+
+    func applyChatTemplate(
+        messages: [[String: any Sendable]],
+        tools: [[String: any Sendable]]?,
+        additionalContext: [String: any Sendable]?
+    ) throws -> [Int] {
+        do {
+            return try upstream.applyChatTemplate(
+                messages: messages,
+                tools: tools,
+                additionalContext: additionalContext
+            )
+        } catch Tokenizers.TokenizerError.missingChatTemplate {
+            throw MLXLMCommon.TokenizerError.missingChatTemplate
+        }
+    }
+}
+
+private struct HuggingFaceTokenizerLoader: MLXLMCommon.TokenizerLoader {
+    func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
+        let upstream = try await Tokenizers.AutoTokenizer.from(modelFolder: directory)
+        return HuggingFaceTokenizerBridge(upstream)
+    }
 }
 
 actor MLXRuntime {
@@ -30,13 +158,9 @@ actor MLXRuntime {
         modelID.lowercased().contains("openelm")
     }
 
-    private func isLFM(_ modelID: String) -> Bool {
-        modelID.lowercased().contains("lfm2.5")
-    }
-
-    private func registerTokenizerCompatibility(for modelID: String) {
-        guard isLFM(modelID) else { return }
-        replacementTokenizers["TokenizersBackend"] = "PreTrainedTokenizer"
+    private func isLFMText(_ modelID: String) -> Bool {
+        let normalized = modelID.lowercased()
+        return normalized.contains("lfm2.5") && !normalized.contains("-vl-")
     }
 
     private struct SamplingPreset {
@@ -101,20 +225,20 @@ actor MLXRuntime {
             mlxLogger.log("Loading MLX model: \(modelID, privacy: .public) (vision: \(isVision))")
             // Vision models need more GPU cache for the SigLIP vision tower + image tensors
             GPU.set(cacheLimit: (isVision ? 768 : 512) * 1024 * 1024)
-            let hub = authenticatedHubApi()
+            let downloader = HuggingFaceDownloader(authenticatedHubClient())
+            let tokenizerLoader = HuggingFaceTokenizerLoader()
             let configuration = ModelConfiguration(id: modelID)
-            registerTokenizerCompatibility(for: modelID)
 
             // Retry up to 2 times for transient failures (rate limits, network blips)
             var lastError: Error?
             for attempt in 1...3 {
                 do {
                     if isVision {
-                        activeContainer = try await VLMModelFactory.shared.loadContainer(hub: hub, configuration: configuration) { progress in
+                        activeContainer = try await VLMModelFactory.shared.loadContainer(from: downloader, using: tokenizerLoader, configuration: configuration) { progress in
                             mlxLogger.log("MLX VLM model load progress: \(progress.fractionCompleted)")
                         }
                     } else {
-                        activeContainer = try await LLMModelFactory.shared.loadContainer(hub: hub, configuration: configuration) { progress in
+                        activeContainer = try await LLMModelFactory.shared.loadContainer(from: downloader, using: tokenizerLoader, configuration: configuration) { progress in
                             mlxLogger.log("MLX LLM model load progress: \(progress.fractionCompleted)")
                         }
                     }
@@ -162,7 +286,7 @@ actor MLXRuntime {
         let userInput: UserInput
         if isOpenELM(modelID) {
             userInput = UserInput(prompt: .text(OpenELMPromptTemplate.render(prompt: prompt)))
-        } else if isLFM(modelID) {
+        } else if isLFMText(modelID) {
             userInput = UserInput(prompt: .text(LFMPromptTemplate.render(systemPrompt: systemPrompt, prompt: prompt)))
         } else {
             // Build proper multi-turn chat: optional system + history + current user message.
@@ -225,7 +349,7 @@ actor MLXRuntime {
         let userInput: UserInput
         if isOpenELM(modelID) {
             userInput = UserInput(prompt: .text(OpenELMPromptTemplate.render(prompt: prompt)))
-        } else if isLFM(modelID) {
+        } else if isLFMText(modelID) {
             userInput = UserInput(prompt: .text(LFMPromptTemplate.render(systemPrompt: systemPrompt, prompt: prompt)))
         } else {
             // Build proper multi-turn chat: optional system + history + current user message.
@@ -280,12 +404,11 @@ actor MLXRuntime {
     /// Downloads files to disk only — does NOT load weights into GPU memory.
     func preloadModel(_ modelID: String, isVision: Bool = false, progress: @escaping @Sendable (Double) -> Void) async throws {
         mlxLogger.log("Downloading MLX model (no GPU load): \(modelID, privacy: .public)")
-        let hub = authenticatedHubApi()
+        let downloader = HuggingFaceDownloader(authenticatedHubClient())
         let configuration = ModelConfiguration(id: modelID)
-        registerTokenizerCompatibility(for: modelID)
         // Use downloadModel() which only downloads files via hub.snapshot() —
         // does NOT load weights into GPU memory, avoiding OOM on 8GB devices.
-        _ = try await downloadModel(hub: hub, configuration: configuration) { p in
+        _ = try await downloader.download(id: modelID, revision: "main", matching: mlxSnapshotFilePatterns, useLatest: false) { p in
             let fraction = p.fractionCompleted
             mlxLogger.log("MLX download progress: \(fraction)")
             progress(fraction)
@@ -331,6 +454,11 @@ struct MLXInferenceService: InferenceService {
         if imageData != nil && model.catalogItem.supportsVision == false {
             throw InferenceServiceError.runtimeUnavailable(
                 "The selected model is text-only. Switch to a vision model (for example, Qwen 3 VL 4B) to analyze images."
+            )
+        }
+        if imageData == nil && Self.requiresImageAttachmentInCurrentRuntime(modelID: mlxModelID, model: model) {
+            throw InferenceServiceError.runtimeUnavailable(
+                "This Qwen 3.5 vision model currently requires an image attachment in the app runtime. For text-only chat, choose a text model such as Qwen 3 or LFM2.5 Instruct."
             )
         }
 
@@ -400,6 +528,11 @@ struct MLXInferenceService: InferenceService {
                 "The selected model is text-only. Switch to a vision model (for example, Qwen 3 VL 4B) to analyze images."
             )
         }
+        if imageData == nil && Self.requiresImageAttachmentInCurrentRuntime(modelID: mlxModelID, model: model) {
+            throw InferenceServiceError.runtimeUnavailable(
+                "This Qwen 3.5 vision model currently requires an image attachment in the app runtime. For text-only chat, choose a text model such as Qwen 3 or LFM2.5 Instruct."
+            )
+        }
 
         let isVision = await MLXRuntime.shared.shouldUseVisionFactory(
             modelID: mlxModelID,
@@ -460,6 +593,12 @@ struct MLXInferenceService: InferenceService {
             return ""
         }
         return base
+    }
+
+    private static func requiresImageAttachmentInCurrentRuntime(modelID: String, model: InstalledModel) -> Bool {
+        guard model.catalogItem.supportsVision else { return false }
+        let normalized = modelID.lowercased()
+        return normalized.contains("qwen3.5") || normalized.contains("qwen3_5")
     }
 
     /// Translate common MLX / Hub download errors into user-friendly messages.

@@ -40,6 +40,10 @@ enum HeadlessModelAuditLauncher {
             print("[MODEL_AUDIT] QUEUED \(item.displayName) runtime=\(item.runtimeType.rawValue) size=\(item.diskSize)")
         }
 
+        let auditCases = arguments.contains(visionOnlyArgument)
+            ? AuditCaseLibrary.standardCases.filter { $0.imageAssetName != nil }
+            : AuditCaseLibrary.standardCases
+
         let runner = ModelAuditRunner(
             inferenceFactory: { installed in
                 if installed.catalogItem.runtimeType == .foundationModels {
@@ -52,7 +56,8 @@ enum HeadlessModelAuditLauncher {
             },
             downloader: DefaultAuditDownloader(),
             store: store,
-            profileStore: RuntimeProfileStore()
+            profileStore: RuntimeProfileStore(),
+            auditCases: auditCases
         )
 
         var lastDownloadPercentByModel: [String: Int] = [:]
