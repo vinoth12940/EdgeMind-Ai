@@ -7,6 +7,7 @@ enum HeadlessModelAuditLauncher {
     private static let requireInstalledArgument = "--localai-audit-require-installed"
     private static let uninstallAfterArgument = "--localai-audit-uninstall-after"
     private static let visionOnlyArgument = "--localai-audit-vision-only"
+    private static let modelFilterArgument = "--localai-audit-model"
 
     @MainActor
     static func runIfRequested(store: AppStateStore) async {
@@ -33,6 +34,14 @@ enum HeadlessModelAuditLauncher {
         }
         if arguments.contains(visionOnlyArgument) {
             items = items.filter(\.supportsVision)
+        }
+        if let modelFilter = argumentValue(after: modelFilterArgument, in: arguments) {
+            let normalized = modelFilter.lowercased()
+            items = items.filter { item in
+                item.id.uuidString.lowercased() == normalized
+                    || item.displayName.lowercased().contains(normalized)
+                    || item.mlxModelID?.lowercased() == normalized
+            }
         }
 
         print("[MODEL_AUDIT] START tier=\(currentTier.displayName) models=\(items.count) policy=\(policy.logLabel) runtimes=\(includeAllRuntimes ? "all" : "mlx") visionOnly=\(arguments.contains(visionOnlyArgument))")
@@ -75,6 +84,14 @@ enum HeadlessModelAuditLauncher {
 
         print("[MODEL_AUDIT] FINISHED")
         exit(0)
+    }
+
+    private static func argumentValue(after flag: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: flag),
+              arguments.indices.contains(index + 1) else {
+            return nil
+        }
+        return arguments[index + 1]
     }
 }
 

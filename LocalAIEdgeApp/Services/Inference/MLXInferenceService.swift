@@ -182,7 +182,16 @@ actor MLXRuntime {
             || normalizedModelID.contains("-vl-")
     }
 
-    private func samplingPreset(for modelID: String) -> SamplingPreset {
+    private func samplingPreset(for modelID: String, isVision: Bool) -> SamplingPreset {
+        if isVision {
+            return SamplingPreset(
+                temperature: 0.1,
+                topP: 0.9,
+                repetitionPenalty: nil,
+                repetitionContextSize: 0
+            )
+        }
+
         let normalized = modelID.lowercased()
         if normalized.contains("openelm") {
             // Apple documents OpenELM generation as plain prompt completion with
@@ -273,7 +282,7 @@ actor MLXRuntime {
         }
         let container = try await ensureModel(modelID, isVision: isVision)
 
-        let sampling = samplingPreset(for: modelID)
+        let sampling = samplingPreset(for: modelID, isVision: isVision)
         let parameters = GenerateParameters(
             maxTokens: maxTokens,
             temperature: sampling.temperature,
@@ -336,7 +345,7 @@ actor MLXRuntime {
         }
         let container = try await ensureModel(modelID, isVision: isVision)
 
-        let sampling = samplingPreset(for: modelID)
+        let sampling = samplingPreset(for: modelID, isVision: isVision)
         let parameters = GenerateParameters(
             maxTokens: maxTokens,
             temperature: sampling.temperature,

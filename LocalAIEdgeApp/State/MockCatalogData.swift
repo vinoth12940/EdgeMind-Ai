@@ -132,7 +132,7 @@ enum MockCatalogData {
             displayName: "Qwen 3.5 VL 0.8B (MLX)",
             family: .qwen,
             variant: "4-bit MLX · Vision",
-            summary: "Compact Qwen 3.5 vision-language model. Upstream supports image input, but the current MLX Swift runtime hits a fatal shape error during image generation, so image input is blocked in this app build.",
+            summary: "Compact Qwen 3.5 vision-language model. Image input passed the iPhone 17 Pro vision probe with the VLM-safe generation path.",
             parameterSize: "0.8B",
             quantization: "MLX 4-bit",
             diskSize: "~1.0 GB",
@@ -140,9 +140,10 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3.5-0.8B-4bit",
             sourceSupportsVision: true,
-            supportsVision: false,
-            runtimeStatus: .unsupported,
-            auditVerdict: .red("mlx-swift-lm-qwen35-vlm-shape-crash"),
+            supportsVision: true,
+            runtimeStatus: .experimental,
+            auditVerdict: .green,
+            testedDeviceTier: .pro,
             minimumTier: .pro
         ),
         ModelCatalogItem(
@@ -303,7 +304,7 @@ enum MockCatalogData {
             displayName: "LFM2.5 VL 1.6B (MLX)",
             family: .lfm,
             variant: "4-bit MLX · Vision",
-            summary: "Liquid LFM2.5 vision-language model. Upstream supports image input, but the current MLX Swift runtime hits a fatal shape error during image generation, so image input is blocked in this app build.",
+            summary: "Liquid LFM2.5 vision-language model. Upstream supports image input, but it is blocked in this app build after a physical iPhone 17 Pro image probe was terminated by iOS memory pressure.",
             parameterSize: "1.6B",
             quantization: "MLX 4-bit",
             diskSize: "~1.5 GB",
@@ -313,7 +314,8 @@ enum MockCatalogData {
             sourceSupportsVision: true,
             supportsVision: false,
             runtimeStatus: .unsupported,
-            auditVerdict: .red("mlx-swift-lm-lfm25-vlm-shape-crash"),
+            auditVerdict: .red("signal-9-memory"),
+            testedDeviceTier: .pro,
             minimumTier: .pro
         ),
         ModelCatalogItem(
