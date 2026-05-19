@@ -6,6 +6,7 @@ enum HeadlessModelAuditLauncher {
     private static let allRuntimesArgument = "--localai-audit-all-runtimes"
     private static let requireInstalledArgument = "--localai-audit-require-installed"
     private static let uninstallAfterArgument = "--localai-audit-uninstall-after"
+    private static let visionOnlyArgument = "--localai-audit-vision-only"
 
     @MainActor
     static func runIfRequested(store: AppStateStore) async {
@@ -30,8 +31,11 @@ enum HeadlessModelAuditLauncher {
         if !includeAllRuntimes {
             items = items.filter { $0.runtimeType == .mlx }
         }
+        if arguments.contains(visionOnlyArgument) {
+            items = items.filter(\.supportsVision)
+        }
 
-        print("[MODEL_AUDIT] START tier=\(currentTier.displayName) models=\(items.count) policy=\(policy.logLabel) runtimes=\(includeAllRuntimes ? "all" : "mlx")")
+        print("[MODEL_AUDIT] START tier=\(currentTier.displayName) models=\(items.count) policy=\(policy.logLabel) runtimes=\(includeAllRuntimes ? "all" : "mlx") visionOnly=\(arguments.contains(visionOnlyArgument))")
         for item in items {
             print("[MODEL_AUDIT] QUEUED \(item.displayName) runtime=\(item.runtimeType.rawValue) size=\(item.diskSize)")
         }

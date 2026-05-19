@@ -32,22 +32,24 @@
   {
     "catalogID": "D28960C3-7F8A-51C1-BE61-BD08B57096FB",
     "verifiedThinking": "qwenNative",
-    "verifiedToolCalling": "xmlToolCall",
+    "verifiedToolCalling": null,
     "verifiedVision": "none",
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+    "auditedAt": "2026-05-18T00:00:00Z",
+    "auditVerdict": { "kind": "red", "note": "longConversation" },
+    "lastAuditedDeviceTier": "pro"
   },
   {
     "catalogID": "78937FD4-0A5A-5A3B-B1AE-79638B0289FE",
     "verifiedThinking": "qwenNative",
-    "verifiedToolCalling": "xmlToolCall",
+    "verifiedToolCalling": null,
     "verifiedVision": "none",
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "pending-audit" }
+    "auditedAt": "2026-05-18T00:00:00Z",
+    "auditVerdict": { "kind": "red", "note": "raiSafety" },
+    "lastAuditedDeviceTier": "pro"
   },
   {
     "catalogID": "E39D2813-FFAF-5456-B4E2-5ADC89A821D8",
@@ -152,54 +154,58 @@
   {
     "catalogID": "66BA9629-2F9C-5FB0-A30D-154AD7E017E5",
     "verifiedThinking": "xmlThink",
-    "verifiedToolCalling": "xmlToolCall",
+    "verifiedToolCalling": null,
     "verifiedVision": "none",
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|tool_call_start|>", "<|tool_call_end|>"],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "manual-lfm-chat-template" }
+    "auditedAt": "2026-05-18T00:00:00Z",
+    "auditVerdict": { "kind": "red", "note": "longConversation" },
+    "lastAuditedDeviceTier": "pro"
   },
   {
     "catalogID": "0E1B7E9D-3801-5762-AA65-41782FC9D8B3",
     "verifiedThinking": null,
-    "verifiedToolCalling": "xmlToolCall",
+    "verifiedToolCalling": null,
     "verifiedVision": "none",
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|tool_call_start|>", "<|tool_call_end|>"],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "manual-lfm-chat-template" }
+    "auditedAt": "2026-05-18T00:00:00Z",
+    "auditVerdict": { "kind": "red", "note": "toolProbe" },
+    "lastAuditedDeviceTier": "pro"
   },
   {
     "catalogID": "24909990-2689-505F-AFE9-EC84DEA3EA8A",
     "verifiedThinking": null,
     "verifiedToolCalling": null,
-    "verifiedVision": "imageAndText",
-    "verifiedInputModes": ["text", "image", "document"],
+    "verifiedVision": "none",
+    "verifiedInputModes": [],
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "pending-real-device-vision-audit" }
+    "auditedAt": "2026-05-18T00:00:00Z",
+    "auditVerdict": { "kind": "red", "note": "unsupported-mlx-architecture" },
+    "lastAuditedDeviceTier": "pro"
   },
   {
     "catalogID": "D9FB3D90-8705-5FED-9978-FFBCE6121CED",
     "verifiedThinking": null,
     "verifiedToolCalling": null,
-    "verifiedVision": "imageAndText",
-    "verifiedInputModes": ["text", "image", "document"],
+    "verifiedVision": "none",
+    "verifiedInputModes": [],
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|im_start|>"],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "ultra-only-pending-real-device-vision-audit" }
+    "auditedAt": "2026-05-18T00:00:00Z",
+    "auditVerdict": { "kind": "red", "note": "unsupported-mlx-architecture" }
   },
   {
     "catalogID": "41A091D3-51AD-53C0-B65C-78D31B630A51",
     "verifiedThinking": null,
     "verifiedToolCalling": null,
-    "verifiedVision": "imageAndText",
-    "verifiedInputModes": ["text", "image", "document"],
+    "verifiedVision": "none",
+    "verifiedInputModes": [],
     "knownLeakTokens": ["<|im_end|>", "<|endoftext|>", "<|startoftext|>", "<|im_start|>", "<|im_end|>", "<|tool_call_start|>", "<|tool_call_end|>"],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "",
-    "auditVerdict": { "kind": "yellow", "note": "pending-real-device-vision-audit" }
+    "auditedAt": "2026-05-18T00:00:00Z",
+    "auditVerdict": { "kind": "red", "note": "unsupported-mlx-architecture" },
+    "lastAuditedDeviceTier": "pro"
   }
 ]
