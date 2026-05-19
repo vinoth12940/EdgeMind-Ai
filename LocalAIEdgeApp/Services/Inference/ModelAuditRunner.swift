@@ -11,6 +11,7 @@ actor ModelAuditRunner {
     private let store: AppStateStore
     private let profileStore: RuntimeProfileStore
     private let auditCases: [AuditCase]
+    private let forceSourceVisionProbe: Bool
     private let reportRunID: String
     private let logger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "ModelAuditRunner")
 
@@ -19,13 +20,15 @@ actor ModelAuditRunner {
         downloader: AuditDownloader,
         store: AppStateStore,
         profileStore: RuntimeProfileStore,
-        auditCases: [AuditCase] = AuditCaseLibrary.standardCases
+        auditCases: [AuditCase] = AuditCaseLibrary.standardCases,
+        forceSourceVisionProbe: Bool = false
     ) {
         self.inferenceFactory = inferenceFactory
         self.downloader = downloader
         self.store = store
         self.profileStore = profileStore
         self.auditCases = auditCases
+        self.forceSourceVisionProbe = forceSourceVisionProbe
         self.reportRunID = Self.nowIso()
     }
 
@@ -46,18 +49,19 @@ actor ModelAuditRunner {
         policy: InstallPolicy,
         continuation: AsyncStream<AuditProgress>.Continuation
     ) async {
-        let resolved = ModelRuntimeResolver.resolve(catalog: item, store: profileStore)
+        let auditItem = catalogItemForAudit(item)
+        let resolved = resolvedModelForAudit(auditItem)
         let applicableCases = auditCases.filter { $0.appliesWhen(resolved) }
         var caseResults: [String: Bool] = [:]
         var notes: [String: String] = [:]
 
-        let existing = await downloader.installedModel(for: item, store: store)
+        let existing = await downloader.installedModel(for: auditItem, store: store)
         var model: InstalledModel
         var mustUninstall = false
 
         switch (existing, policy) {
         case (let installed?, _):
-            model = installed
+            model = installed.withCatalogItem(auditItem)
 
         case (nil, .requireInstalled):
             for auditCase in applicableCases {
@@ -114,12 +118,14 @@ actor ModelAuditRunner {
 
             continuation.yield(.downloading(modelName: item.displayName, fraction: 0))
             do {
-                model = try await downloader.preloadIfNeeded(item: item, store: store) { fraction in
+                model = try await downloader.preloadIfNeeded(item: auditItem, store: store) { fraction in
                     continuation.yield(.downloading(modelName: item.displayName, fraction: fraction))
                 }
-                let installedModel = model
-                await MainActor.run {
-                    store.upsertInstalledModel(installedModel)
+                if auditItem == item {
+                    let installedModel = model
+                    await MainActor.run {
+                        store.upsertInstalledModel(installedModel)
+                    }
                 }
             } catch {
                 let note = "download-failed: \(error.localizedDescription)"
@@ -197,11 +203,77 @@ actor ModelAuditRunner {
         if mustUninstall {
             continuation.yield(.uninstalling(modelName: item.displayName))
             try? await downloader.remove(model, store: store)
-            let catalogItem = model.catalogItem
-            await MainActor.run {
-                store.removeInstalledModel(catalogItem)
+            if auditItem == item {
+                let catalogItem = model.catalogItem
+                await MainActor.run {
+                    store.removeInstalledModel(catalogItem)
+                }
             }
         }
+    }
+
+    private func catalogItemForAudit(_ item: ModelCatalogItem) -> ModelCatalogItem {
+        guard forceSourceVisionProbe,
+              item.runtimeType == .mlx,
+              item.sourceSupportsVision,
+              !item.supportsVision
+        else {
+            return item
+        }
+
+        var inputModes = item.inputModes
+        if !inputModes.contains(.image) {
+            inputModes.append(.image)
+        }
+
+        return ModelCatalogItem(
+            id: item.id,
+            displayName: item.displayName,
+            family: item.family,
+            provider: item.provider,
+            variant: item.variant,
+            summary: item.summary,
+            parameterSize: item.parameterSize,
+            quantization: item.quantization,
+            diskSize: item.diskSize,
+            contextWindow: item.contextWindow,
+            downloadURL: item.downloadURL,
+            runtimeType: item.runtimeType,
+            mlxModelID: item.mlxModelID,
+            primaryUse: item.primaryUse,
+            sourceSupportsVision: item.sourceSupportsVision,
+            supportsVision: true,
+            supportsReasoning: item.supportsReasoning,
+            supportsToolCalling: item.supportsToolCalling,
+            isThinkingModel: item.isThinkingModel,
+            recommendedForIPhone: item.recommendedForIPhone,
+            runtimeStatus: item.runtimeStatus,
+            auditVerdict: item.auditVerdict,
+            testedDeviceTier: item.testedDeviceTier,
+            minimumTier: item.minimumTier,
+            inputModes: inputModes
+        )
+    }
+
+    private func resolvedModelForAudit(_ item: ModelCatalogItem) -> ResolvedModel {
+        let resolved = ModelRuntimeResolver.resolve(catalog: item, store: profileStore)
+        guard forceSourceVisionProbe,
+              item.runtimeType == .mlx,
+              item.sourceSupportsVision
+        else {
+            return resolved
+        }
+
+        return ResolvedModel(
+            catalog: item,
+            thinking: resolved.thinking,
+            tools: resolved.tools,
+            vision: .imageAndText,
+            leakTokens: resolved.leakTokens,
+            maxTokens: min(resolved.maxTokens, 128),
+            verdict: resolved.verdict,
+            isMismatch: true
+        )
     }
 
     private func runCase(
@@ -409,6 +481,21 @@ actor ModelAuditRunner {
                 )
             ]
         }
+    }
+}
+
+private extension InstalledModel {
+    func withCatalogItem(_ item: ModelCatalogItem) -> InstalledModel {
+        InstalledModel(
+            id: id,
+            catalogItem: item,
+            installState: installState,
+            progress: progress,
+            installedAt: installedAt,
+            localPath: localPath,
+            isDefault: isDefault,
+            statusMessage: statusMessage
+        )
     }
 }
 

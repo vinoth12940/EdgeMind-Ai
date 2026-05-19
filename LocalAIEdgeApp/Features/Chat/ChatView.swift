@@ -61,9 +61,9 @@ Rules:
 
     private var isVisionModel: Bool {
         guard let model = store.defaultModel else { return false }
-        // Prefer audited runtime profile when available, but allow catalog-declared
-        // vision support so newly added models don't get blocked by missing profiles.
-        return resolved(for: model).vision == .imageAndText || model.catalogItem.supportsVision
+        // Runtime profile is the gate here. Source/model-card vision claims are
+        // not enough to keep image attachments enabled after a red device audit.
+        return resolved(for: model).vision == .imageAndText
     }
 
     private var activeModel: InstalledModel? {

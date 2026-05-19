@@ -139,6 +139,30 @@ final class ModelAuditRunnerTests: XCTestCase {
         XCTAssertTrue(skippedCases.contains("longNarrative"))
     }
 
+    func test_sourceVisionProbeCanAuditDisabledSourceVisionModel() async {
+        let service = CapturingInferenceService(events: [.textDelta("Apple"), .done])
+        let item = makeCatalogItem(supportsVision: false, sourceSupportsVision: true)
+        let runner = ModelAuditRunner(
+            inferenceFactory: { _ in service },
+            downloader: MockAuditDownloader(),
+            store: AppStateStore(),
+            profileStore: RuntimeProfileStore(bundleLoader: { [] }, overrideLoader: { [] }),
+            auditCases: [requireCase("visionProbe")],
+            forceSourceVisionProbe: true
+        )
+
+        var verdict: Verdict?
+        for await progress in await runner.auditCatalog(items: [item], policy: .installIfMissing(diskHeadroomGB: 0)) {
+            if case .modelDone(let result) = progress {
+                verdict = result.verdict
+            }
+        }
+
+        XCTAssertEqual(verdict, .green)
+        let capturedSupportsVision = await service.lastModelSupportsVision
+        XCTAssertTrue(capturedSupportsVision)
+    }
+
     private func makeRunner(events: [StreamEvent]) -> ModelAuditRunner {
         makeRunner(service: ScriptedInferenceService(events: events))
     }
@@ -166,7 +190,7 @@ final class ModelAuditRunnerTests: XCTestCase {
         )
     }
 
-    private func makeCatalogItem(supportsVision: Bool = false) -> ModelCatalogItem {
+    private func makeCatalogItem(supportsVision: Bool = false, sourceSupportsVision: Bool? = nil) -> ModelCatalogItem {
         ModelCatalogItem(
             displayName: supportsVision ? "Vision Test" : "Test",
             family: .qwen,
@@ -178,6 +202,7 @@ final class ModelAuditRunnerTests: XCTestCase {
             contextWindow: "40K",
             runtimeType: .mlx,
             mlxModelID: "mlx-community/test-model",
+            sourceSupportsVision: sourceSupportsVision,
             supportsVision: supportsVision,
             supportsToolCalling: true,
             isThinkingModel: true,
@@ -251,6 +276,8 @@ private struct ScriptedInferenceService: InferenceService {
 private actor CapturingInferenceService: InferenceService {
     let events: [StreamEvent]
     private(set) var lastConversationCount = 0
+    private(set) var lastModelSupportsVision = false
+    private(set) var lastImageDataPresent = false
 
     init(events: [StreamEvent]) {
         self.events = events
@@ -278,6 +305,8 @@ private actor CapturingInferenceService: InferenceService {
         settings: AppSettings?
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         lastConversationCount = conversation.count
+        lastModelSupportsVision = model.catalogItem.supportsVision
+        lastImageDataPresent = imageData != nil
         let id = UUID()
         let events = self.events
         return (id, AsyncStream { continuation in

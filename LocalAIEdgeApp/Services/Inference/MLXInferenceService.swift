@@ -305,8 +305,7 @@ actor MLXRuntime {
             }
             chat.append(contentsOf: chatHistory)
             chat.append(.user(prompt, images: images))
-            // Let the VLM processor handle its own image sizing — don't force a resize
-            userInput = UserInput(chat: chat)
+            userInput = UserInput(chat: chat, processing: Self.mediaProcessing(isVision: isVision))
         }
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
@@ -336,6 +335,11 @@ actor MLXRuntime {
             return [.ciImage(CIImage(cgImage: cgImage))]
         }
         return []
+    }
+
+    private static func mediaProcessing(isVision: Bool) -> UserInput.Processing {
+        guard isVision else { return .init() }
+        return .init(resize: CGSize(width: 512, height: 512))
     }
 
     func generateStream(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false, chatHistory: [Chat.Message] = []) async throws -> AsyncStream<String> {
@@ -368,8 +372,7 @@ actor MLXRuntime {
             }
             chat.append(contentsOf: chatHistory)
             chat.append(.user(prompt, images: images))
-            // Let the VLM processor handle its own image sizing — don't force a resize
-            userInput = UserInput(chat: chat)
+            userInput = UserInput(chat: chat, processing: Self.mediaProcessing(isVision: isVision))
         }
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
@@ -460,24 +463,22 @@ struct MLXInferenceService: InferenceService {
                 citations: []
             )
         }
-        if imageData != nil && model.catalogItem.supportsVision == false {
-            throw InferenceServiceError.runtimeUnavailable(
-                "The selected model is text-only. Switch to a vision model (for example, Qwen 3 VL 4B) to analyze images."
-            )
-        }
-        if imageData == nil && Self.requiresImageAttachmentInCurrentRuntime(modelID: mlxModelID, model: model) {
-            throw InferenceServiceError.runtimeUnavailable(
-                "This Qwen 3.5 vision model currently requires an image attachment in the app runtime. For text-only chat, choose a text model such as Qwen 3 or LFM2.5 Instruct."
-            )
-        }
+        let runtimeProfile = RuntimeProfileStore().profile(for: model.catalogItem.id)
+            ?? .safeMinimum(catalogID: model.catalogItem.id)
+        try Self.validateImageInput(
+            imageData: imageData,
+            model: model,
+            modelID: mlxModelID,
+            runtimeProfile: runtimeProfile
+        )
 
         let isVision = await MLXRuntime.shared.shouldUseVisionFactory(
             modelID: mlxModelID,
-            supportsVision: model.catalogItem.supportsVision,
+            supportsVision: Self.allowsImageInput(model: model, runtimeProfile: runtimeProfile),
             imageData: imageData
         )
         let baseMaxTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
-        let maxGeneratedTokens = tunedMaxTokens(for: model, base: baseMaxTokens)
+        let maxGeneratedTokens = tunedMaxTokens(for: model, base: baseMaxTokens, isVision: isVision)
         let fullSystemPrompt = Self.buildSystemPrompt(
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             searchContext: searchContext,
@@ -532,24 +533,22 @@ struct MLXInferenceService: InferenceService {
             }
             return (messageID: messageID, stream: stream)
         }
-        if imageData != nil && model.catalogItem.supportsVision == false {
-            throw InferenceServiceError.runtimeUnavailable(
-                "The selected model is text-only. Switch to a vision model (for example, Qwen 3 VL 4B) to analyze images."
-            )
-        }
-        if imageData == nil && Self.requiresImageAttachmentInCurrentRuntime(modelID: mlxModelID, model: model) {
-            throw InferenceServiceError.runtimeUnavailable(
-                "This Qwen 3.5 vision model currently requires an image attachment in the app runtime. For text-only chat, choose a text model such as Qwen 3 or LFM2.5 Instruct."
-            )
-        }
+        let runtimeProfile = RuntimeProfileStore().profile(for: model.catalogItem.id)
+            ?? .safeMinimum(catalogID: model.catalogItem.id)
+        try Self.validateImageInput(
+            imageData: imageData,
+            model: model,
+            modelID: mlxModelID,
+            runtimeProfile: runtimeProfile
+        )
 
         let isVision = await MLXRuntime.shared.shouldUseVisionFactory(
             modelID: mlxModelID,
-            supportsVision: model.catalogItem.supportsVision,
+            supportsVision: Self.allowsImageInput(model: model, runtimeProfile: runtimeProfile),
             imageData: imageData
         )
         let baseMaxTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
-        let maxGeneratedTokens = tunedMaxTokens(for: model, base: baseMaxTokens)
+        let maxGeneratedTokens = tunedMaxTokens(for: model, base: baseMaxTokens, isVision: isVision)
         let fullSystemPrompt = Self.buildSystemPrompt(
             systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
             searchContext: searchContext,
@@ -574,8 +573,6 @@ struct MLXInferenceService: InferenceService {
                 isVision: isVision,
                 chatHistory: history
             )
-            let runtimeProfile = RuntimeProfileStore().profile(for: model.catalogItem.id)
-                ?? .safeMinimum(catalogID: model.catalogItem.id)
             let timeout = DeviceTier.current() == .compact ? 30.0 : (settings?.inferenceV2Timeout ?? AppSettings.default.inferenceV2Timeout)
             let activeThinkFormats = Set(runtimeProfile.verifiedThinking.map { [$0] } ?? [])
             let processor = StreamProcessor(
@@ -608,6 +605,36 @@ struct MLXInferenceService: InferenceService {
         guard model.catalogItem.supportsVision else { return false }
         let normalized = modelID.lowercased()
         return normalized.contains("qwen3.5") || normalized.contains("qwen3_5")
+    }
+
+    private static func allowsImageInput(model: InstalledModel, runtimeProfile: RuntimeProfile) -> Bool {
+        runtimeProfile.verifiedVision == .imageAndText
+            || (isSourceVisionAuditRun && model.catalogItem.supportsVision && model.catalogItem.sourceSupportsVision)
+    }
+
+    private static var isSourceVisionAuditRun: Bool {
+        let args = CommandLine.arguments
+        return args.contains("--localai-run-model-audit") && args.contains("--localai-audit-source-vision")
+    }
+
+    private static func validateImageInput(
+        imageData: Data?,
+        model: InstalledModel,
+        modelID: String,
+        runtimeProfile: RuntimeProfile
+    ) throws {
+        if imageData != nil && !Self.allowsImageInput(model: model, runtimeProfile: runtimeProfile) {
+            throw InferenceServiceError.runtimeUnavailable(
+                "Image input is not verified for this model in the app runtime. Run diagnostics or choose a green-audited MLX vision model."
+            )
+        }
+        if imageData == nil,
+           runtimeProfile.verifiedVision == .imageAndText,
+           Self.requiresImageAttachmentInCurrentRuntime(modelID: modelID, model: model) {
+            throw InferenceServiceError.runtimeUnavailable(
+                "This Qwen 3.5 vision model currently requires an image attachment in the app runtime. For text-only chat, choose a text model such as Qwen 3 or LFM2.5 Instruct."
+            )
+        }
     }
 
     /// Translate common MLX / Hub download errors into user-friendly messages.
@@ -768,7 +795,10 @@ struct MLXInferenceService: InferenceService {
         return turns
     }
 
-    private func tunedMaxTokens(for model: InstalledModel, base: Int) -> Int {
+    private func tunedMaxTokens(for model: InstalledModel, base: Int, isVision: Bool) -> Int {
+        if isVision {
+            return min(base, 128)
+        }
         if model.catalogItem.family == .openELM {
             return min(base, 64)
         }

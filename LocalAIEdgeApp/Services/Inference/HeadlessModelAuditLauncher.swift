@@ -7,6 +7,8 @@ enum HeadlessModelAuditLauncher {
     private static let requireInstalledArgument = "--localai-audit-require-installed"
     private static let uninstallAfterArgument = "--localai-audit-uninstall-after"
     private static let visionOnlyArgument = "--localai-audit-vision-only"
+    private static let sourceVisionProbeArgument = "--localai-audit-source-vision"
+    private static let ignoreTierArgument = "--localai-audit-ignore-tier"
     private static let modelFilterArgument = "--localai-audit-model"
 
     @MainActor
@@ -16,6 +18,8 @@ enum HeadlessModelAuditLauncher {
 
         let currentTier = DeviceTier.current()
         let includeAllRuntimes = arguments.contains(allRuntimesArgument)
+        let sourceVisionProbe = arguments.contains(sourceVisionProbeArgument)
+        let ignoreTier = arguments.contains(ignoreTierArgument)
         let policy: InstallPolicy
         if arguments.contains(requireInstalledArgument) {
             policy = .requireInstalled
@@ -27,13 +31,16 @@ enum HeadlessModelAuditLauncher {
 
         var items = store.catalog
             .filter { $0.primaryUse == .chat }
-            .filter { $0.minimumTier <= currentTier }
+
+        if !ignoreTier {
+            items = items.filter { $0.minimumTier <= currentTier }
+        }
 
         if !includeAllRuntimes {
             items = items.filter { $0.runtimeType == .mlx }
         }
         if arguments.contains(visionOnlyArgument) {
-            items = items.filter(\.supportsVision)
+            items = items.filter { sourceVisionProbe ? $0.sourceSupportsVision : $0.supportsVision }
         }
         if let modelFilter = argumentValue(after: modelFilterArgument, in: arguments) {
             let normalized = modelFilter.lowercased()
@@ -44,7 +51,7 @@ enum HeadlessModelAuditLauncher {
             }
         }
 
-        print("[MODEL_AUDIT] START tier=\(currentTier.displayName) models=\(items.count) policy=\(policy.logLabel) runtimes=\(includeAllRuntimes ? "all" : "mlx") visionOnly=\(arguments.contains(visionOnlyArgument))")
+        print("[MODEL_AUDIT] START tier=\(currentTier.displayName) models=\(items.count) policy=\(policy.logLabel) runtimes=\(includeAllRuntimes ? "all" : "mlx") visionOnly=\(arguments.contains(visionOnlyArgument)) sourceVisionProbe=\(sourceVisionProbe) ignoreTier=\(ignoreTier)")
         for item in items {
             print("[MODEL_AUDIT] QUEUED \(item.displayName) runtime=\(item.runtimeType.rawValue) size=\(item.diskSize)")
         }
@@ -66,7 +73,8 @@ enum HeadlessModelAuditLauncher {
             downloader: DefaultAuditDownloader(),
             store: store,
             profileStore: RuntimeProfileStore(),
-            auditCases: auditCases
+            auditCases: auditCases,
+            forceSourceVisionProbe: sourceVisionProbe
         )
 
         var lastDownloadPercentByModel: [String: Int] = [:]
