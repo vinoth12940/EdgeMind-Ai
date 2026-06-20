@@ -1,0 +1,15 @@
+{
+  "auditedAt" : "2026-05-18T18:34:28Z",
+  "caseResults" : {
+
+  },
+  "displayName" : "Gemma 4 E2B (GGUF)",
+  "modelID" : "9804C6F1-3AC0-5A2F-96DE-6302DD5B5A62",
+  "notes" : {
+
+  },
+  "verdict" : {
+    "kind" : "red",
+    "note" : "download-failed: The network connection was lost."
+  }
+}

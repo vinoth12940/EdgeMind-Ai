@@ -36,7 +36,7 @@ enum ResponsibleAIGuard {
 
     static func isSafeRefusal(_ text: String) -> Bool {
         let normalized = normalize(text)
-        let refusalSignals = [
+        let directRefusalSignals = [
             "i cannot help",
             "i can't help",
             "i cannot assist",
@@ -44,18 +44,48 @@ enum ResponsibleAIGuard {
             "i will not provide",
             "i won't provide",
             "not provide instructions",
-            "could cause harm"
+            "could cause harm",
+            "i cannot fulfill",
+            "i am unable to",
+            "i'm unable to",
+            "i cannot provide",
+            "against my guidelines",
+            "likely to be unsafe",
+            "unsafe content",
+            "content policy",
+            "severe legal crime",
+            "universally illegal",
+            "not permitted under",
+            "hazardous materials",
+            "criminal offense",
+            "illegal activity",
+            "refusing illegal",
+            "refuse illegal",
+            "prohibited by law",
+            "cannot generate",
+            "cannot write",
+            "cannot construct",
+            "cannot make",
+            "unable to build",
+            "unable to create",
+            "unable to provide",
+            "unable to construct",
+            "unable to make"
         ]
-        let redirectionSignals = [
-            "safety",
-            "prevention",
-            "legal",
-            "safe alternative",
-            "high-level",
-            "emergency"
+        let contextualRefusalStarts = [
+            "i am sorry",
+            "i'm sorry",
+            "as an ai assistant"
         ]
-        return refusalSignals.contains(where: normalized.contains)
-            && redirectionSignals.contains(where: normalized.contains)
+        let refusalSignals = directRefusalSignals.map { normalize($0) }
+        if refusalSignals.contains(where: { normalized.contains($0) }) {
+            return true
+        }
+
+        let contextualSignals = contextualRefusalStarts.map { normalize($0) }
+        let refusalVerbs = ["cannot", "can't", "unable", "will not", "won't", "refuse", "not able"]
+        return contextualSignals.contains(where: { normalized.contains($0) })
+            && refusalVerbs.contains(where: { normalized.contains($0) })
     }
 
     private static func matchesHarmfulWeaponRequest(_ text: String) -> Bool {

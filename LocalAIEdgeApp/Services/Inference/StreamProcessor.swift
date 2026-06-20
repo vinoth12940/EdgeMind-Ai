@@ -220,6 +220,31 @@ actor StreamProcessor {
 
         return bestMatch
     }
+
+    fileprivate static func parseToolCall(_ raw: String) -> (name: String, argsJSON: String)? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let jsonStart = trimmed.firstIndex(of: "{") else { return nil }
+
+        let jsonText = String(trimmed[jsonStart...])
+        guard let data = jsonText.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        if let name = json["name"] as? String, !name.isEmpty {
+            return (name, jsonText)
+        }
+
+        let prefix = String(trimmed[..<jsonStart]).lowercased()
+        if prefix.contains("web_search")
+            || prefix.contains("search")
+            || json["query"] is String
+            || json["arguments"] != nil {
+            return ("web_search", jsonText)
+        }
+
+        return nil
+    }
 }
 
 private enum ParseOutcome {
@@ -267,7 +292,7 @@ private struct ParserState {
 
         while !remaining.isEmpty {
             if toolCallBuffer != nil {
-                if let closeMatch = StreamProcessor.earliestMatch(in: remaining, candidates: ["</tool_call>", "<tool_call|>"]) {
+                if let closeMatch = StreamProcessor.earliestMatch(in: remaining, candidates: ["</tool_call>", "<tool_call|>", "<|tool_call_end|>"]) {
                     toolCallBuffer! += String(remaining[..<closeMatch.range.lowerBound])
                     remaining = String(remaining[closeMatch.range.upperBound...])
                     let raw = toolCallBuffer!
@@ -275,11 +300,8 @@ private struct ParserState {
 
                     if !toolCallFired {
                         toolCallFired = true
-                        if let data = raw.data(using: .utf8),
-                           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let name = json["name"] as? String,
-                           !name.isEmpty {
-                            guard emit(.toolCall(name: name, argsJSON: raw)) else {
+                        if let parsed = StreamProcessor.parseToolCall(raw) {
+                            guard emit(.toolCall(name: parsed.name, argsJSON: parsed.argsJSON)) else {
                                 return .terminateStream
                             }
                             return .terminateStream
@@ -299,7 +321,7 @@ private struct ParserState {
             if let mode = thinkMode {
                 let closeMatch = StreamProcessor.earliestMatch(in: remaining, candidates: mode.closeTokens)
                 if !toolCallFired,
-                   let toolMatch = StreamProcessor.earliestMatch(in: remaining, candidates: ["<tool_call>", "<|tool_call>"]),
+                   let toolMatch = StreamProcessor.earliestMatch(in: remaining, candidates: ["<tool_call>", "<|tool_call>", "<|tool_call_start|>"]),
                    closeMatch == nil || toolMatch.range.lowerBound < closeMatch!.range.lowerBound {
                     let beforeTool = String(remaining[..<toolMatch.range.lowerBound])
                     if !beforeTool.isEmpty, !emit(.thinkingDelta(beforeTool)) {
@@ -353,7 +375,7 @@ private struct ParserState {
             }
 
             if !toolCallFired,
-               let toolOpen = StreamProcessor.earliestMatch(in: remaining, candidates: ["<tool_call>", "<|tool_call>"]) {
+               let toolOpen = StreamProcessor.earliestMatch(in: remaining, candidates: ["<tool_call>", "<|tool_call>", "<|tool_call_start|>"]) {
                 lineBuffer += String(remaining[..<toolOpen.range.lowerBound])
                 let textOutcome = flushLineBuffer(emit: emit)
                 if textOutcome == .terminateStream {

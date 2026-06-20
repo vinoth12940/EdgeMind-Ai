@@ -1,0 +1,14 @@
+{
+  "auditedAt" : "2026-05-19T15:41:46Z",
+  "caseResults" : {
+    "visionProbe" : true
+  },
+  "displayName" : "Qwen 3.5 VL 0.8B (MLX)",
+  "modelID" : "24909990-2689-505F-AFE9-EC84DEA3EA8A",
+  "notes" : {
+
+  },
+  "verdict" : {
+    "kind" : "green"
+  }
+}

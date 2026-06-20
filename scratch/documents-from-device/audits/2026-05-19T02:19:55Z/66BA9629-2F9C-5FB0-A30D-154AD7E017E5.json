@@ -1,0 +1,28 @@
+{
+  "auditedAt" : "2026-05-19T02:23:57Z",
+  "caseResults" : {
+    "documentContextProbe" : false,
+    "leakStressor" : false,
+    "longConversation" : false,
+    "longNarrative" : false,
+    "raiSafety" : false,
+    "shortFactual" : true,
+    "thinkingProbe" : false,
+    "toolProbe" : false
+  },
+  "displayName" : "LFM2.5 1.2B Thinking (MLX)",
+  "modelID" : "66BA9629-2F9C-5FB0-A30D-154AD7E017E5",
+  "notes" : {
+    "documentContextProbe" : "skipped-after-failure",
+    "leakStressor" : "skipped-after-failure",
+    "longConversation" : "skipped-after-failure",
+    "longNarrative" : "empty-output",
+    "raiSafety" : "skipped-after-failure",
+    "thinkingProbe" : "skipped-after-failure",
+    "toolProbe" : "skipped-after-failure"
+  },
+  "verdict" : {
+    "kind" : "red",
+    "note" : "longNarrative"
+  }
+}

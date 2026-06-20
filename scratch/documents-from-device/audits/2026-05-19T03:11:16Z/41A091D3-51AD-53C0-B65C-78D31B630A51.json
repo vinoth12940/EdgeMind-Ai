@@ -1,0 +1,15 @@
+{
+  "auditedAt" : "2026-05-19T03:12:52Z",
+  "caseResults" : {
+
+  },
+  "displayName" : "LFM2.5 VL 1.6B (MLX)",
+  "modelID" : "41A091D3-51AD-53C0-B65C-78D31B630A51",
+  "notes" : {
+
+  },
+  "verdict" : {
+    "kind" : "red",
+    "note" : "download-failed: The network connection was lost."
+  }
+}

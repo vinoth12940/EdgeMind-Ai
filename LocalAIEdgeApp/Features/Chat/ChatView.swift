@@ -582,7 +582,7 @@ Rules:
                             headerChip(label: model.catalogItem.runtimeType.label, tone: model.catalogItem.runtimeType == .mlx ? .accent : .neutral)
                             headerChip(label: model.catalogItem.supportsVision ? "Vision" : "Text", tone: model.catalogItem.supportsVision ? .accent : .neutral)
 
-                            if model.catalogItem.supportsToolCalling {
+                            if resolved(for: model).tools != nil {
                                 headerChip(label: "Tools", tone: .warning)
                             }
                             if model.catalogItem.supportsReasoning || model.catalogItem.isThinkingModel {
@@ -1026,6 +1026,11 @@ Rules:
            let closeRange = text.range(of: "<tool_call|>", options: .caseInsensitive, range: openRange.upperBound..<text.endIndex) {
             return parseWebSearchQuery(String(text[openRange.upperBound..<closeRange.lowerBound]))
         }
+        // Try Liquid LFM 2.5 native <|tool_call_start|>...<|tool_call_end|>
+        if let openRange = text.range(of: "<|tool_call_start|>", options: .caseInsensitive),
+           let closeRange = text.range(of: "<|tool_call_end|>", options: .caseInsensitive, range: openRange.upperBound..<text.endIndex) {
+            return parseWebSearchQuery(String(text[openRange.upperBound..<closeRange.lowerBound]))
+        }
         return nil
     }
 
@@ -1051,6 +1056,18 @@ Rules:
         // Try flat query key
         if let q = json["query"] as? String, !q.isEmpty { return q }
         return nil
+    }
+
+    private func canUseToolLoop(model: InstalledModel, resolved: ResolvedModel, imageData: Data?) -> Bool {
+        guard model.catalogItem.supportsToolCalling, resolved.tools != nil else { return false }
+
+        // LFM2.5 VL's tool-calling path is text-only. Keep image prompts on
+        // the vision path instead of asking the same turn to emit tools.
+        if imageData != nil, model.catalogItem.family == .lfm {
+            return false
+        }
+
+        return true
     }
 
     private func cleanedDisplayedAssistantText(_ text: String) -> String {
@@ -1193,8 +1210,7 @@ Rules:
                 // Search results are passed into the model prompt; we only fall back
                 // to a grounded summary after generation if the model refuses or emits nothing usable.
                 let resolvedModel = resolved(for: model)
-                let toolsVerified = resolvedModel.tools != nil
-                let modelCanUseToolLoop = model.catalogItem.supportsToolCalling && toolsVerified
+                let modelCanUseToolLoop = canUseToolLoop(model: model, resolved: resolvedModel, imageData: jpegData)
                 let isOpenELM = model.catalogItem.family == .openELM
                 let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
                 // OpenELM lane: keep fully local/minimal prompt path for stability.

@@ -10,6 +10,7 @@ enum ThinkFormat: String, Codable, Hashable {
 enum ToolCallFormat: String, Codable {
     case xmlToolCall          // <tool_call>{...}</tool_call>
     case gemmaNativeToolCall  // <|tool_call>...<tool_call|>
+    case liquidToolCall       // <|tool_call_start|>...<|tool_call_end|>
 }
 
 enum VisionMode: String, Codable {

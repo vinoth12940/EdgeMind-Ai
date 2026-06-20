@@ -300,6 +300,28 @@ actor ModelAuditRunner {
         }
     }
 
+    private static let toolCallDefinition = """
+
+# Tools
+
+You have access to the following tool. Call it when you need current or real-time information (news, scores, weather, prices, recent events).
+
+## web_search
+Search the web for up-to-date information.
+Parameters: query (string) — the search query
+
+To call it, output ONLY this block (no other text before the closing tag):
+<tool_call>
+{"name": "web_search", "arguments": {"query": "your search query here"}}
+</tool_call>
+
+Rules:
+- Call it for anything requiring real-time, current, or recent information.
+- If a follow-up question asks for more detail about a topic you previously searched, call web_search AGAIN with a refined query.
+- Do NOT refuse to search. If in doubt, search.
+- Call it at most once per response.
+"""
+
     private func runCaseBody(
         _ auditCase: AuditCase,
         model: InstalledModel,
@@ -314,13 +336,18 @@ actor ModelAuditRunner {
         var thinkingSeen = false
         var toolCallName: String?
 
+        var systemPrompt = AppSettings.default.systemPrompt
+        if resolved.tools != nil {
+            systemPrompt += Self.toolCallDefinition
+        }
+
         do {
             let (_, stream) = try await inference.generateStream(
                 prompt: auditCase.prompt,
                 model: model,
                 conversation: conversation,
                 searchContext: nil,
-                systemPrompt: AppSettings.default.systemPrompt,
+                systemPrompt: systemPrompt,
                 imageData: imageData,
                 settings: .default
             )
@@ -342,6 +369,7 @@ actor ModelAuditRunner {
                     break
                 }
             }
+            print("[MODEL_AUDIT_OUTPUT] model=\"\(model.catalogItem.displayName)\" case=\"\(auditCase.id)\" text=\"\(text.replacingOccurrences(of: "\n", with: "\\n"))\"")
         } catch {
             let durationMs = Int(Date().timeIntervalSince(start) * 1000)
             logger.error("Audit case \(auditCase.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")

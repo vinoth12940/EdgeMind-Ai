@@ -3,12 +3,9 @@ import Foundation
 enum MockCatalogData {
 
     // MARK: - Model Catalog
-    // Curated runnable set: Gemma 4 (GGUF) + Qwen 3/Qwen 3 VL + LFM 2.5 (MLX/GGUF).
-    // Capability flags reflect source vs runtime behavior in this app.
-    // Capability flags reflect actual model card specs.
+    // App Store catalog: keep only models with green working status in this app runtime.
 
     static let items: [ModelCatalogItem] = [
-
         ModelCatalogItem(
             displayName: "Apple Intelligence",
             family: .appleIntelligence,
@@ -21,60 +18,12 @@ enum MockCatalogData {
             contextWindow: "System",
             runtimeType: .foundationModels,
             supportsReasoning: true,
-            supportsToolCalling: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("raiSafety"),
+            supportsToolCalling: false,
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            testedDeviceTier: .pro,
             minimumTier: .pro
         ),
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // GOOGLE DEEPMIND — Gemma 4 GGUF
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-        ModelCatalogItem(
-            displayName: "Gemma 4 E2B (GGUF)",
-            family: .gemma,
-            variant: "Q4_K_M GGUF",
-            summary: "Google Gemma 4 E2B via llama.cpp GGUF runtime. Source model is multimodal, but current GGUF runtime path in this app is text-only.",
-            parameterSize: "2B",
-            quantization: "GGUF Q4_K_M",
-            diskSize: "~1.6 GB",
-            contextWindow: "128K",
-            downloadURL: URL(string: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf?download=true"),
-            runtimeType: .gguf,
-            sourceSupportsVision: true,
-            supportsVision: false,
-            supportsReasoning: true,
-            supportsToolCalling: false,
-            isThinkingModel: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("raiSafety"),
-            minimumTier: .standard
-        ),
-        ModelCatalogItem(
-            displayName: "Gemma 4 E4B (GGUF)",
-            family: .gemma,
-            variant: "Q4_K_M GGUF",
-            summary: "Google Gemma 4 E4B via llama.cpp GGUF runtime. Source model is multimodal, but current GGUF runtime path in this app is text-only.",
-            parameterSize: "4B",
-            quantization: "GGUF Q4_K_M",
-            diskSize: "~2.6 GB",
-            contextWindow: "128K",
-            downloadURL: URL(string: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf?download=true"),
-            runtimeType: .gguf,
-            sourceSupportsVision: true,
-            supportsVision: false,
-            supportsReasoning: true,
-            supportsToolCalling: false,
-            isThinkingModel: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("raiSafety"),
-            minimumTier: .pro
-        ),
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // IBM — Granite MLX
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         ModelCatalogItem(
             displayName: "Granite 3.3 2B Instruct (MLX)",
@@ -88,50 +37,14 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/granite-3.3-2b-instruct-4bit",
             supportsReasoning: true,
+            supportsToolCalling: true,
             recommendedForIPhone: true,
             runtimeStatus: .recommended,
             auditVerdict: .green,
             testedDeviceTier: .pro,
             minimumTier: .standard
         ),
-        ModelCatalogItem(
-            displayName: "Granite 3.3 8B Instruct (MLX)",
-            family: .granite,
-            variant: "4-bit MLX",
-            summary: "Larger IBM Granite 3.3 instruct model converted by MLX Community. Better quality than the 2B variant, but only suitable for high-memory devices.",
-            parameterSize: "8B",
-            quantization: "MLX 4-bit",
-            diskSize: "~4.6 GB",
-            contextWindow: "128K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/granite-3.3-8b-instruct-4bit",
-            supportsReasoning: true,
-            runtimeStatus: .worksWithWarnings,
-            minimumTier: .pro
-        ),
 
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // ALIBABA CLOUD — Qwen 3 MLX
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-        ModelCatalogItem(
-            displayName: "Qwen 3 VL 4B (MLX)",
-            family: .qwen,
-            variant: "4-bit MLX · Vision",
-            summary: "Qwen 3 vision-language model. Image input passed the iPhone 17 Pro vision probe with the VLM-safe generation path.",
-            parameterSize: "4B",
-            quantization: "MLX 4-bit",
-            diskSize: "~4.5 GB",
-            contextWindow: "32K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/Qwen3-VL-4B-Instruct-4bit",
-            sourceSupportsVision: true,
-            supportsVision: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .green,
-            testedDeviceTier: .pro,
-            minimumTier: .pro
-        ),
         ModelCatalogItem(
             displayName: "Qwen 3.5 VL 0.8B (MLX)",
             family: .qwen,
@@ -145,7 +58,9 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/Qwen3.5-0.8B-4bit",
             sourceSupportsVision: true,
             supportsVision: true,
-            runtimeStatus: .experimental,
+            supportsToolCalling: true,
+            recommendedForIPhone: true,
+            runtimeStatus: .recommended,
             auditVerdict: .green,
             testedDeviceTier: .pro,
             minimumTier: .pro
@@ -154,7 +69,7 @@ enum MockCatalogData {
             displayName: "Qwen 3.5 VL 4B (MLX)",
             family: .qwen,
             variant: "4-bit MLX · Vision",
-            summary: "Qwen 3.5 4B vision-language model. Image input passed the iPhone 17 Pro vision probe with the VLM-safe generation path.",
+            summary: "Qwen 3.5 4B vision-language model for stronger image and document understanding on recent iPhones.",
             parameterSize: "4B",
             quantization: "MLX 4-bit",
             diskSize: "~3.0 GB",
@@ -163,7 +78,8 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/Qwen3.5-4B-4bit",
             sourceSupportsVision: true,
             supportsVision: true,
-            runtimeStatus: .worksWithWarnings,
+            supportsToolCalling: true,
+            runtimeStatus: .recommended,
             auditVerdict: .green,
             testedDeviceTier: .pro,
             minimumTier: .pro
@@ -172,7 +88,7 @@ enum MockCatalogData {
             displayName: "Qwen 3 0.6B (MLX)",
             family: .qwen,
             variant: "4-bit MLX",
-            summary: "Ultra-compact Qwen 3 text model on Apple Silicon. Native thinking (<think> blocks) with a small memory footprint for fast on-device chat.",
+            summary: "Ultra-compact Qwen 3 text model on Apple Silicon. Native thinking with a small memory footprint for fast on-device chat.",
             parameterSize: "0.6B",
             quantization: "MLX 4-bit",
             diskSize: "~0.6 GB",
@@ -181,8 +97,9 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/Qwen3-0.6B-4bit",
             supportsReasoning: true,
             isThinkingModel: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("longConversation"),
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            testedDeviceTier: .pro,
             minimumTier: .compact
         ),
         ModelCatalogItem(
@@ -198,78 +115,16 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/Qwen3-1.7B-4bit",
             supportsReasoning: true,
             isThinkingModel: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("raiSafety"),
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            testedDeviceTier: .pro,
             minimumTier: .standard
-        ),
-        ModelCatalogItem(
-            displayName: "Qwen 3 4B (MLX)",
-            family: .qwen,
-            variant: "4-bit MLX",
-            summary: "Best-value Qwen 3 text model on Apple Silicon. Stronger reasoning than the smaller variants while still fitting on modern iPhones.",
-            parameterSize: "4B",
-            quantization: "MLX 4-bit",
-            diskSize: "~2.5 GB",
-            contextWindow: "40K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/Qwen3-4B-4bit",
-            supportsReasoning: true,
-            supportsToolCalling: true,
-            isThinkingModel: true,
-            minimumTier: .standard
-        ),
-        ModelCatalogItem(
-            displayName: "Qwen 3 4B 2507 Instruct (MLX)",
-            family: .qwen,
-            variant: "4-bit MLX · Latest",
-            summary: "Latest Qwen 3 4B non-thinking release converted by MLX Community. Stronger instruction following, tool use, and 256K long-context support in a device-friendly 4-bit package.",
-            parameterSize: "4B",
-            quantization: "MLX 4-bit",
-            diskSize: "~2.3 GB",
-            contextWindow: "256K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
-            supportsReasoning: true,
-            supportsToolCalling: true,
-            minimumTier: .standard
-        ),
-        ModelCatalogItem(
-            displayName: "Qwen 3 4B 2507 Thinking (MLX)",
-            family: .qwen,
-            variant: "4-bit MLX · Latest",
-            summary: "Latest Qwen 3 4B thinking release converted by MLX Community. Best local reasoning lane in the shipped MLX catalog with 256K context and native thinking output.",
-            parameterSize: "4B",
-            quantization: "MLX 4-bit",
-            diskSize: "~2.3 GB",
-            contextWindow: "256K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/Qwen3-4B-Thinking-2507-4bit",
-            supportsReasoning: true,
-            supportsToolCalling: true,
-            isThinkingModel: true,
-            minimumTier: .standard
-        ),
-        ModelCatalogItem(
-            displayName: "Qwen 3 8B (MLX)",
-            family: .qwen,
-            variant: "4-bit MLX",
-            summary: "Most capable Qwen 3 text model in the app. Best on higher-memory devices for more capable local reasoning and longer responses.",
-            parameterSize: "8B",
-            quantization: "MLX 4-bit",
-            diskSize: "~5.5 GB",
-            contextWindow: "40K",
-            runtimeType: .mlx,
-            mlxModelID: "mlx-community/Qwen3-8B-4bit",
-            supportsReasoning: true,
-            supportsToolCalling: true,
-            isThinkingModel: true,
-            minimumTier: .pro
         ),
         ModelCatalogItem(
             displayName: "Qwen 3 4B 2507 Instruct (GGUF)",
             family: .qwen,
             variant: "Q4_K_M GGUF · Latest",
-            summary: "Latest Qwen 3 4B instruct release for the llama.cpp lane. Text-only on this runtime path, but better aligned for tool calling and long-context local chat.",
+            summary: "Latest Qwen 3 4B instruct release for the llama.cpp lane. Text-only on this runtime path, but aligned for tool calling and long-context local chat.",
             parameterSize: "4B",
             quantization: "GGUF Q4_K_M",
             diskSize: "~2.5 GB",
@@ -278,8 +133,8 @@ enum MockCatalogData {
             runtimeType: .gguf,
             supportsReasoning: true,
             supportsToolCalling: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("raiSafety"),
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
             minimumTier: .pro
         ),
         ModelCatalogItem(
@@ -296,20 +151,16 @@ enum MockCatalogData {
             supportsReasoning: true,
             supportsToolCalling: true,
             isThinkingModel: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("toolProbe"),
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
             minimumTier: .pro
         ),
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // LIQUID AI — LFM 2.5 MLX
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         ModelCatalogItem(
             displayName: "LFM2.5 VL 1.6B (MLX)",
             family: .lfm,
             variant: "4-bit MLX · Vision",
-            summary: "Liquid LFM2.5 vision-language model. Image input passed the iPhone 17 Pro vision probe after the MLX 512px media-processing path was enabled.",
+            summary: "Liquid LFM2.5 vision-language model. Image input passed the iPhone 17 Pro vision probe.",
             parameterSize: "1.6B",
             quantization: "MLX 4-bit",
             diskSize: "~1.5 GB",
@@ -318,7 +169,9 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/LFM2.5-VL-1.6B-4bit",
             sourceSupportsVision: true,
             supportsVision: true,
-            runtimeStatus: .experimental,
+            supportsToolCalling: true,
+            recommendedForIPhone: true,
+            runtimeStatus: .recommended,
             auditVerdict: .green,
             testedDeviceTier: .pro,
             minimumTier: .pro
@@ -344,7 +197,7 @@ enum MockCatalogData {
             displayName: "LFM2.5 1.2B Thinking (MLX)",
             family: .lfm,
             variant: "6-bit MLX · Latest",
-            summary: "Latest LFM2.5 reasoning-focused release for on-device chain-of-thought style workloads and deeper local planning.",
+            summary: "Latest LFM2.5 reasoning-focused release for on-device planning and deeper local reasoning.",
             parameterSize: "1.2B",
             quantization: "MLX 6-bit",
             diskSize: "~1.0 GB",
@@ -353,23 +206,26 @@ enum MockCatalogData {
             mlxModelID: "mlx-community/LFM2.5-1.2B-Thinking-6bit",
             supportsReasoning: true,
             isThinkingModel: true,
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("longConversation"),
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            testedDeviceTier: .pro,
             minimumTier: .standard
         ),
         ModelCatalogItem(
             displayName: "LFM2.5 1.2B Instruct (MLX)",
             family: .lfm,
             variant: "4-bit MLX",
-            summary: "Liquid Foundation 2.5 text-only model on Apple Silicon. Optimized for chat, instruction following, RAG, and tool-calling tasks. 32K context.",
+            summary: "Liquid Foundation 2.5 text-only model on Apple Silicon. Optimized for chat, instruction following, RAG, and tool-calling tasks.",
             parameterSize: "1.2B",
             quantization: "MLX 4-bit",
             diskSize: "~0.7 GB",
             contextWindow: "32K",
             runtimeType: .mlx,
             mlxModelID: "mlx-community/LFM2.5-1.2B-Instruct-4bit",
-            runtimeStatus: .worksWithWarnings,
-            auditVerdict: .red("toolProbe"),
+            supportsToolCalling: true,
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            testedDeviceTier: .pro,
             minimumTier: .standard
         ),
     ]

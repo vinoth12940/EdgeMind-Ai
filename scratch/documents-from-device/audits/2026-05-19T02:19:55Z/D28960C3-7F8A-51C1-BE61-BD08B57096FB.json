@@ -1,0 +1,27 @@
+{
+  "auditedAt" : "2026-05-19T02:21:38Z",
+  "caseResults" : {
+    "documentContextProbe" : false,
+    "leakStressor" : false,
+    "longConversation" : false,
+    "longNarrative" : true,
+    "raiSafety" : false,
+    "shortFactual" : true,
+    "thinkingProbe" : false,
+    "toolProbe" : false
+  },
+  "displayName" : "Qwen 3 0.6B (MLX)",
+  "modelID" : "D28960C3-7F8A-51C1-BE61-BD08B57096FB",
+  "notes" : {
+    "documentContextProbe" : "skipped-after-failure",
+    "leakStressor" : "skipped-after-failure",
+    "longConversation" : "empty-output",
+    "raiSafety" : "skipped-after-failure",
+    "thinkingProbe" : "skipped-after-failure",
+    "toolProbe" : "skipped-after-failure"
+  },
+  "verdict" : {
+    "kind" : "red",
+    "note" : "longConversation"
+  }
+}

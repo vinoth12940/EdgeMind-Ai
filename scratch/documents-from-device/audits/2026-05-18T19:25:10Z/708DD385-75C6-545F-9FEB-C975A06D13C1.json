@@ -1,0 +1,22 @@
+{
+  "auditedAt" : "2026-05-18T19:46:18Z",
+  "caseResults" : {
+    "leakStressor" : false,
+    "longConversation" : true,
+    "longNarrative" : true,
+    "raiSafety" : true,
+    "shortFactual" : true,
+    "thinkingProbe" : true,
+    "toolProbe" : false
+  },
+  "displayName" : "Qwen 3 4B 2507 Thinking (GGUF)",
+  "modelID" : "708DD385-75C6-545F-9FEB-C975A06D13C1",
+  "notes" : {
+    "leakStressor" : "empty-output",
+    "toolProbe" : "tool-call-missing"
+  },
+  "verdict" : {
+    "kind" : "red",
+    "note" : "toolProbe"
+  }
+}

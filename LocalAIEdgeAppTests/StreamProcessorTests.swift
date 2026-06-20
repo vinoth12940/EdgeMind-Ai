@@ -116,6 +116,37 @@ final class StreamProcessorTests: XCTestCase {
         XCTAssertTrue(text.contains("garbage"))
     }
 
+    func test_liquidToolCallFormat_emitted() async throws {
+        let json = #"{"name":"web_search","query":"boston weather"}"#
+        let events = await process(tokens: ["<|tool_call_start|>", json, "<|tool_call_end|>"])
+        XCTAssertTrue(events.contains {
+            if case .toolCall(let name, _) = $0 { return name == "web_search" }; return false
+        })
+        XCTAssertFalse(events.contains { if case .done = $0 { return true }; return false })
+    }
+
+    func test_liquidToolCallFormat_withToolNamePrefixAndQueryJSON_emitted() async throws {
+        let events = await process(tokens: [
+            "<|tool_call_start|>",
+            "web_search\n",
+            #"{"query":"tokyo weather now"}"#,
+            "<|tool_call_end|>"
+        ])
+        XCTAssertTrue(events.contains {
+            if case .toolCall(let name, let argsJSON) = $0 {
+                return name == "web_search" && argsJSON.contains("tokyo weather now")
+            }
+            return false
+        })
+    }
+
+    func test_liquidToolCallFormat_badJSON_flushedAsText() async throws {
+        let events = await process(tokens: ["<|tool_call_start|>", "invalid_json", "<|tool_call_end|>", "result"])
+        XCTAssertFalse(events.contains { if case .toolCall = $0 { return true }; return false })
+        let text = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertTrue(text.contains("invalid_json"))
+    }
+
     func test_qwenNativeThinkFormat_extractedWhenActive() async throws {
         let events = await process(
             tokens: ["<|im_start|>think", "reasoning", "<|im_end|>", "final"],

@@ -132,8 +132,7 @@ final class ModelCatalogItemTests: XCTestCase {
         XCTAssertEqual(
             graniteItems.compactMap(\.mlxModelID),
             [
-                "mlx-community/granite-3.3-2b-instruct-4bit",
-                "mlx-community/granite-3.3-8b-instruct-4bit"
+                "mlx-community/granite-3.3-2b-instruct-4bit"
             ]
         )
         XCTAssertTrue(graniteItems.allSatisfy { $0.runtimeType == .mlx })
@@ -149,6 +148,17 @@ final class ModelCatalogItemTests: XCTestCase {
         XCTAssertTrue(
             unsafeRecommended.isEmpty,
             "Recommended models must be green-audited: \(unsafeRecommended.map(\.displayName).joined(separator: ", "))"
+        )
+    }
+
+    func test_shippedCatalogContainsOnlyWorkingModels() {
+        let nonWorkingItems = MockCatalogData.items.filter { item in
+            item.auditVerdict != .green || item.runtimeStatus == .unsupported
+        }
+
+        XCTAssertTrue(
+            nonWorkingItems.isEmpty,
+            "Shipped catalog must not include broken or pending models: \(nonWorkingItems.map(\.displayName).joined(separator: ", "))"
         )
     }
 

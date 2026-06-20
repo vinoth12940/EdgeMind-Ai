@@ -39,7 +39,7 @@ struct AppleFoundationInferenceService: InferenceService {
         settings: AppSettings? = nil
     ) async throws -> ChatMessage {
         guard imageData == nil else {
-            throw InferenceServiceError.runtimeUnavailable("Apple's Foundation Models app API is text-only here. Use Qwen 3 VL for image understanding.")
+            throw InferenceServiceError.runtimeUnavailable("Apple's Foundation Models app API is text-only here. Use Qwen 3.5 VL or LFM2.5 VL for image understanding.")
         }
 
         let text = try await generateText(prompt: prompt, conversation: conversation, searchContext: searchContext, systemPrompt: systemPrompt)
@@ -56,7 +56,7 @@ struct AppleFoundationInferenceService: InferenceService {
         settings: AppSettings? = nil
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         guard imageData == nil else {
-            throw InferenceServiceError.runtimeUnavailable("Apple's Foundation Models app API is text-only here. Use Qwen 3 VL for image understanding.")
+            throw InferenceServiceError.runtimeUnavailable("Apple's Foundation Models app API is text-only here. Use Qwen 3.5 VL or LFM2.5 VL for image understanding.")
         }
 
         let messageID = UUID()

@@ -1475,9 +1475,9 @@ private struct FamilyDetailView: View {
         case .gemma:
             return "A grounded family for device-first chat. In this app, Gemma 4 currently rides the llama.cpp GGUF lane for dependable local text generation."
         case .qwen:
-            return "Reasoning-oriented text models with a fast MLX path. This build intentionally surfaces supported Qwen 3 variants instead of unsupported 3.5 entries."
+            return "Qwen models cover local reasoning, tool use, and MLX vision-language turns. Larger vision variants are memory-sensitive on iPhone, so the app uses a conservative generation path."
         case .lfm:
-            return "Liquid AI variants focused on small-footprint local execution. The current catalog favors text models that match the shipped runtime support."
+            return "Liquid AI variants focused on small-footprint local execution, including LFM2.5 text, thinking, tool-use, and vision-language models."
         case .openELM:
             return "Apple's research family and the most natural place to anchor a future system-model route, while today's app remains centered on downloadable local models."
         case .kokoro:

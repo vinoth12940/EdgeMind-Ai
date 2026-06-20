@@ -1,0 +1,27 @@
+{
+  "auditedAt" : "2026-05-19T02:11:32Z",
+  "caseResults" : {
+    "documentContextProbe" : false,
+    "leakStressor" : false,
+    "longConversation" : false,
+    "longNarrative" : false,
+    "raiSafety" : false,
+    "shortFactual" : false,
+    "visionProbe" : false
+  },
+  "displayName" : "LFM2.5 VL 1.6B (MLX)",
+  "modelID" : "41A091D3-51AD-53C0-B65C-78D31B630A51",
+  "notes" : {
+    "documentContextProbe" : "not-installed",
+    "leakStressor" : "not-installed",
+    "longConversation" : "not-installed",
+    "longNarrative" : "not-installed",
+    "raiSafety" : "not-installed",
+    "shortFactual" : "not-installed",
+    "visionProbe" : "not-installed"
+  },
+  "verdict" : {
+    "kind" : "yellow",
+    "note" : "not-installed"
+  }
+}

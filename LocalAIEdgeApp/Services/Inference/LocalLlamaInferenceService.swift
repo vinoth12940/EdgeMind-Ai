@@ -16,7 +16,7 @@ struct LocalLlamaInferenceService: InferenceService {
         // GGUF runtime does not support vision — warn if user attached an image
         if imageData != nil {
             throw InferenceServiceError.runtimeUnavailable(
-                "The llama.cpp runtime does not support image input. Switch to an MLX vision model (e.g. Gemma 3n E2B MLX) for image understanding."
+                "The llama.cpp runtime does not support image input. Switch to an MLX vision model such as Qwen 3.5 VL or LFM2.5 VL for image understanding."
             )
         }
         guard let modelPath = model.localPath else {

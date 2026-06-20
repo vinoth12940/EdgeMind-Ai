@@ -168,24 +168,24 @@ actor MLXRuntime {
         let tier = DeviceTier.current()
         let normalized = modelID.lowercased()
         let isLarge = normalized.contains("4b") || normalized.contains("8b") || normalized.contains("9b")
-        
+
         switch tier {
         case .compact:
-            return isVision ? 128 : 64
+            return isVision ? 128 : 128
         case .standard:
             if isLarge {
-                return isVision ? 192 : 128
+                return isVision ? 192 : 256
             } else {
-                return isVision ? 384 : 256
+                return isVision ? 256 : 384
             }
         case .pro:
             if isLarge {
-                return isVision ? 256 : 192
+                return isVision ? 256 : 512
             } else {
-                return isVision ? 512 : 384
+                return isVision ? 384 : 768
             }
         case .ultra:
-            return isVision ? 768 : 512
+            return isVision ? 512 : 1024
         }
     }
 
@@ -318,7 +318,8 @@ actor MLXRuntime {
             repetitionContextSize: sampling.repetitionContextSize
         )
         // Never attach images to non-vision containers.
-        let images = isVision ? Self.ciImages(from: imageData) : []
+        let visionMaxPixelSize = Self.visionMaxPixelSize(modelID: modelID, isVision: isVision)
+        let images = isVision ? Self.ciImages(from: imageData, maxPixelSize: visionMaxPixelSize) : []
         let userInput: UserInput
         if isOpenELM(modelID) {
             userInput = UserInput(prompt: .text(OpenELMPromptTemplate.render(prompt: prompt)))
@@ -332,7 +333,7 @@ actor MLXRuntime {
             }
             chat.append(contentsOf: chatHistory)
             chat.append(.user(prompt, images: images))
-            userInput = UserInput(chat: chat, processing: Self.mediaProcessing(isVision: isVision))
+            userInput = UserInput(chat: chat, processing: Self.mediaProcessing(isVision: isVision, maxPixelSize: visionMaxPixelSize))
         }
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
@@ -344,6 +345,9 @@ actor MLXRuntime {
             ) { _ in .more }
             return result
         }
+        if isVision {
+            GPU.clearCache()
+        }
 
         let finalText = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         mlxLogger.log("MLX generation complete: generated \(finalText.count) chars")
@@ -351,14 +355,15 @@ actor MLXRuntime {
     }
 
     /// Convert JPEG Data to CIImage array, handling edge cases robustly.
-    private static func ciImages(from imageData: Data?) -> [UserInput.Image] {
+    private static func ciImages(from imageData: Data?, maxPixelSize: Int) -> [UserInput.Image] {
         guard let imageData else { return [] }
         return autoreleasepool {
-            // Downsample to max 512 to match our mediaProcessing target and minimize memory
+            // Downsample before MLX sees the image. Large VLMs can cross the
+            // iOS jetsam line if we hand the processor a 512px image.
             let options = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 512
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
             ] as CFDictionary
 
             if let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
@@ -373,9 +378,21 @@ actor MLXRuntime {
         }
     }
 
-    private static func mediaProcessing(isVision: Bool) -> UserInput.Processing {
+    private static func mediaProcessing(isVision: Bool, maxPixelSize: Int) -> UserInput.Processing {
         guard isVision else { return .init() }
-        return .init(resize: CGSize(width: 512, height: 512))
+        return .init(resize: CGSize(width: maxPixelSize, height: maxPixelSize))
+    }
+
+    private static func visionMaxPixelSize(modelID: String, isVision: Bool) -> Int {
+        guard isVision else { return 0 }
+        let normalized = modelID.lowercased()
+        if normalized.contains("qwen3-vl-4b") || normalized.contains("qwen3vl-4b") {
+            return 224
+        }
+        if normalized.contains("4b") || normalized.contains("8b") || normalized.contains("9b") {
+            return 384
+        }
+        return 512
     }
 
     func generateStream(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false, chatHistory: [Chat.Message] = []) async throws -> AsyncStream<String> {
@@ -394,7 +411,8 @@ actor MLXRuntime {
             repetitionContextSize: sampling.repetitionContextSize
         )
         // Never attach images to non-vision containers.
-        let images = isVision ? Self.ciImages(from: imageData) : []
+        let visionMaxPixelSize = Self.visionMaxPixelSize(modelID: modelID, isVision: isVision)
+        let images = isVision ? Self.ciImages(from: imageData, maxPixelSize: visionMaxPixelSize) : []
         let userInput: UserInput
         if isOpenELM(modelID) {
             userInput = UserInput(prompt: .text(OpenELMPromptTemplate.render(prompt: prompt)))
@@ -408,7 +426,7 @@ actor MLXRuntime {
             }
             chat.append(contentsOf: chatHistory)
             chat.append(.user(prompt, images: images))
-            userInput = UserInput(chat: chat, processing: Self.mediaProcessing(isVision: isVision))
+            userInput = UserInput(chat: chat, processing: Self.mediaProcessing(isVision: isVision, maxPixelSize: visionMaxPixelSize))
         }
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
@@ -424,6 +442,9 @@ actor MLXRuntime {
                         continuation.yield(chunk)
                     }
                 }
+                if isVision {
+                    await MLXRuntime.shared.clearGPUCache()
+                }
                 continuation.finish()
             }
         }
@@ -437,6 +458,10 @@ actor MLXRuntime {
 
     func unloadAndClearCache() {
         unload()
+        GPU.clearCache()
+    }
+
+    func clearGPUCache() {
         GPU.clearCache()
     }
 
@@ -637,12 +662,6 @@ struct MLXInferenceService: InferenceService {
         return base
     }
 
-    private static func requiresImageAttachmentInCurrentRuntime(modelID: String, model: InstalledModel) -> Bool {
-        guard model.catalogItem.supportsVision else { return false }
-        let normalized = modelID.lowercased()
-        return normalized.contains("qwen3.5") || normalized.contains("qwen3_5")
-    }
-
     private static func allowsImageInput(model: InstalledModel, runtimeProfile: RuntimeProfile) -> Bool {
         runtimeProfile.verifiedVision == .imageAndText
             || (isSourceVisionAuditRun && model.catalogItem.supportsVision && model.catalogItem.sourceSupportsVision)
@@ -664,13 +683,6 @@ struct MLXInferenceService: InferenceService {
                 "Image input is not verified for this model in the app runtime. Run diagnostics or choose a green-audited MLX vision model."
             )
         }
-        if imageData == nil,
-           runtimeProfile.verifiedVision == .imageAndText,
-           Self.requiresImageAttachmentInCurrentRuntime(modelID: modelID, model: model) {
-            throw InferenceServiceError.runtimeUnavailable(
-                "This Qwen 3.5 vision model currently requires an image attachment in the app runtime. For text-only chat, choose a text model such as Qwen 3 or LFM2.5 Instruct."
-            )
-        }
     }
 
     /// Translate common MLX / Hub download errors into user-friendly messages.
@@ -687,7 +699,7 @@ struct MLXInferenceService: InferenceService {
             return "HuggingFace authentication failed. Check your HF token in Settings → HuggingFace."
         }
         if desc.lowercased().contains("unsupported model type") {
-            return "This model architecture is not supported by the bundled MLX runtime. Use a supported catalog model such as Qwen 3 VL 4B for image prompts."
+            return "This model architecture is not supported by the bundled MLX runtime. Use a supported catalog model such as Qwen 3.5 VL or LFM2.5 VL for image prompts."
         }
         if desc.contains("TokenizersBackend") {
             return "This LFM model needs the tokenizer compatibility patch. Install the latest build and try the model again."

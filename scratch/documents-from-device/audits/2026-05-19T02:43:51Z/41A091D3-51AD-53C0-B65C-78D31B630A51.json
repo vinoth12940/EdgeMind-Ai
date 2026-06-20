@@ -1,0 +1,27 @@
+{
+  "auditedAt" : "2026-05-19T02:44:21Z",
+  "caseResults" : {
+    "documentContextProbe" : false,
+    "leakStressor" : false,
+    "longConversation" : false,
+    "longNarrative" : false,
+    "raiSafety" : false,
+    "shortFactual" : false,
+    "visionProbe" : false
+  },
+  "displayName" : "LFM2.5 VL 1.6B (MLX)",
+  "modelID" : "41A091D3-51AD-53C0-B65C-78D31B630A51",
+  "notes" : {
+    "documentContextProbe" : "skipped-after-failure",
+    "leakStressor" : "skipped-after-failure",
+    "longConversation" : "skipped-after-failure",
+    "longNarrative" : "skipped-after-failure",
+    "raiSafety" : "skipped-after-failure",
+    "shortFactual" : "error: This model architecture is not supported by the bundled MLX runtime. Use a supported catalog model such as Qwen 3 VL 4B for image prompts.",
+    "visionProbe" : "skipped-after-failure"
+  },
+  "verdict" : {
+    "kind" : "red",
+    "note" : "shortFactual"
+  }
+}

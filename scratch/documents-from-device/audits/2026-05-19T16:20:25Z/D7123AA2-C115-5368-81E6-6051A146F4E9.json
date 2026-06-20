@@ -1,0 +1,15 @@
+{
+  "auditedAt" : "2026-05-19T16:22:25Z",
+  "caseResults" : {
+    "visionProbe" : false
+  },
+  "displayName" : "Qwen 3 VL 4B (MLX)",
+  "modelID" : "D7123AA2-C115-5368-81E6-6051A146F4E9",
+  "notes" : {
+    "visionProbe" : "case-timeout"
+  },
+  "verdict" : {
+    "kind" : "red",
+    "note" : "visionProbe"
+  }
+}

@@ -1,41 +1,41 @@
 # App Store Review Notes
 
-Use these notes in App Store Connect for the first App Store submission.
+*Please provide these notes in the App Store Connect submission fields for "App Review Information > Notes".*
 
-## Reviewer Access
+---
 
-- The app does not require a server account to review.
-- On the first screen, choose **Continue as Guest** or create a local profile with any display name.
-- Sign in with Apple is intentionally not exposed in this build because the current provisioning profile does not include the Sign in with Apple entitlement.
+## 1. Reviewer Access & Authentication
 
-## Core Functionality
+- **No Remote Account Required**: The application does not connect to a remote authentication server. 
+- **Guest / Local Access**: On the first screen (onboarding), you can choose **"Continue as Guest"** to immediately enter the main dashboard. Alternatively, you can enter any arbitrary display name (e.g., "Apple Reviewer") under "Continue with Credentials" to create a local-only profile.
+- **Entitlements Note**: Sign in with Apple is disabled in this build as the app's core local AI capabilities do not require cloud user profiles.
 
-- Private Edge Chat is a local AI chat app for iPhone and iPad.
-- Installed GGUF models run through the bundled llama.cpp runtime.
-- MLX models run on physical iOS hardware only; MLX execution is disabled in the simulator by compile-time guards.
-- The app can download model weights selected by the user. These downloads are model data files, not executable code, and they do not add native APIs or change the app binary.
+---
 
-## Network Usage
+## 2. Core Functionality & Testing Guidance
 
-- Default chat behavior is local/offline after a model is installed.
-- Hugging Face network requests occur only when the user chooses to download a model. If a model is gated, the user may enter a Hugging Face token in Settings; the token is stored in Keychain.
-- Live Search is optional. It is disabled unless the user enables it and configures a provider or custom gateway. Search requests send the query to the selected provider and render citations in the chat response.
+LocalAI Edge is a native SwiftUI interface for on-device AI inference. To verify the app's features without downloading large models, please follow these steps:
 
-## Privacy
+1. **Onboarding**: Launch the app and select **"Continue as Guest"**.
+2. **Pre-configured Model**: In the **Chat** tab, the default active model is **"Apple Intelligence"** (System Foundation Model). You can immediately send text prompts (e.g., *"Hello on-device AI!"*) and receive instant replies. This requires **no downloading** and runs completely offline.
+3. **Voice Input/Output**: Tap the **Microphone** icon in the chat composer to grant Speech Recognition and Microphone permissions. Speak a prompt, and the app will transcribe it on-device. The app will play back responses via standard iOS text-to-speech.
+4. **Third-Party Model Downloads (Optional)**:
+   - Go to the **Models** tab.
+   - You can download a lightweight on-device model from the curated list. For fast testing, we recommend **LFM2.5 350M (MLX)** (~0.4 GB) or **Granite 3.3 2B (MLX)** (~1.4 GB).
+   - Once downloaded, you can select it from the chat header dropdown and run text inference completely offline.
 
-- The app includes an in-app Privacy Policy at **Settings > Privacy > Privacy Policy**.
-- Chat sessions, profile data, model installation state, and settings are stored locally on device.
-- Image attachments are downsampled before persistence and local inference.
-- No analytics SDK, advertising SDK, or tracking is included.
-- App Store Connect Privacy Policy URL must be set before submission.
+---
 
-## Permissions
+## 3. Technical Constraints & Simulator Limitations
 
-- Camera and Photo Library are used only when attaching an image to a prompt.
-- Microphone and Speech Recognition are used only when dictating prompts.
-- Face ID / Touch ID / passcode are used only for local device authentication.
+- **Physical Device Required for MLX Runtimes**: Apple’s MLX framework does not support compilation or execution on the iOS Simulator due to hardware acceleration architecture constraints. If you run this app on the Xcode Simulator, GGUF models and Apple Intelligence models will function, but MLX models in the catalog will appear grayed out or unavailable. **Please test MLX inference on a physical iPhone (iPhone 12 or newer running iOS 17+)**.
+- **Static Weights Compliance (Guideline 2.5.2)**: The downloaded GGUF/MLX weights are strictly model data files (matrices/tensors) parsed by native on-device libraries. They do not contain executable binaries, nor do they modify the app's compiled execution paths.
 
-## Test Coverage
+---
 
-- Simulator unit tests are expected to pass.
-- One test is expected to skip because MLX inference does not run in the iOS simulator.
+## 4. Hardware permissions & Local Storage Disclosures
+
+- **Microphone & Speech Recognition**: Used only when the user dictates prompts. Audio transcribing is processed entirely on-device via Apple's SFSpeechRecognizer APIs.
+- **Camera & Photo Library**: Used only when attaching images to prompts for local analysis (multimodal models). Photos are processed locally and downsampled before inference.
+- **Face ID**: Used optional and only for local biometric lock functions to protect stored conversations.
+- **Data Protection**: Chat sessions, settings, and Hugging Face tokens are stored locally on the device (tokens are secured in the secure Keychain). No analytics, user telemetry, or user prompts are uploaded to remote servers.

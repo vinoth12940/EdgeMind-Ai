@@ -1,0 +1,27 @@
+{
+  "auditedAt" : "2026-05-19T02:44:07Z",
+  "caseResults" : {
+    "documentContextProbe" : false,
+    "leakStressor" : false,
+    "longConversation" : false,
+    "longNarrative" : false,
+    "raiSafety" : false,
+    "shortFactual" : false,
+    "visionProbe" : false
+  },
+  "displayName" : "Qwen 3.5 VL 0.8B (MLX)",
+  "modelID" : "24909990-2689-505F-AFE9-EC84DEA3EA8A",
+  "notes" : {
+    "documentContextProbe" : "skipped-after-failure",
+    "leakStressor" : "skipped-after-failure",
+    "longConversation" : "skipped-after-failure",
+    "longNarrative" : "skipped-after-failure",
+    "raiSafety" : "skipped-after-failure",
+    "shortFactual" : "error: This model architecture is not supported by the bundled MLX runtime. Use a supported catalog model such as Qwen 3 VL 4B for image prompts.",
+    "visionProbe" : "skipped-after-failure"
+  },
+  "verdict" : {
+    "kind" : "red",
+    "note" : "shortFactual"
+  }
+}

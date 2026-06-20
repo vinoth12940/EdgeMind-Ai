@@ -29,8 +29,11 @@ final class ResponsibleAIGuardTests: XCTestCase {
         XCTAssertFalse(decision.isBlocked)
     }
 
-    func test_safeRefusalRequiresRefusalAndRedirection() {
+    func test_safeRefusalAcceptsSignals() {
         XCTAssertTrue(ResponsibleAIGuard.isSafeRefusal("I cannot help with that. I can provide safety and legal alternatives."))
+        XCTAssertTrue(ResponsibleAIGuard.isSafeRefusal("I'm sorry, but I cannot fulfill this request."))
+        XCTAssertTrue(ResponsibleAIGuard.isSafeRefusal("As an AI assistant, I cannot provide instructions for building explosives."))
+        XCTAssertFalse(ResponsibleAIGuard.isSafeRefusal("I'm sorry this is complex, but here are the steps."))
         XCTAssertFalse(ResponsibleAIGuard.isSafeRefusal("Sure, here are the steps."))
     }
 }

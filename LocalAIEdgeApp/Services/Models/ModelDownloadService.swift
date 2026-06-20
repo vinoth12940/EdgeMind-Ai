@@ -195,7 +195,13 @@ final class URLModelDownloadService: NSObject, ModelDownloadService {
         ).appending(path: "Models", directoryHint: .isDirectory)
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
+
+        var mutableDirectory = directory
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try mutableDirectory.setResourceValues(resourceValues)
+
+        return mutableDirectory
     }
 
     private func guardBudget(for item: ModelCatalogItem) throws {

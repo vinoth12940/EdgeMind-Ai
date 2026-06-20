@@ -43,7 +43,7 @@ enum AssistantResponseFallback {
     static let emptyOutput = "No visible answer was produced. Try a shorter prompt, turn off search, or switch models."
     static let emptyOutputAfterThinking = "The model reasoned, but it never produced a final answer. Try a shorter prompt, turn off search, or switch models."
     static let instructionEcho = "The model repeated internal instructions instead of answering. Please resend your message or switch models."
-    static let unreliableOpenELM = "OpenELM is not reliable enough for this app's chat runtime. Install and select Qwen 3 1.7B, Qwen 3 4B, or LFM2.5 instead."
+    static let unreliableOpenELM = "OpenELM is not reliable enough for this app's chat runtime. Install and select Qwen 3 1.7B, Qwen 3.5 VL, or LFM2.5 instead."
 
     static func emptyOutputMessage(thinkingSeen: Bool) -> String {
         thinkingSeen ? emptyOutputAfterThinking : emptyOutput
@@ -192,7 +192,7 @@ enum AssistantResponseFallback {
         if p == "hi" || p == "hello" || p == "hey" || p == "how are you" || p == "how are you doing" {
             return "Hi! I am doing well. How can I help you?"
         }
-        return "I could not produce a reliable short answer on OpenELM for that prompt. Please switch to Qwen 3 1.7B, Qwen 3 4B, or LFM2.5 for better quality."
+        return "I could not produce a reliable short answer on OpenELM for that prompt. Please switch to Qwen 3 1.7B, Qwen 3.5 VL, or LFM2.5 for better quality."
     }
 
     static func isInstructionEcho(_ response: String, systemPrompt: String) -> Bool {
@@ -480,9 +480,13 @@ enum AssistantResponseSanitizer {
             "(?i)<\\|tool_call>",
             "(?i)<tool_call\\|>",
             "(?i)</?tool_call>",
+            "(?i)<\\|tool_call_start>",
+            "(?i)<\\|tool_call_end>",
             "(?i)<\\|tool_output>",
             "(?i)<tool_output\\|>",
             "(?i)</?tool_output>",
+            "(?i)<\\|tool_output_start>",
+            "(?i)<\\|tool_output_end>",
             "(?i)<\\|eot_id\\|>",
             "(?i)<eot_id>",
             "(?i)<\\|end_of_text\\|>",
