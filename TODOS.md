@@ -2,11 +2,6 @@
 
 ## Post-V1 (after App Store submission)
 
-### OOM Mid-Inference Handler
-**What:** Register for `UIApplication.didReceiveMemoryWarningNotification`. On warning, cancel active inference task, set `activeContext = nil`, show user: "Your device needed memory — response was interrupted."
-**Why:** Without this, iOS terminates the process silently (jetsam) during long inference on 4GB devices. Users see a crash, not an error.
-**Where to start:** `LocalLlamaRuntime` actor + `ChatView.swift` (handle generation cancellation gracefully)
-
 ### Flash Attention Per-Model Benchmark
 **What:** After enabling flash attention on A15+ (already in V1 scope), benchmark Qwen/Gemma specifically. Confirm 20-30% speedup claim and verify no output quality regression.
 **Why:** Flash attention performance varies by model architecture. The claim is from LLaMA-family benchmarks. Our catalog uses different architectures.

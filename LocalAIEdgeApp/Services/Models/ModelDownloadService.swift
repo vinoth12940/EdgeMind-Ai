@@ -45,6 +45,23 @@ enum ModelDownloadConsentStore {
     }
 }
 
+enum ModelInstallGuard {
+    static func unsupportedTierMessage(for item: ModelCatalogItem, currentTier: DeviceTier = .current()) -> String? {
+        guard item.minimumTier > currentTier else { return nil }
+        return "Needs \(item.minimumTier.displayName)"
+    }
+
+    static func memoryConsentRequirement(
+        for item: ModelCatalogItem,
+        currentTier: DeviceTier = .current()
+    ) -> (required: Double, available: Double)? {
+        let required = item.estimatedResidentGB(contextTokens: currentTier.safeContextTokens)
+        guard required > currentTier.usableWeightGB else { return nil }
+        guard !ModelDownloadConsentStore.hasConsent(for: item) else { return nil }
+        return (required, currentTier.usableWeightGB)
+    }
+}
+
 enum ModelDownloadServiceError: LocalizedError {
     case missingDownloadURL
 

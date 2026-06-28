@@ -10,6 +10,7 @@ enum HeadlessModelAuditLauncher {
     private static let sourceVisionProbeArgument = "--localai-audit-source-vision"
     private static let ignoreTierArgument = "--localai-audit-ignore-tier"
     private static let modelFilterArgument = "--localai-audit-model"
+    private static let caseTimeoutArgument = "--localai-audit-case-timeout-sec"
 
     @MainActor
     static func runIfRequested(store: AppStateStore) async {
@@ -37,7 +38,7 @@ enum HeadlessModelAuditLauncher {
         }
 
         if !includeAllRuntimes {
-            items = items.filter { $0.runtimeType == .mlx }
+            items = items.filter { $0.runtimeType == .mlx || $0.runtimeType == .liteRTLM }
         }
         if arguments.contains(visionOnlyArgument) {
             items = items.filter { sourceVisionProbe ? $0.sourceSupportsVision : $0.supportsVision }
@@ -51,7 +52,7 @@ enum HeadlessModelAuditLauncher {
             }
         }
 
-        print("[MODEL_AUDIT] START tier=\(currentTier.displayName) models=\(items.count) policy=\(policy.logLabel) runtimes=\(includeAllRuntimes ? "all" : "mlx") visionOnly=\(arguments.contains(visionOnlyArgument)) sourceVisionProbe=\(sourceVisionProbe) ignoreTier=\(ignoreTier)")
+        print("[MODEL_AUDIT] START tier=\(currentTier.displayName) models=\(items.count) policy=\(policy.logLabel) runtimes=\(includeAllRuntimes ? "all" : "mlx+litert") visionOnly=\(arguments.contains(visionOnlyArgument)) sourceVisionProbe=\(sourceVisionProbe) ignoreTier=\(ignoreTier)")
         for item in items {
             print("[MODEL_AUDIT] QUEUED \(item.displayName) runtime=\(item.runtimeType.rawValue) size=\(item.diskSize)")
         }
@@ -68,13 +69,17 @@ enum HeadlessModelAuditLauncher {
                 if installed.catalogItem.runtimeType == .mlx {
                     return MLXInferenceService()
                 }
+                if installed.catalogItem.runtimeType == .liteRTLM {
+                    return LiteRTInferenceService()
+                }
                 return LocalLlamaInferenceService()
             },
             downloader: DefaultAuditDownloader(),
             store: store,
             profileStore: RuntimeProfileStore(),
             auditCases: auditCases,
-            forceSourceVisionProbe: sourceVisionProbe
+            forceSourceVisionProbe: sourceVisionProbe,
+            caseTimeoutNanoseconds: caseTimeoutNanoseconds(from: arguments)
         )
 
         var lastDownloadPercentByModel: [String: Int] = [:]
@@ -91,7 +96,8 @@ enum HeadlessModelAuditLauncher {
         }
 
         print("[MODEL_AUDIT] FINISHED")
-        exit(0)
+        fflush(nil)
+        _exit(0)
     }
 
     private static func argumentValue(after flag: String, in arguments: [String]) -> String? {
@@ -100,6 +106,16 @@ enum HeadlessModelAuditLauncher {
             return nil
         }
         return arguments[index + 1]
+    }
+
+    private static func caseTimeoutNanoseconds(from arguments: [String]) -> UInt64 {
+        guard let raw = argumentValue(after: caseTimeoutArgument, in: arguments),
+              let seconds = Double(raw),
+              seconds > 0
+        else {
+            return ModelAuditRunner.defaultCaseTimeoutNanoseconds
+        }
+        return UInt64(seconds * 1_000_000_000)
     }
 }
 

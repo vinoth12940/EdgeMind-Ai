@@ -25,13 +25,10 @@ private struct LaunchRootView: View {
     @State private var didRunLaunchTasks = false
 
     var body: some View {
-        Group {
-            if authStore.isAuthenticated {
-                RootView()
-            } else {
-                AuthLandingView()
+        RootView()
+            .onAppear {
+                authStore.ensureAnonymousSession()
             }
-        }
         .task {
             guard !didRunLaunchTasks else { return }
             didRunLaunchTasks = true

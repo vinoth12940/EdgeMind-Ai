@@ -236,8 +236,8 @@ struct SettingsView: View {
                     authStore.signOut()
                 } label: {
                     HStack {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                        Text("Sign Out")
+                        Image(systemName: "arrow.counterclockwise.circle")
+                        Text("Reset Local Profile")
                             .fontWeight(.semibold)
                         Spacer()
                     }

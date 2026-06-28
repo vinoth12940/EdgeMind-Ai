@@ -3,7 +3,7 @@ import OSLog
 import UIKit
 
 actor ModelAuditRunner {
-    private static let caseTimeoutNanoseconds: UInt64 = 120_000_000_000
+    static let defaultCaseTimeoutNanoseconds: UInt64 = 120_000_000_000
     private static let maxAuditOutputCharacters = 2_000
 
     private let inferenceFactory: (InstalledModel) -> any InferenceService
@@ -12,6 +12,7 @@ actor ModelAuditRunner {
     private let profileStore: RuntimeProfileStore
     private let auditCases: [AuditCase]
     private let forceSourceVisionProbe: Bool
+    private let caseTimeoutNanoseconds: UInt64
     private let reportRunID: String
     private let logger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "ModelAuditRunner")
 
@@ -21,7 +22,8 @@ actor ModelAuditRunner {
         store: AppStateStore,
         profileStore: RuntimeProfileStore,
         auditCases: [AuditCase] = AuditCaseLibrary.standardCases,
-        forceSourceVisionProbe: Bool = false
+        forceSourceVisionProbe: Bool = false,
+        caseTimeoutNanoseconds: UInt64 = ModelAuditRunner.defaultCaseTimeoutNanoseconds
     ) {
         self.inferenceFactory = inferenceFactory
         self.downloader = downloader
@@ -29,6 +31,7 @@ actor ModelAuditRunner {
         self.profileStore = profileStore
         self.auditCases = auditCases
         self.forceSourceVisionProbe = forceSourceVisionProbe
+        self.caseTimeoutNanoseconds = caseTimeoutNanoseconds
         self.reportRunID = Self.nowIso()
     }
 
@@ -282,12 +285,13 @@ actor ModelAuditRunner {
         resolved: ResolvedModel
     ) async -> (pass: Bool, durationMs: Int, note: String?) {
         let start = Date()
+        let timeoutNanoseconds = caseTimeoutNanoseconds
         return await withTaskGroup(of: (pass: Bool, durationMs: Int, note: String?).self) { group in
             group.addTask {
                 await self.runCaseBody(auditCase, model: model, resolved: resolved)
             }
             group.addTask {
-                try? await Task.sleep(nanoseconds: Self.caseTimeoutNanoseconds)
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
                 let durationMs = Int(Date().timeIntervalSince(start) * 1000)
                 return (false, durationMs, "case-timeout")
             }

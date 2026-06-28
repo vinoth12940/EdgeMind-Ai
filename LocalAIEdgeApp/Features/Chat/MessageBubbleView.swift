@@ -13,7 +13,7 @@ struct MessageBubbleView: View {
 
     var body: some View {
         switch message.role {
-        case .system, .search:
+        case .system:
             systemNotice
         case .user:
             userRow
@@ -152,7 +152,7 @@ struct MessageBubbleView: View {
         HStack {
             Spacer(minLength: 0)
             HStack(spacing: 6) {
-                Image(systemName: message.role == .search ? "globe" : "info.circle.fill")
+                Image(systemName: "info.circle.fill")
                     .font(.system(size: 10, weight: .bold))
                 Text(message.text)
                     .font(.system(size: 11, weight: .medium))

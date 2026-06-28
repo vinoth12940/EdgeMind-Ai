@@ -148,12 +148,38 @@ private struct HuggingFaceTokenizerLoader: MLXLMCommon.TokenizerLoader {
     }
 }
 
+struct MLXDownloadProgress: Sendable {
+    let fraction: Double
+    let completedUnitCount: Int64
+    let totalUnitCount: Int64
+
+    var statusText: String {
+        guard totalUnitCount > 1 else {
+            return "Starting download..."
+        }
+
+        let completed = ByteCountFormatter.string(fromByteCount: completedUnitCount, countStyle: .file)
+        let total = ByteCountFormatter.string(fromByteCount: totalUnitCount, countStyle: .file)
+        return "\(completed) of \(total)"
+    }
+}
+
 actor MLXRuntime {
     static let shared = MLXRuntime()
 
     private var activeModelID: String?
     private var activeContainer: ModelContainer?
     private var activeIsVision: Bool = false
+
+    private static var isAuditRun: Bool {
+        CommandLine.arguments.contains("--localai-run-model-audit")
+    }
+
+    private static func auditLog(_ message: String) {
+        guard isAuditRun else { return }
+        print("[MODEL_AUDIT_PHASE] \(message)")
+        fflush(nil)
+    }
 
     private func isOpenELM(_ modelID: String) -> Bool {
         modelID.lowercased().contains("openelm")
@@ -168,23 +194,33 @@ actor MLXRuntime {
         let tier = DeviceTier.current()
         let normalized = modelID.lowercased()
         let isLarge = normalized.contains("4b") || normalized.contains("8b") || normalized.contains("9b")
+        let isGemma4Vision = isVision && (normalized.contains("gemma-4") || normalized.contains("gemma4"))
 
         switch tier {
         case .compact:
             return isVision ? 128 : 128
         case .standard:
+            if isGemma4Vision {
+                return 128
+            }
             if isLarge {
                 return isVision ? 192 : 256
             } else {
                 return isVision ? 256 : 384
             }
         case .pro:
+            if isGemma4Vision {
+                return 160
+            }
             if isLarge {
                 return isVision ? 256 : 512
             } else {
                 return isVision ? 384 : 768
             }
         case .ultra:
+            if isGemma4Vision {
+                return 256
+            }
             return isVision ? 512 : 1024
         }
     }
@@ -198,14 +234,7 @@ actor MLXRuntime {
 
     func shouldUseVisionFactory(modelID: String, supportsVision: Bool, imageData: Data?) -> Bool {
         guard supportsVision else { return false }
-        if imageData != nil { return true }
-
-        let normalizedModelID = modelID.lowercased()
-        return normalizedModelID.contains("qwen2.5-vl")
-            || normalizedModelID.contains("qwen2-vl")
-            || normalizedModelID.contains("qwen3.5")
-            || normalizedModelID.contains("qwen3_5")
-            || normalizedModelID.contains("-vl-")
+        return imageData != nil
     }
 
     private func samplingPreset(for modelID: String, isVision: Bool) -> SamplingPreset {
@@ -254,13 +283,13 @@ actor MLXRuntime {
             if activeContainer != nil {
                 mlxLogger.log("Unloading previous model before loading new one")
                 unload()
-                GPU.clearCache()
+                Memory.clearCache()
             }
 
             mlxLogger.log("Loading MLX model: \(modelID, privacy: .public) (vision: \(isVision))")
             let limitMB = gpuCacheLimit(modelID: modelID, isVision: isVision)
             mlxLogger.log("Setting MLX GPU cache limit to \(limitMB) MB")
-            GPU.set(cacheLimit: limitMB * 1024 * 1024)
+            Memory.cacheLimit = limitMB * 1024 * 1024
             let downloader = HuggingFaceDownloader(authenticatedHubClient())
             let tokenizerLoader = HuggingFaceTokenizerLoader()
             let configuration = ModelConfiguration(id: modelID)
@@ -270,9 +299,22 @@ actor MLXRuntime {
             for attempt in 1...3 {
                 do {
                     if isVision {
-                        activeContainer = try await VLMModelFactory.shared.loadContainer(from: downloader, using: tokenizerLoader, configuration: configuration) { progress in
+                        let modelDirectory = try await downloader.download(
+                            id: modelID,
+                            revision: "main",
+                            matching: mlxSnapshotFilePatterns,
+                            useLatest: false
+                        ) { progress in
                             mlxLogger.log("MLX VLM model load progress: \(progress.fractionCompleted)")
                         }
+                        try Self.patchVisionProcessorConfigIfNeeded(
+                            modelID: modelID,
+                            modelDirectory: modelDirectory
+                        )
+                        activeContainer = try await VLMModelFactory.shared.loadContainer(
+                            from: modelDirectory,
+                            using: tokenizerLoader
+                        )
                     } else {
                         activeContainer = try await LLMModelFactory.shared.loadContainer(from: downloader, using: tokenizerLoader, configuration: configuration) { progress in
                             mlxLogger.log("MLX LLM model load progress: \(progress.fractionCompleted)")
@@ -305,17 +347,18 @@ actor MLXRuntime {
     func generate(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false, chatHistory: [Chat.Message] = []) async throws -> String {
         // Clear GPU cache before vision to maximize available memory for the vision encoder
         if isVision {
-            GPU.clearCache()
+            Memory.clearCache()
         }
+        Self.auditLog("ensureModel.start model=\"\(modelID)\" vision=\(isVision)")
         let container = try await ensureModel(modelID, isVision: isVision)
+        Self.auditLog("ensureModel.done model=\"\(modelID)\" vision=\(isVision)")
 
         let sampling = samplingPreset(for: modelID, isVision: isVision)
-        let parameters = GenerateParameters(
+        let parameters = Self.generateParameters(
+            modelID: modelID,
             maxTokens: maxTokens,
-            temperature: sampling.temperature,
-            topP: sampling.topP,
-            repetitionPenalty: sampling.repetitionPenalty,
-            repetitionContextSize: sampling.repetitionContextSize
+            isVision: isVision,
+            sampling: sampling
         )
         // Never attach images to non-vision containers.
         let visionMaxPixelSize = Self.visionMaxPixelSize(modelID: modelID, isVision: isVision)
@@ -335,21 +378,35 @@ actor MLXRuntime {
             chat.append(.user(prompt, images: images))
             userInput = UserInput(chat: chat, processing: Self.mediaProcessing(isVision: isVision, maxPixelSize: visionMaxPixelSize))
         }
+        Self.auditLog("prepare.start model=\"\(modelID)\" vision=\(isVision) images=\(images.count)")
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
         }
+        Self.auditLog("prepare.done model=\"\(modelID)\" vision=\(isVision)")
 
-        let result: GenerateResult = try await container.perform { context in
-            let result: GenerateResult = try MLXLMCommon.generate(
-                input: input, parameters: parameters, context: context
-            ) { _ in .more }
-            return result
+        Self.auditLog("generate.start model=\"\(modelID)\" vision=\(isVision) maxTokens=\(maxTokens)")
+        let resultText: String = try await container.perform { context in
+            let stream = try await Self.generateStreamWithMemoryPolicy(
+                input: input,
+                parameters: parameters,
+                context: context,
+                modelID: modelID,
+                isVision: isVision
+            )
+            var text = ""
+            for await generation in stream {
+                if let chunk = generation.chunk {
+                    text += chunk
+                }
+            }
+            return text
         }
+        Self.auditLog("generate.done model=\"\(modelID)\" vision=\(isVision)")
         if isVision {
-            GPU.clearCache()
+            Memory.clearCache()
         }
 
-        let finalText = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalText = resultText.trimmingCharacters(in: .whitespacesAndNewlines)
         mlxLogger.log("MLX generation complete: generated \(finalText.count) chars")
         return finalText
     }
@@ -383,9 +440,73 @@ actor MLXRuntime {
         return .init(resize: CGSize(width: maxPixelSize, height: maxPixelSize))
     }
 
+    private static func generateParameters(
+        modelID: String,
+        maxTokens: Int,
+        isVision: Bool,
+        sampling: SamplingPreset
+    ) -> GenerateParameters {
+        let normalized = modelID.lowercased()
+        let isGemma4Vision = isVision && (normalized.contains("gemma-4") || normalized.contains("gemma4"))
+
+        return GenerateParameters(
+            maxTokens: isGemma4Vision ? min(maxTokens, 16) : maxTokens,
+            maxKVSize: isGemma4Vision ? 512 : nil,
+            kvBits: isGemma4Vision ? 4 : nil,
+            kvGroupSize: 64,
+            quantizedKVStart: 0,
+            temperature: sampling.temperature,
+            topP: sampling.topP,
+            repetitionPenalty: sampling.repetitionPenalty,
+            repetitionContextSize: sampling.repetitionContextSize,
+            prefillStepSize: isGemma4Vision ? 16 : 512
+        )
+    }
+
+    private static func wiredMemoryTicket(modelID: String, isVision: Bool) -> WiredMemoryTicket? {
+        let normalized = modelID.lowercased()
+        guard isVision, normalized.contains("gemma-4") || normalized.contains("gemma4") else {
+            return nil
+        }
+
+        let tier = DeviceTier.current()
+        let bytes = Int(tier.jetsamSoftLimitGB * 1024 * 1024 * 1024)
+        return WiredFixedPolicy(limit: bytes).ticket(size: bytes, kind: .active)
+    }
+
+    private static func generateStreamWithMemoryPolicy(
+        input: LMInput,
+        parameters: GenerateParameters,
+        context: ModelContext,
+        modelID: String,
+        isVision: Bool
+    ) async throws -> AsyncStream<Generation> {
+        guard let ticket = wiredMemoryTicket(modelID: modelID, isVision: isVision) else {
+            return try MLXLMCommon.generate(input: input, parameters: parameters, context: context)
+        }
+
+        Self.auditLog("wiredMemory.start model=\"\(modelID)\" vision=\(isVision) bytes=\(ticket.size)")
+        return try await WiredMemoryTicket.withWiredLimit(ticket) {
+            let stream = try MLXLMCommon.generate(
+                input: input,
+                parameters: parameters,
+                context: context,
+                wiredMemoryTicket: ticket
+            )
+            Self.auditLog("wiredMemory.generatorReady model=\"\(modelID)\" vision=\(isVision)")
+            return stream
+        }
+    }
+
     private static func visionMaxPixelSize(modelID: String, isVision: Bool) -> Int {
         guard isVision else { return 0 }
         let normalized = modelID.lowercased()
+        if normalized.contains("gemma-4") || normalized.contains("gemma4") {
+            return 160
+        }
+        if normalized.contains("lfm2.5-vl") {
+            return 256
+        }
         if normalized.contains("qwen3-vl-4b") || normalized.contains("qwen3vl-4b") {
             return 224
         }
@@ -395,20 +516,72 @@ actor MLXRuntime {
         return 512
     }
 
+    private static func patchVisionProcessorConfigIfNeeded(modelID: String, modelDirectory: URL) throws {
+        let normalized = modelID.lowercased()
+        guard normalized.contains("gemma-4") || normalized.contains("gemma4") else { return }
+        let targetSize = visionMaxPixelSize(modelID: modelID, isVision: true)
+        let configURLs = [
+            modelDirectory.appending(component: "preprocessor_config.json"),
+            modelDirectory.appending(component: "processor_config.json")
+        ]
+        var patchedExistingConfig = false
+
+        for url in configURLs where FileManager.default.fileExists(atPath: url.path) {
+            let data = try Data(contentsOf: url)
+            guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+            var size = json["size"] as? [String: Any] ?? [:]
+            let currentHeight = size["height"] as? Int
+            let currentWidth = size["width"] as? Int
+            guard currentHeight != targetSize || currentWidth != targetSize else { continue }
+
+            size["height"] = targetSize
+            size["width"] = targetSize
+            json["size"] = size
+            let patched = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+            try patched.write(to: url, options: .atomic)
+            mlxLogger.log("Patched Gemma 4 processor image size to \(targetSize)x\(targetSize) at \(url.lastPathComponent, privacy: .public)")
+            patchedExistingConfig = true
+        }
+
+        if !patchedExistingConfig && !configURLs.contains(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+            let generatedURL = modelDirectory.appending(component: "processor_config.json")
+            let json: [String: Any] = [
+                "processor_class": "Gemma4Processor",
+                "do_normalize": true,
+                "image_mean": [0.5, 0.5, 0.5],
+                "image_std": [0.5, 0.5, 0.5],
+                "image_seq_length": 280,
+                "image_token_id": 258_880,
+                "boi_token_id": 255_999,
+                "eoi_token_id": 258_882,
+                "size": [
+                    "height": targetSize,
+                    "width": targetSize
+                ]
+            ]
+            let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: generatedURL, options: .atomic)
+            mlxLogger.log("Generated Gemma 4 processor config at \(generatedURL.lastPathComponent, privacy: .public) with image size \(targetSize)x\(targetSize)")
+        }
+    }
+
     func generateStream(prompt: String, modelID: String, systemPrompt: String, maxTokens: Int = 1024, imageData: Data? = nil, isVision: Bool = false, chatHistory: [Chat.Message] = []) async throws -> AsyncStream<String> {
         // Clear GPU cache before vision to maximize available memory for the vision encoder
         if isVision {
-            GPU.clearCache()
+            Memory.clearCache()
         }
+        Self.auditLog("ensureModel.start model=\"\(modelID)\" vision=\(isVision)")
         let container = try await ensureModel(modelID, isVision: isVision)
+        Self.auditLog("ensureModel.done model=\"\(modelID)\" vision=\(isVision)")
 
         let sampling = samplingPreset(for: modelID, isVision: isVision)
-        let parameters = GenerateParameters(
+        let parameters = Self.generateParameters(
+            modelID: modelID,
             maxTokens: maxTokens,
-            temperature: sampling.temperature,
-            topP: sampling.topP,
-            repetitionPenalty: sampling.repetitionPenalty,
-            repetitionContextSize: sampling.repetitionContextSize
+            isVision: isVision,
+            sampling: sampling
         )
         // Never attach images to non-vision containers.
         let visionMaxPixelSize = Self.visionMaxPixelSize(modelID: modelID, isVision: isVision)
@@ -428,20 +601,36 @@ actor MLXRuntime {
             chat.append(.user(prompt, images: images))
             userInput = UserInput(chat: chat, processing: Self.mediaProcessing(isVision: isVision, maxPixelSize: visionMaxPixelSize))
         }
+        Self.auditLog("prepare.start model=\"\(modelID)\" vision=\(isVision) images=\(images.count)")
         let input = try await container.perform { context in
             try await context.processor.prepare(input: userInput)
         }
+        Self.auditLog("prepare.done model=\"\(modelID)\" vision=\(isVision)")
 
+        Self.auditLog("stream.start model=\"\(modelID)\" vision=\(isVision) maxTokens=\(maxTokens)")
         let mlxStream: AsyncStream<Generation> = try await container.perform { context in
-            try MLXLMCommon.generate(input: input, parameters: parameters, context: context)
+            try await Self.generateStreamWithMemoryPolicy(
+                input: input,
+                parameters: parameters,
+                context: context,
+                modelID: modelID,
+                isVision: isVision
+            )
         }
+        Self.auditLog("stream.ready model=\"\(modelID)\" vision=\(isVision)")
         return AsyncStream<String> { continuation in
             Task {
+                var yieldedFirstChunk = false
                 for await generation in mlxStream {
                     if let chunk = generation.chunk {
+                        if !yieldedFirstChunk {
+                            yieldedFirstChunk = true
+                            Self.auditLog("stream.firstChunk model=\"\(modelID)\" vision=\(isVision)")
+                        }
                         continuation.yield(chunk)
                     }
                 }
+                Self.auditLog("stream.done model=\"\(modelID)\" vision=\(isVision) yieldedFirstChunk=\(yieldedFirstChunk)")
                 if isVision {
                     await MLXRuntime.shared.clearGPUCache()
                 }
@@ -458,11 +647,11 @@ actor MLXRuntime {
 
     func unloadAndClearCache() {
         unload()
-        GPU.clearCache()
+        Memory.clearCache()
     }
 
     func clearGPUCache() {
-        GPU.clearCache()
+        Memory.clearCache()
     }
 
     /// Delete the on-disk Hub snapshot cache for a downloaded MLX model.
@@ -475,16 +664,19 @@ actor MLXRuntime {
 
     /// Pre-download an MLX model with progress reporting.
     /// Downloads files to disk only — does NOT load weights into GPU memory.
-    func preloadModel(_ modelID: String, isVision: Bool = false, progress: @escaping @Sendable (Double) -> Void) async throws {
+    func preloadModel(_ modelID: String, isVision: Bool = false, progress: @escaping @Sendable (MLXDownloadProgress) -> Void) async throws {
         mlxLogger.log("Downloading MLX model (no GPU load): \(modelID, privacy: .public)")
         let downloader = HuggingFaceDownloader(authenticatedHubClient())
-        let configuration = ModelConfiguration(id: modelID)
         // Use downloadModel() which only downloads files via hub.snapshot() —
         // does NOT load weights into GPU memory, avoiding OOM on 8GB devices.
         _ = try await downloader.download(id: modelID, revision: "main", matching: mlxSnapshotFilePatterns, useLatest: false) { p in
             let fraction = p.fractionCompleted
-            mlxLogger.log("MLX download progress: \(fraction)")
-            progress(fraction)
+            mlxLogger.log("MLX download progress: \(fraction), \(p.completedUnitCount) / \(p.totalUnitCount)")
+            progress(MLXDownloadProgress(
+                fraction: fraction,
+                completedUnitCount: p.completedUnitCount,
+                totalUnitCount: p.totalUnitCount
+            ))
         }
         mlxLogger.log("MLX model downloaded to disk: \(modelID, privacy: .public)")
     }
@@ -540,22 +732,26 @@ struct MLXInferenceService: InferenceService {
         )
         let baseMaxTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         let maxGeneratedTokens = tunedMaxTokens(for: model, base: baseMaxTokens, isVision: isVision)
-        let fullSystemPrompt = Self.buildSystemPrompt(
-            systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
-            searchContext: searchContext,
-            model: model,
-            maxGeneratedTokens: maxGeneratedTokens
-        )
+        let boundedPrompt = Self.boundedCurrentPrompt(prompt, model: model, isVision: isVision)
+        let fullSystemPrompt = isVision
+            ? Self.buildVisionSystemPrompt(systemPrompt: effectiveSystemPrompt(systemPrompt, model: model))
+            : Self.buildSystemPrompt(
+                systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
+                searchContext: searchContext,
+                model: model,
+                maxGeneratedTokens: maxGeneratedTokens
+            )
         let history = Self.buildChatHistory(
             conversation: conversation,
             model: model,
             searchContext: searchContext,
-            maxGeneratedTokens: maxGeneratedTokens
+            maxGeneratedTokens: maxGeneratedTokens,
+            isVision: isVision
         )
 
         do {
             let response = try await MLXRuntime.shared.generate(
-                prompt: prompt,
+                prompt: boundedPrompt,
                 modelID: mlxModelID,
                 systemPrompt: fullSystemPrompt,
                 maxTokens: maxGeneratedTokens,
@@ -610,23 +806,27 @@ struct MLXInferenceService: InferenceService {
         )
         let baseMaxTokens = InferenceBudget.maxGeneratedTokens(for: model, searchContext: searchContext)
         let maxGeneratedTokens = tunedMaxTokens(for: model, base: baseMaxTokens, isVision: isVision)
-        let fullSystemPrompt = Self.buildSystemPrompt(
-            systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
-            searchContext: searchContext,
-            model: model,
-            maxGeneratedTokens: maxGeneratedTokens
-        )
+        let boundedPrompt = Self.boundedCurrentPrompt(prompt, model: model, isVision: isVision)
+        let fullSystemPrompt = isVision
+            ? Self.buildVisionSystemPrompt(systemPrompt: effectiveSystemPrompt(systemPrompt, model: model))
+            : Self.buildSystemPrompt(
+                systemPrompt: effectiveSystemPrompt(systemPrompt, model: model),
+                searchContext: searchContext,
+                model: model,
+                maxGeneratedTokens: maxGeneratedTokens
+            )
         let history = Self.buildChatHistory(
             conversation: conversation,
             model: model,
             searchContext: searchContext,
-            maxGeneratedTokens: maxGeneratedTokens
+            maxGeneratedTokens: maxGeneratedTokens,
+            isVision: isVision
         )
 
         let messageID = UUID()
         do {
             let rawStream = try await MLXRuntime.shared.generateStream(
-                prompt: prompt,
+                prompt: boundedPrompt,
                 modelID: mlxModelID,
                 systemPrompt: fullSystemPrompt,
                 maxTokens: maxGeneratedTokens,
@@ -664,7 +864,7 @@ struct MLXInferenceService: InferenceService {
 
     private static func allowsImageInput(model: InstalledModel, runtimeProfile: RuntimeProfile) -> Bool {
         runtimeProfile.verifiedVision == .imageAndText
-            || (isSourceVisionAuditRun && model.catalogItem.supportsVision && model.catalogItem.sourceSupportsVision)
+            || (isSourceVisionAuditRun && model.catalogItem.sourceSupportsVision)
     }
 
     private static var isSourceVisionAuditRun: Bool {
@@ -679,6 +879,11 @@ struct MLXInferenceService: InferenceService {
         runtimeProfile: RuntimeProfile
     ) throws {
         if imageData != nil && !Self.allowsImageInput(model: model, runtimeProfile: runtimeProfile) {
+            if model.catalogItem.family == .gemma && model.catalogItem.sourceSupportsVision {
+                throw InferenceServiceError.runtimeUnavailable(
+                    "Gemma 4 image input is disabled in this build because the bundled Swift MLX VLM runtime is memory-killed by iOS during image prefill on this device. Text chat stays available; use Qwen 3.5 VL or LFM2.5 VL for image prompts until the Gemma 4 unified/mobile runtime is integrated."
+                )
+            }
             throw InferenceServiceError.runtimeUnavailable(
                 "Image input is not verified for this model in the app runtime. Run diagnostics or choose a green-audited MLX vision model."
             )
@@ -756,6 +961,14 @@ struct MLXInferenceService: InferenceService {
         return result
     }
 
+    private static func buildVisionSystemPrompt(systemPrompt: String) -> String {
+        let trimmed = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "You are running locally on-device. Answer the user's image question directly and concisely."
+        }
+        return "\(trimmed)\nAnswer the user's image question directly and concisely. Keep the response short enough for on-device memory."
+    }
+
     /// Extract keywords from a search query for relevance matching.
     private static func extractKeywords(from query: String) -> [String] {
         let stopWords: Set<String> = ["the", "a", "an", "is", "are", "was", "were", "in", "on", "at",
@@ -809,8 +1022,15 @@ struct MLXInferenceService: InferenceService {
         conversation: [ChatMessage],
         model: InstalledModel,
         searchContext: SearchContext?,
-        maxGeneratedTokens: Int
+        maxGeneratedTokens: Int,
+        isVision: Bool = false
     ) -> [Chat.Message] {
+        // VLM image turns need the smallest possible prefill on iPhone. The
+        // image encoder and prompt prefill peak together, so prior text history
+        // is intentionally dropped for image turns.
+        if isVision {
+            return []
+        }
         // OpenELM is very small-context; keeping long history causes topic drift/noise.
         if model.catalogItem.family == .openELM {
             return []
@@ -822,6 +1042,12 @@ struct MLXInferenceService: InferenceService {
         )
         var turns: [Chat.Message] = []
         var usedTokens = 0
+        var retainedMessages = 0
+        let maxMessages = InferenceBudget.maxHistoryMessages(
+            for: model,
+            searchContext: searchContext
+        )
+        let maxCharacters = InferenceBudget.maxHistoryCharactersPerMessage(for: model)
 
         for message in conversation.reversed() {
             if AssistantResponseFallback.shouldSkipInHistory(message) {
@@ -829,22 +1055,33 @@ struct MLXInferenceService: InferenceService {
             }
             switch message.role {
             case .user, .assistant: break
-            default: continue  // skip system/search messages
+            default: continue  // skip system notices
             }
-            let cost = max(1, message.text.utf8.count / 4)
+            let text = InferenceBudget.trimHistoryText(message.text, maxCharacters: maxCharacters)
+            let cost = max(1, text.utf8.count / 4)
             if usedTokens + cost > historyBudget { break }
             switch message.role {
-            case .assistant: turns.insert(.assistant(message.text), at: 0)
-            case .user:      turns.insert(.user(message.text), at: 0)
+            case .assistant: turns.insert(.assistant(text), at: 0)
+            case .user:      turns.insert(.user(text), at: 0)
             default:         break
             }
             usedTokens += cost
+            retainedMessages += 1
+            if retainedMessages >= maxMessages { break }
         }
         return turns
     }
 
+    private static func boundedCurrentPrompt(_ prompt: String, model: InstalledModel, isVision: Bool = false) -> String {
+        let maxCharacters = isVision ? 1_200 : InferenceBudget.maxHistoryCharactersPerMessage(for: model) * 2
+        return InferenceBudget.trimHistoryText(prompt, maxCharacters: maxCharacters)
+    }
+
     private func tunedMaxTokens(for model: InstalledModel, base: Int, isVision: Bool) -> Int {
         if isVision {
+            if model.catalogItem.family == .gemma || model.catalogItem.parameterSize.contains("4") {
+                return min(base, 96)
+            }
             return min(base, 128)
         }
         if model.catalogItem.family == .openELM {

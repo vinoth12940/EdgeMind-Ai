@@ -70,7 +70,29 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         case system
         case user
         case assistant
-        case search
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let rawValue = try container.decode(String.self)
+            switch rawValue {
+            case Self.system.rawValue, "search":
+                self = .system
+            case Self.user.rawValue:
+                self = .user
+            case Self.assistant.rawValue:
+                self = .assistant
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Unknown chat message role: \(rawValue)"
+                )
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
+        }
     }
 
     let id: UUID

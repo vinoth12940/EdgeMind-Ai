@@ -234,7 +234,7 @@ actor LocalLlamaContext {
     func generateStream(prompt: String, addBOS: Bool = true, parseSpecial: Bool = false) throws -> AsyncStream<String> {
         clear()
         runtimeLogger.log("generateStream: addBOS=\(addBOS) parseSpecial=\(parseSpecial) promptLen=\(prompt.count)")
-        runtimeLogger.log("Prompt first 300 chars: \(String(prompt.prefix(300)), privacy: .public)")
+        runtimeLogger.log("Prompt first 300 chars: \(String(prompt.prefix(300)), privacy: .private)")
         promptTokens = tokenize(text: prompt, addBOS: addBOS, parseSpecial: parseSpecial)
         guard !promptTokens.isEmpty else {
             throw LocalLlamaRuntimeError.tokenizationFailed
@@ -403,7 +403,7 @@ actor LocalLlamaContext {
         }
 
         runtimeLogger.log("Chat template applied successfully (\(templatedPrompt.count) chars)")
-        runtimeLogger.log("Template preview: \(String(templatedPrompt.prefix(300)), privacy: .public)")
+        runtimeLogger.log("Template preview: \(String(templatedPrompt.prefix(300)), privacy: .private)")
         // addBOS must be FALSE when parseSpecial is TRUE and the template output already
         // includes <bos> (Gemma 4, Qwen 3, etc.). Setting both to true causes double-BOS
         // which makes the model produce immediate EOG (empty output).

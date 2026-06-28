@@ -34,6 +34,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         case tinyLlama = "TinyLlama"
         case lfm = "LFM"
         case kokoro = "Kokoro"
+        case mlxCommunity = "MLX Community"
 
         var lab: String {
             switch self {
@@ -50,6 +51,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             case .tinyLlama: return "StatNLP"
             case .lfm: return "Liquid AI"
             case .kokoro: return "Hexgrad / MLX Community"
+            case .mlxCommunity: return "MLX Community"
             }
         }
 
@@ -69,6 +71,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             case .tinyLlama: return "hare.fill"
             case .lfm: return "drop.fill"
             case .kokoro: return "waveform.path"
+            case .mlxCommunity: return "shippingbox.fill"
             }
         }
     }
@@ -88,12 +91,14 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     enum RuntimeType: String, Codable, Hashable {
         case gguf = "GGUF"
         case mlx = "MLX"
+        case liteRTLM = "LiteRTLM"
         case foundationModels = "FoundationModels"
 
         var label: String {
             switch self {
             case .gguf: return "llama.cpp"
             case .mlx: return "MLX"
+            case .liteRTLM: return "LiteRT-LM"
             case .foundationModels: return "Apple Intelligence"
             }
         }
@@ -102,6 +107,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             switch self {
             case .gguf: return "cpu"
             case .mlx: return "apple.logo"
+            case .liteRTLM: return "bolt.badge.automatic"
             case .foundationModels: return "apple.intelligence"
             }
         }
@@ -122,6 +128,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     let mlxModelID: String?
     let primaryUse: PrimaryUse
     let sourceSupportsVision: Bool
+    let sourceSupportsVideo: Bool
+    let sourceSupportsAudio: Bool
     let supportsVision: Bool
     let supportsReasoning: Bool
     let supportsToolCalling: Bool
@@ -149,6 +157,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         case mlxModelID
         case primaryUse
         case sourceSupportsVision
+        case sourceSupportsVideo
+        case sourceSupportsAudio
         case supportsVision
         case supportsReasoning
         case supportsToolCalling
@@ -177,6 +187,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         mlxModelID: String? = nil,
         primaryUse: PrimaryUse = .chat,
         sourceSupportsVision: Bool? = nil,
+        sourceSupportsVideo: Bool = false,
+        sourceSupportsAudio: Bool = false,
         supportsVision: Bool = false,
         supportsReasoning: Bool = false,
         supportsToolCalling: Bool = false,
@@ -203,6 +215,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         self.mlxModelID = mlxModelID
         self.primaryUse = primaryUse
         self.sourceSupportsVision = sourceSupportsVision ?? supportsVision
+        self.sourceSupportsVideo = sourceSupportsVideo
+        self.sourceSupportsAudio = sourceSupportsAudio
         self.supportsVision = supportsVision
         self.supportsReasoning = supportsReasoning
         self.supportsToolCalling = supportsToolCalling
@@ -240,6 +254,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         } else {
             sourceSupportsVision = try container.decode(Bool.self, forKey: .supportsVision)
         }
+        sourceSupportsVideo = try container.decodeIfPresent(Bool.self, forKey: .sourceSupportsVideo) ?? false
+        sourceSupportsAudio = try container.decodeIfPresent(Bool.self, forKey: .sourceSupportsAudio) ?? false
         supportsVision = try container.decode(Bool.self, forKey: .supportsVision)
         supportsReasoning = try container.decode(Bool.self, forKey: .supportsReasoning)
         supportsToolCalling = try container.decode(Bool.self, forKey: .supportsToolCalling)
@@ -272,6 +288,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         try container.encodeIfPresent(mlxModelID, forKey: .mlxModelID)
         try container.encode(primaryUse, forKey: .primaryUse)
         try container.encode(sourceSupportsVision, forKey: .sourceSupportsVision)
+        try container.encode(sourceSupportsVideo, forKey: .sourceSupportsVideo)
+        try container.encode(sourceSupportsAudio, forKey: .sourceSupportsAudio)
         try container.encode(supportsVision, forKey: .supportsVision)
         try container.encode(supportsReasoning, forKey: .supportsReasoning)
         try container.encode(supportsToolCalling, forKey: .supportsToolCalling)
@@ -296,6 +314,12 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         displayName.localizedCaseInsensitiveContains("2507")
             || mlxModelID?.localizedCaseInsensitiveContains("2507") == true
             || downloadURL?.absoluteString.localizedCaseInsensitiveContains("2507") == true
+    }
+
+    var isCommunityDiscoveredMLX: Bool {
+        runtimeType == .mlx
+            && mlxModelID != nil
+            && (variant.hasPrefix("Hugging Face MLX -") || variant.hasPrefix("MLX Community -"))
     }
 
     /// Generate a stable UUID from displayName + variant so IDs survive across launches.
@@ -352,6 +376,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         var caps: [ModelCapability] = []
         if isThinkingModel { caps.append(.thinking) }
         if supportsVision { caps.append(.vision) }
+        if runtimeInputCategories.contains(.video) { caps.append(.video) }
+        if runtimeInputCategories.contains(.audio) { caps.append(.audio) }
         if supportsToolCalling { caps.append(.toolCalling) }
         if supportsReasoning { caps.append(.reasoning) }
         return caps
@@ -360,6 +386,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     enum ModelCapability: String, CaseIterable {
         case thinking = "Think"
         case vision = "Vision"
+        case video = "Video"
+        case audio = "Audio"
         case toolCalling = "Tools"
         case reasoning = "Reason"
 
@@ -367,6 +395,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             switch self {
             case .thinking: return "brain"
             case .vision: return "eye.fill"
+            case .video: return "video.fill"
+            case .audio: return "waveform"
             case .toolCalling: return "wrench.and.screwdriver.fill"
             case .reasoning: return "lightbulb.fill"
             }
@@ -376,6 +406,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
     enum InputCategory: String, Codable, CaseIterable, Hashable {
         case text = "Text"
         case image = "Image"
+        case video = "Video"
         case audio = "Audio"
         case document = "Document"
 
@@ -383,6 +414,7 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             switch self {
             case .text: return "text.alignleft"
             case .image: return "photo"
+            case .video: return "video"
             case .audio: return "waveform"
             case .document: return "doc.text"
             }
@@ -398,6 +430,12 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         if sourceSupportsVision {
             result.append(.image)
         }
+        if sourceSupportsVideo {
+            result.append(.video)
+        }
+        if sourceSupportsAudio {
+            result.append(.audio)
+        }
         if inputModes.contains(.document) {
             result.append(.document)
         }
@@ -409,7 +447,6 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         if primaryUse == .voice {
             return [.audio]
         }
-        // In this app, image input is available only for MLX vision models.
         return inputModes
     }
 
@@ -462,8 +499,9 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             return [.audio]
         }
         var modes: [InputCategory] = [.text, .document]
-        if runtimeType == .mlx && supportsVision {
+        if (runtimeType == .mlx || runtimeType == .liteRTLM) && supportsVision {
             modes.append(.image)
+            modes.append(.video)
         }
         return modes
     }

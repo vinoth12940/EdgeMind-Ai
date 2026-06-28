@@ -23,7 +23,9 @@ settings:
 packages:
   mlx-swift-lm:
     url: https://github.com/ml-explore/mlx-swift-lm
-    from: 3.31.3
+    revision: 944828ff66e216b7ae6991fabe471cc42f1cf37c
+  LiteRT-LM:
+    path: Vendor/LiteRT-LM
   swift-huggingface:
     url: https://github.com/huggingface/swift-huggingface
     from: 0.9.0
@@ -48,6 +50,8 @@ targets:
         product: MLXVLM
       - package: mlx-swift-lm
         product: MLXLMCommon
+      - package: LiteRT-LM
+        product: LiteRTLM
       - package: swift-huggingface
         product: HuggingFace
       - package: swift-transformers

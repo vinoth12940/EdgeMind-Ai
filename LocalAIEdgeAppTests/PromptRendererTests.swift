@@ -317,4 +317,95 @@ final class PromptRendererTests: XCTestCase {
         XCTAssertTrue(prompt.contains("WEB SEARCH RESULTS ARE ALREADY PROVIDED ABOVE."))
         XCTAssertTrue(prompt.contains("Do not say that you lack real-time, live, or current access."))
     }
+
+    func testMLXContextWindowIsClampedToDeviceTier() {
+        let model = InstalledModel(
+            catalogItem: makeMLXCatalogItem(
+                contextWindow: "256K",
+                supportsVision: false
+            ),
+            installState: .installed
+        )
+
+        XCTAssertEqual(InferenceBudget.safeContextWindow(for: model, tier: .compact), 2_048)
+        XCTAssertEqual(InferenceBudget.safeContextWindow(for: model, tier: .standard), 4_096)
+        XCTAssertEqual(InferenceBudget.safeContextWindow(for: model, tier: .pro), 8_192)
+        XCTAssertEqual(InferenceBudget.safeContextWindow(for: model, tier: .ultra), 16_384)
+    }
+
+    func testMLXHistoryBudgetLeavesRoomForSearchAndGeneration() {
+        let model = InstalledModel(
+            catalogItem: makeMLXCatalogItem(
+                contextWindow: "128K",
+                supportsVision: false
+            ),
+            installState: .installed
+        )
+        let search = SearchContext(
+            query: "latest Gemma model",
+            answer: nil,
+            snippets: ["Source snippet"],
+            citations: []
+        )
+
+        let budget = InferenceBudget.mlxHistoryBudget(
+            for: model,
+            searchContext: search,
+            maxGeneratedTokens: 2_048
+        )
+
+        XCTAssertEqual(budget, 2_048)
+        XCTAssertLessThan(budget, 128_000, "MLX history should use phone-safe context, not the upstream advertised window")
+    }
+
+    func testVisionHistoryKeepsFewerMessages() {
+        let textModel = InstalledModel(
+            catalogItem: makeMLXCatalogItem(supportsVision: false),
+            installState: .installed
+        )
+        let visionModel = InstalledModel(
+            catalogItem: makeMLXCatalogItem(supportsVision: true),
+            installState: .installed
+        )
+
+        let textLimit = InferenceBudget.maxHistoryMessages(for: textModel, searchContext: nil, tier: .pro)
+        let visionLimit = InferenceBudget.maxHistoryMessages(for: visionModel, searchContext: nil, tier: .pro)
+
+        XCTAssertLessThan(visionLimit, textLimit)
+        XCTAssertEqual(textLimit, 28)
+        XCTAssertEqual(visionLimit, 22)
+    }
+
+    func testTrimHistoryTextPreservesBeginningAndRecentTail() {
+        let long = String(repeating: "A", count: 300) + String(repeating: "B", count: 300)
+        let trimmed = InferenceBudget.trimHistoryText(long, maxCharacters: 300)
+
+        XCTAssertLessThan(trimmed.count, long.count)
+        XCTAssertLessThanOrEqual(trimmed.count, 300)
+        XCTAssertTrue(trimmed.hasPrefix("A"))
+        XCTAssertTrue(trimmed.hasSuffix("B"))
+        XCTAssertTrue(trimmed.contains("trimmed for on-device memory safety"))
+    }
+
+    private func makeMLXCatalogItem(
+        contextWindow: String = "128K",
+        supportsVision: Bool
+    ) -> ModelCatalogItem {
+        ModelCatalogItem(
+            displayName: supportsVision ? "Test VLM" : "Test LLM",
+            family: .mlxCommunity,
+            variant: supportsVision ? "MLX Community - 4bit - test/vlm" : "MLX Community - 4bit - test/llm",
+            summary: "Test MLX model",
+            parameterSize: "1B",
+            quantization: "4-bit",
+            diskSize: "1 GB",
+            contextWindow: contextWindow,
+            runtimeType: .mlx,
+            mlxModelID: supportsVision ? "mlx-community/test-vlm" : "mlx-community/test-llm",
+            sourceSupportsVision: supportsVision,
+            supportsVision: supportsVision,
+            runtimeStatus: .worksWithWarnings,
+            minimumTier: .standard
+        )
+    }
 }

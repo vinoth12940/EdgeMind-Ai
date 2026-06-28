@@ -96,10 +96,13 @@ enum AppTheme {
     static let labApple = Color(red: 0.64, green: 0.67, blue: 0.68)
     static let labStatNLP = Color(red: 0.40, green: 0.73, blue: 0.42)
     static let labKokoro = Color(red: 0.97, green: 0.46, blue: 0.62)
+    static let labMLXCommunity = Color(red: 1.00, green: 0.62, blue: 0.18)
 
     // MARK: - Capability Colors
     static let capThinking = Color(red: 1.00, green: 0.56, blue: 0.38)
     static let capVision = Color(red: 0.30, green: 0.85, blue: 0.75)
+    static let capVideo = Color(red: 0.28, green: 0.78, blue: 0.48)
+    static let capAudio = Color(red: 0.97, green: 0.46, blue: 0.62)
     static let capTools = Color(red: 0.98, green: 0.60, blue: 0.20)
     static let capReasoning = Color(red: 0.95, green: 0.85, blue: 0.35)
 
@@ -118,6 +121,7 @@ enum AppTheme {
         case .tinyLlama: return labStatNLP
         case .lfm: return Color(red: 0.0, green: 0.75, blue: 0.85) // Liquid AI teal
         case .kokoro: return labKokoro
+        case .mlxCommunity: return labMLXCommunity
         }
     }
 
@@ -125,6 +129,8 @@ enum AppTheme {
         switch cap {
         case .thinking: return capThinking
         case .vision: return capVision
+        case .video: return capVideo
+        case .audio: return capAudio
         case .toolCalling: return capTools
         case .reasoning: return capReasoning
         }

@@ -52,11 +52,33 @@ final class RuntimeProfileTests: XCTestCase {
             if item.isThinkingModel {
                 XCTAssertNotNil(resolved.thinking, "Missing thinking profile for \(item.displayName)")
             }
-            if item.supportsVision {
+            if item.supportsVision && item.auditVerdict.isGreen {
                 XCTAssertEqual(resolved.vision, .imageAndText, "Missing image runtime profile for \(item.displayName)")
-            } else if item.sourceSupportsVision && item.runtimeType == .gguf {
-                XCTAssertEqual(resolved.vision, .textOnlyInputs, "GGUF source-vision model should be profiled as text-only in app runtime")
+            } else if item.sourceSupportsVision && resolved.vision != .imageAndText {
+                XCTAssertEqual(resolved.vision, .textOnlyInputs, "Source-vision model should be profiled as text-only when the app runtime is not image-verified")
             }
+        }
+    }
+
+    func test_gemma4VisionRuntimeUsesLiteRTLMImagePath() throws {
+        let store = RuntimeProfileStore()
+        let gemmaItems = MockCatalogData.items.filter {
+            $0.displayName.hasPrefix("Gemma 4")
+                && $0.runtimeType == .liteRTLM
+                && $0.supportsVision
+        }
+
+        XCTAssertEqual(gemmaItems.count, 2)
+        for item in gemmaItems {
+            let resolved = ModelRuntimeResolver.resolve(catalog: item, store: store)
+            XCTAssertTrue(item.sourceSupportsVision)
+            XCTAssertTrue(item.sourceSupportsVideo)
+            XCTAssertTrue(item.sourceSupportsAudio)
+            XCTAssertTrue(item.supportsVision)
+            XCTAssertEqual(resolved.vision, .imageAndText)
+            XCTAssertFalse(resolved.isMismatch)
+            XCTAssertEqual(resolved.tools, .gemmaNativeToolCall)
+            XCTAssertFalse(resolved.verdict.isRed)
         }
     }
 
@@ -127,7 +149,8 @@ final class RuntimeProfileTests: XCTestCase {
         )
         let store = RuntimeProfileStore(
             bundleLoader: { [bundled] },
-            overrideLoader: { [override] }
+            overrideLoader: { [override] },
+            overridePolicy: .enabled
         )
         let resolved = store.profile(for: id)
         XCTAssertEqual(resolved?.auditVerdict, .green)
@@ -136,13 +159,48 @@ final class RuntimeProfileTests: XCTestCase {
         XCTAssertTrue(resolved?.knownLeakTokens.contains("<|override|>") == true)
     }
 
+    func test_overrideLoaderIgnoredWhenDisabled() {
+        let id = UUID()
+        let bundled = RuntimeProfile(
+            catalogID: id,
+            verifiedThinking: nil,
+            verifiedToolCalling: nil,
+            verifiedVision: .none,
+            knownLeakTokens: [],
+            recommendedMaxTokens: 512,
+            auditedAt: "",
+            auditVerdict: .yellow("pending-audit")
+        )
+        let override = RuntimeProfile(
+            catalogID: id,
+            verifiedThinking: .qwenNative,
+            verifiedToolCalling: .xmlToolCall,
+            verifiedVision: .imageAndText,
+            knownLeakTokens: ["<|override|>"],
+            recommendedMaxTokens: 2048,
+            auditedAt: "2026-04-19T09:00:00Z",
+            auditVerdict: .green
+        )
+        let store = RuntimeProfileStore(
+            bundleLoader: { [bundled] },
+            overrideLoader: { [override] },
+            overridePolicy: .disabled
+        )
+
+        let resolved = store.profile(for: id)
+        XCTAssertEqual(resolved?.auditVerdict, .yellow("pending-audit"))
+        XCTAssertNil(resolved?.verifiedThinking)
+        XCTAssertEqual(resolved?.recommendedMaxTokens, 512)
+        XCTAssertFalse(resolved?.knownLeakTokens.contains("<|override|>") == true)
+    }
+
     /// A compile-time safeguard: in Release builds the override path returns [] by
     /// construction (`#else` branch). The test cannot prove the `#if` is in place, but
     /// it does lock in the injectable contract so a later refactor that drops the
     /// overrideLoader parameter trips this test and forces a code review.
     func test_storeAcceptsInjectedOverrideLoader() {
         // Pure signature check — if this compiles, the injection hook exists.
-        _ = RuntimeProfileStore(bundleLoader: { [] }, overrideLoader: { [] })
+        _ = RuntimeProfileStore(bundleLoader: { [] }, overrideLoader: { [] }, overridePolicy: .disabled)
     }
 
     func test_bundledJSONResolvesFromAppBundle() throws {

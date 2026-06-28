@@ -17,10 +17,6 @@ struct ModelLibraryView: View {
     @State private var pendingConsentRequiredGB: Double = 0
     @State private var pendingConsentAvailableGB: Double = 0
     @State private var showInstallConsent = false
-    @State private var discoveryService: any ModelDiscoveryService = HuggingFaceModelDiscoveryService()
-    @State private var discoveryResults: [ModelDiscoveryCandidate] = []
-    @State private var discoveryError: String?
-    @State private var isDiscovering = false
 
     var body: some View {
         ZStack {
@@ -38,7 +34,7 @@ struct ModelLibraryView: View {
                     }
 
                     featuredFamiliesSection
-                    discoverSection
+                    catalogSearchSection
 
                     if hasActiveQuery {
                         searchResultsSection
@@ -140,7 +136,17 @@ struct ModelLibraryView: View {
     }
 
     private var featuredFamilies: [ModelCatalogItem.ModelFamily] {
-        let preferred: [ModelCatalogItem.ModelFamily] = [.gemma, .granite, .qwen, .lfm]
+        let preferred: [ModelCatalogItem.ModelFamily] = [
+            .gemma,
+            .llama,
+            .qwen,
+            .lfm,
+            .mistral,
+            .phi,
+            .deepSeek,
+            .smolLM,
+            .granite
+        ]
         let available = Set(tierFilteredCatalog.map(\.family))
         return preferred.filter { available.contains($0) }
     }
@@ -292,38 +298,7 @@ struct ModelLibraryView: View {
             }
 
             HStack(spacing: 8) {
-                if let installed {
-                    if item.runtimeType == .mlx && !mlxRuntimeAvailable {
-                        latestReleaseStatusPill("Device only", color: AppTheme.warning)
-                    } else {
-                        Button(installed.isDefault ? "Default" : "Use") {
-                            store.setDefaultModel(id: item.id)
-                        }
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle(installed.isDefault ? AppTheme.success : AppTheme.accent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background((installed.isDefault ? AppTheme.success : AppTheme.accent).opacity(0.14))
-                        .clipShape(Capsule())
-                    }
-                } else {
-                    if item.runtimeType == .mlx && !mlxRuntimeAvailable {
-                        latestReleaseStatusPill("Device only", color: AppTheme.warning)
-                    } else {
-                        Button("Install") {
-                            if item.runtimeType == .mlx {
-                                startMLXInstall(for: item)
-                            } else {
-                                startInstall(for: item)
-                            }
-                        }
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppTheme.background)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(AppTheme.accentGradient))
-                    }
-                }
+                latestReleaseInstallControl(for: item, installed: installed)
 
                 Spacer()
             }
@@ -338,6 +313,58 @@ struct ModelLibraryView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(color.opacity(0.18), lineWidth: 0.7)
         )
+    }
+
+    @ViewBuilder
+    private func latestReleaseInstallControl(for item: ModelCatalogItem, installed: InstalledModel?) -> some View {
+        if item.runtimeType == .mlx && !mlxRuntimeAvailable {
+            latestReleaseStatusPill("Device only", color: AppTheme.warning)
+        } else {
+            switch installed?.installState {
+            case .installed:
+                Button(installed?.isDefault == true ? "Default" : "Use") {
+                    store.setDefaultModel(id: item.id)
+                }
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(installed?.isDefault == true ? AppTheme.success : AppTheme.accent)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background((installed?.isDefault == true ? AppTheme.success : AppTheme.accent).opacity(0.14))
+                .clipShape(Capsule())
+            case .downloading:
+                HStack(spacing: 6) {
+                    ProgressView(value: installed?.progress ?? 0)
+                        .frame(width: 54)
+                        .tint(AppTheme.warning)
+                    Text("\(Int((installed?.progress ?? 0) * 100))%")
+                        .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                }
+                .foregroundStyle(AppTheme.warning)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(AppTheme.warning.opacity(0.14))
+                .clipShape(Capsule())
+            case .failed:
+                Button("Retry") {
+                    attemptInstall(for: item)
+                }
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.destructive)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(AppTheme.destructive.opacity(0.14))
+                .clipShape(Capsule())
+            case .notInstalled, nil:
+                Button("Install") {
+                    attemptInstall(for: item)
+                }
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.background)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(AppTheme.accentGradient))
+            }
+        }
     }
 
     private func latestReleaseStatusPill(_ text: String, color: Color) -> some View {
@@ -553,6 +580,14 @@ struct ModelLibraryView: View {
                     ProgressView(value: model.progress)
                         .frame(width: 68)
                         .tint(AppTheme.warning)
+                    if let message = model.statusMessage, !message.isEmpty {
+                        Text(message)
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AppTheme.textTertiary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 140, alignment: .trailing)
+                    }
                 }
             } else {
                 HStack(spacing: 8) {
@@ -719,13 +754,11 @@ struct ModelLibraryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var discoverSection: some View {
+    private var catalogSearchSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Discover", subtitle: hasActiveQuery ? "Filtered variants matching the current search lane." : "Search directly or filter into exact runtime capabilities.")
+            sectionHeader(title: "Find Models", subtitle: "Search and filter the curated, device-audited catalog.")
             searchBar
             capabilityFilterBar
-            discoveryActions
-            discoveryResultsView
         }
     }
 
@@ -775,83 +808,6 @@ struct ModelLibraryView: View {
         }
     }
 
-    private var discoveryActions: some View {
-        HStack(spacing: 10) {
-            Button {
-                Task { await runDiscoverySearch() }
-            } label: {
-                Label(isDiscovering ? "Searching Hugging Face..." : "Browse Hugging Face", systemImage: "globe")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.background)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(AppTheme.accentGradient)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(isDiscovering || searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            if !discoveryResults.isEmpty || discoveryError != nil {
-                Button {
-                    discoveryResults = []
-                    discoveryError = nil
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(AppTheme.textSecondary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(AppTheme.panel)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var discoveryResultsView: some View {
-        if let discoveryError {
-            Text(discoveryError)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(AppTheme.destructive)
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppTheme.destructive.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        } else if !discoveryResults.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(discoveryResults.prefix(8)) { candidate in
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(candidate.displayName)
-                                .font(.system(size: 13, weight: .heavy, design: .rounded))
-                                .foregroundStyle(AppTheme.textPrimary)
-                                .lineLimit(1)
-                            Text(candidate.modelID)
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(AppTheme.textTertiary)
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        Text(discoveryLabel(for: candidate.compatibility))
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundStyle(discoveryColor(for: candidate.compatibility))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(discoveryColor(for: candidate.compatibility).opacity(0.12))
-                            .clipShape(Capsule(style: .continuous))
-                    }
-                    .padding(12)
-                    .background(AppTheme.panelRaised.opacity(0.72))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-            }
-        }
-    }
-
     private func capToggle(label: String, icon: String, isOn: Binding<Bool>, color: Color) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -871,45 +827,6 @@ struct ModelLibraryView: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-    }
-
-    private func runDiscoverySearch() async {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty, !isDiscovering else { return }
-        isDiscovering = true
-        discoveryError = nil
-
-        do {
-            let results = try await discoveryService.search(query: query)
-            discoveryResults = results.sorted {
-                if $0.isInstallable != $1.isInstallable {
-                    return $0.isInstallable && !$1.isInstallable
-                }
-                return $0.downloads > $1.downloads
-            }
-        } catch {
-            discoveryResults = []
-            discoveryError = "Hugging Face search failed: \(error.localizedDescription)"
-        }
-
-        isDiscovering = false
-    }
-
-    private func discoveryLabel(for compatibility: ModelDiscoveryCandidate.Compatibility) -> String {
-        switch compatibility {
-        case .mlxLLM: return "MLX LLM"
-        case .mlxVLM: return "MLX VLM"
-        case .ggufText: return "GGUF Text"
-        case .experimental: return "Experimental"
-        }
-    }
-
-    private func discoveryColor(for compatibility: ModelDiscoveryCandidate.Compatibility) -> Color {
-        switch compatibility {
-        case .mlxLLM, .mlxVLM: return .orange
-        case .ggufText: return AppTheme.accent
-        case .experimental: return AppTheme.warning
-        }
     }
 
     private var familyDirectorySection: some View {
@@ -1094,6 +1011,8 @@ struct ModelLibraryView: View {
         switch family {
         case .gemma:
             return "Balanced private chat with reliable instruction following and a calm default tone."
+        case .llama:
+            return "Meta compact instruct models for fast local conversations."
         case .qwen:
             return "Fast text-first variants with strong reasoning and tool-friendly behavior."
         case .lfm:
@@ -1102,6 +1021,14 @@ struct ModelLibraryView: View {
             return "Apple research lineage and the natural landing spot for future system-native routing."
         case .phi:
             return "Small Microsoft models optimized for compact assistant flows."
+        case .mistral:
+            return "European open-weight models for capable multilingual local chat."
+        case .deepSeek:
+            return "Distilled reasoning models for private step-by-step problem solving."
+        case .smolLM:
+            return "Hugging Face small language models tuned for compact devices."
+        case .granite:
+            return "IBM instruct models for practical local assistant and tool workflows."
         case .kokoro:
             return "Voice assets for expressive local speech output on Apple Silicon devices."
         default:
@@ -1141,8 +1068,9 @@ struct ModelLibraryView: View {
             let rank: (ModelCatalogItem.RuntimeType) -> Int = {
                 switch $0 {
                 case .foundationModels: return 0
-                case .mlx: return 1
-                case .gguf: return 2
+                case .liteRTLM: return 1
+                case .mlx: return 2
+                case .gguf: return 3
                 }
             }
             return rank(lhs.runtimeType) < rank(rhs.runtimeType)
@@ -1155,35 +1083,77 @@ struct ModelLibraryView: View {
     }
 
     private func startMLXInstall(for item: ModelCatalogItem) {
-        #if canImport(MLXLLM) && !targetEnvironment(simulator)
-        guard let mlxModelID = item.mlxModelID else {
-            store.markInstallFailed(for: item, message: "No MLX model ID configured")
+        Task {
+            await runMLXInstall(for: item)
+        }
+    }
+
+    private func runMLXInstall(for item: ModelCatalogItem) async {
+#if canImport(MLXLLM) && !targetEnvironment(simulator)
+        await MainActor.run {
+            activeDownloads.insert(item.id)
+            store.updateInstallProgress(
+                for: item,
+                progress: 0,
+                state: .downloading,
+                statusMessage: "Preparing MLX download..."
+            )
+        }
+
+        if item.isCommunityDiscoveredMLX {
+            await MainActor.run {
+                store.markInstallFailed(
+                    for: item,
+                    message: "Community MLX downloads are disabled. Install a curated, device-audited catalog model instead."
+                )
+                activeDownloads.remove(item.id)
+            }
             return
         }
-        activeDownloads.insert(item.id)
-        store.updateInstallProgress(for: item, progress: 0, state: .downloading, statusMessage: "Downloading MLX model…")
 
-        Task {
-            do {
-                try await MLXRuntime.shared.preloadModel(mlxModelID, isVision: item.supportsVision) { fraction in
-                    Task { @MainActor in
-                        store.updateInstallProgress(for: item, progress: fraction, state: .downloading, statusMessage: "Downloading MLX model… \(Int(fraction * 100))%")
-                    }
-                }
-                await MainActor.run {
-                    store.markInstallCompleted(for: item, localPath: mlxModelID)
-                    activeDownloads.remove(item.id)
-                }
-            } catch {
-                await MainActor.run {
-                    store.markInstallFailed(for: item, message: error.localizedDescription)
-                    activeDownloads.remove(item.id)
+        guard let mlxModelID = item.mlxModelID else {
+            await MainActor.run {
+                store.markInstallFailed(for: item, message: "No MLX model ID configured")
+                activeDownloads.remove(item.id)
+            }
+            return
+        }
+        await MainActor.run {
+            store.updateInstallProgress(
+                for: item,
+                progress: 0,
+                state: .downloading,
+                statusMessage: "Downloading MLX model (\(item.diskSize))..."
+            )
+        }
+
+        do {
+            try await MLXRuntime.shared.preloadModel(mlxModelID, isVision: item.supportsVision) { downloadProgress in
+                Task { @MainActor in
+                    let percent = Int(downloadProgress.fraction * 100)
+                    store.updateInstallProgress(
+                        for: item,
+                        progress: downloadProgress.fraction,
+                        state: .downloading,
+                        statusMessage: "Downloading MLX model (\(item.diskSize))... \(percent)% - \(downloadProgress.statusText)"
+                    )
                 }
             }
+            await MainActor.run {
+                store.markInstallCompleted(for: item, localPath: mlxModelID)
+                activeDownloads.remove(item.id)
+            }
+        } catch {
+            await MainActor.run {
+                store.markInstallFailed(for: item, message: error.localizedDescription)
+                activeDownloads.remove(item.id)
+            }
         }
-        #else
-        store.markInstallFailed(for: item, message: "MLX models require a real device with Apple Silicon.")
-        #endif
+#else
+        await MainActor.run {
+            store.markInstallFailed(for: item, message: "MLX models require a real device with Apple Silicon.")
+        }
+#endif
     }
 
     private func startInstall(for item: ModelCatalogItem) {
@@ -1255,6 +1225,11 @@ struct ModelLibraryView: View {
     }
 
     private func attemptInstall(for item: ModelCatalogItem) {
+        if let tierMessage = ModelInstallGuard.unsupportedTierMessage(for: item) {
+            store.markInstallFailed(for: item, message: "\(tierMessage). This model is hidden from phone-safe bulk installs to avoid app termination.")
+            return
+        }
+
         if let consent = requiresInstallConsent(for: item) {
             pendingConsentItem = item
             pendingConsentRequiredGB = consent.required
@@ -1273,11 +1248,7 @@ struct ModelLibraryView: View {
     }
 
     private func requiresInstallConsent(for item: ModelCatalogItem) -> (required: Double, available: Double)? {
-        let tier = DeviceTier.current()
-        let required = item.estimatedResidentGB(contextTokens: tier.safeContextTokens)
-        guard required > tier.usableWeightGB else { return nil }
-        guard !ModelDownloadConsentStore.hasConsent(for: item) else { return nil }
-        return (required, tier.usableWeightGB)
+        ModelInstallGuard.memoryConsentRequirement(for: item)
     }
 }
 
@@ -1906,6 +1877,14 @@ private struct ModelTile: View {
                 .padding(.vertical, 11)
                 .background(AppTheme.panelRaised.opacity(0.7))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else if let tierMessage = ModelInstallGuard.unsupportedTierMessage(for: item, currentTier: currentTier) {
+                Label(tierMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.warning)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(AppTheme.warning.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             } else {
                 Button(action: onInstall) {
                     HStack(spacing: 6) {

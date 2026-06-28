@@ -66,14 +66,7 @@ enum SearchGatewayFactory {
     }
 
     static func shouldAutoEnableLiveSearch(settings: AppSettings) -> Bool {
-        switch settings.webSearchProvider {
-        case .none:
-            return false
-        case .tavily, .brave, .serper:
-            return !settings.webSearchAPIKey.isEmpty
-        case .custom:
-            return normalizedCustomGatewayURL(from: settings) != nil
-        }
+        settings.useSearchByDefault && make(settings: settings) != nil
     }
 
     static func hasSuggestedGateway(settings: AppSettings) -> Bool {

@@ -41,4 +41,26 @@ final class CustomSearchGatewayTests: XCTestCase {
     func testFactoryDoesNotAutoEnableFallbackGatewayUntilExplicitlySelected() {
         XCTAssertFalse(SearchGatewayFactory.shouldAutoEnableLiveSearch(settings: .default))
     }
+
+    func testConfiguredProviderDoesNotAutoEnableLiveSearchByItself() {
+        var settings = AppSettings.default
+        settings.webSearchProvider = .serper
+        settings.webSearchAPIKey = "test-key"
+        settings.useSearchByDefault = false
+
+        XCTAssertNotNil(SearchGatewayFactory.make(settings: settings))
+        XCTAssertFalse(SearchGatewayFactory.shouldAutoEnableLiveSearch(settings: settings))
+    }
+
+    func testExplicitSearchDefaultAutoEnablesOnlyWhenGatewayIsUsable() {
+        var settings = AppSettings.default
+        settings.webSearchProvider = .serper
+        settings.webSearchAPIKey = "test-key"
+        settings.useSearchByDefault = true
+
+        XCTAssertTrue(SearchGatewayFactory.shouldAutoEnableLiveSearch(settings: settings))
+
+        settings.webSearchAPIKey = ""
+        XCTAssertFalse(SearchGatewayFactory.shouldAutoEnableLiveSearch(settings: settings))
+    }
 }

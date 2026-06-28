@@ -157,7 +157,6 @@ enum PromptRenderer {
 
         // Conversation is prior history only — current user prompt is NOT included.
         let eligibleMessages = conversation.filter {
-            $0.role != .search &&
             $0.role != .system &&
             !AssistantResponseFallback.shouldSkipInHistory($0) &&
             !AssistantResponseFallback.isInstructionEcho($0.text, systemPrompt: systemPrompt) &&
@@ -166,18 +165,24 @@ enum PromptRenderer {
 
         var historyTurns: [LocalLlamaChatTurn] = []
         var usedTokens = 0
+        var retainedMessages = 0
+        let maxHistoryMessages = maxPromptTokens <= 2_048 ? 16 : 32
+        let maxHistoryCharacters = maxPromptTokens <= 2_048 ? 2_000 : 4_000
 
         for message in eligibleMessages.reversed() {
             let role: String
             switch message.role {
             case .assistant: role = "assistant"
             case .user:      role = "user"
-            case .system, .search: continue
+            case .system:    continue
             }
-            let cost = estimateTokens(message.text)
+            let content = InferenceBudget.trimHistoryText(message.text, maxCharacters: maxHistoryCharacters)
+            let cost = estimateTokens(content)
             if usedTokens + cost > historyBudget { break }
-            historyTurns.insert(LocalLlamaChatTurn(role: role, content: message.text), at: 0)
+            historyTurns.insert(LocalLlamaChatTurn(role: role, content: content), at: 0)
             usedTokens += cost
+            retainedMessages += 1
+            if retainedMessages >= maxHistoryMessages { break }
         }
 
         if usesGemmaTurnFormat(modelName) {
@@ -234,7 +239,6 @@ enum PromptRenderer {
 
         // Conversation is prior history only — current user prompt is NOT included.
         let eligibleMessages = conversation.filter {
-            $0.role != .search &&
             $0.role != .system &&
             !AssistantResponseFallback.shouldSkipInHistory($0) &&
             !AssistantResponseFallback.isInstructionEcho($0.text, systemPrompt: systemPrompt) &&
@@ -242,18 +246,24 @@ enum PromptRenderer {
         }
         var historyLines: [String] = []
         var usedTokens = 0
+        var retainedMessages = 0
+        let maxHistoryMessages = maxPromptTokens <= 2_048 ? 16 : 32
+        let maxHistoryCharacters = maxPromptTokens <= 2_048 ? 2_000 : 4_000
 
         for message in eligibleMessages.reversed() {
             let line: String
+            let content = InferenceBudget.trimHistoryText(message.text, maxCharacters: maxHistoryCharacters)
             switch message.role {
-            case .assistant: line = "Assistant: \(message.text)"
-            case .user:      line = "User: \(message.text)"
-            case .system, .search: continue
+            case .assistant: line = "Assistant: \(content)"
+            case .user:      line = "User: \(content)"
+            case .system:    continue
             }
             let cost = estimateTokens(line)
             if usedTokens + cost > historyBudget { break }
             historyLines.insert(line, at: 0)
             usedTokens += cost
+            retainedMessages += 1
+            if retainedMessages >= maxHistoryMessages { break }
         }
 
         if usesGemmaTurnFormat(modelName) {
@@ -333,12 +343,19 @@ enum PromptRenderer {
     ) -> String {
         var retainedMessages: [ChatMessage] = []
         var usedTokens = 0
+        var retainedCount = 0
+        let maxHistoryMessages = historyBudget <= 2_048 ? 16 : 32
+        let maxHistoryCharacters = historyBudget <= 2_048 ? 2_000 : 4_000
 
         for message in conversation.reversed() {
-            let cost = estimateTokens(message.text)
+            var boundedMessage = message
+            boundedMessage.text = InferenceBudget.trimHistoryText(message.text, maxCharacters: maxHistoryCharacters)
+            let cost = estimateTokens(boundedMessage.text)
             if usedTokens + cost > historyBudget { break }
-            retainedMessages.insert(message, at: 0)
+            retainedMessages.insert(boundedMessage, at: 0)
             usedTokens += cost
+            retainedCount += 1
+            if retainedCount >= maxHistoryMessages { break }
         }
 
         // Gemma 4 uses <|turn> / <turn|> tokens (NOT <start_of_turn> / <end_of_turn>)
@@ -353,7 +370,7 @@ enum PromptRenderer {
                 promptTurns.append("<|turn>user\n\(message.text)<turn|>")
             case .assistant:
                 promptTurns.append("<|turn>model\n\(message.text)<turn|>")
-            case .system, .search:
+            case .system:
                 continue
             }
         }
@@ -371,12 +388,19 @@ enum PromptRenderer {
     ) -> String {
         var retainedMessages: [ChatMessage] = []
         var usedTokens = 0
+        var retainedCount = 0
+        let maxHistoryMessages = historyBudget <= 2_048 ? 16 : 32
+        let maxHistoryCharacters = historyBudget <= 2_048 ? 2_000 : 4_000
 
         for message in conversation.reversed() {
-            let cost = estimateTokens(message.text)
+            var boundedMessage = message
+            boundedMessage.text = InferenceBudget.trimHistoryText(message.text, maxCharacters: maxHistoryCharacters)
+            let cost = estimateTokens(boundedMessage.text)
             if usedTokens + cost > historyBudget { break }
-            retainedMessages.insert(message, at: 0)
+            retainedMessages.insert(boundedMessage, at: 0)
             usedTokens += cost
+            retainedCount += 1
+            if retainedCount >= maxHistoryMessages { break }
         }
 
         var promptTurns: [String] = []
@@ -390,7 +414,7 @@ enum PromptRenderer {
                 systemInjected = true
             case .assistant:
                 promptTurns.append("<start_of_turn>model\n\(message.text)<end_of_turn>")
-            case .system, .search:
+            case .system:
                 continue
             }
         }

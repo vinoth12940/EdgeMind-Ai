@@ -18,6 +18,13 @@ final class AppStateStore {
     private static let selectedSessionIDKey = "persistedSelectedSessionID"
     private static let placeholderSessionTitle = "New Chat"
     private static let maxPersistedImageBytes = 600_000
+    private static let maxPersistedSessions = 40
+    private static let maxInMemoryMessagesPerSession = 260
+    private static let maxInMemoryMessageTextCharacters = 96_000
+    private static let maxInMemoryThinkingCharacters = 64_000
+    private static let maxPersistedMessagesPerSession = 180
+    private static let maxPersistedMessageTextCharacters = 64_000
+    private static let maxPersistedThinkingCharacters = 48_000
 
     init(
         catalog: [ModelCatalogItem] = MockCatalogData.items,
@@ -28,10 +35,12 @@ final class AppStateStore {
         self.catalog = catalog
         if let savedSessions = Self.loadChatSessions(), !savedSessions.isEmpty {
             self.chatSessions = savedSessions
-                .map(Self.sanitizedSessionForPersistence)
+                .map(Self.sanitizedSessionForInMemory)
                 .map(Self.normalizedSessionTitle)
         } else {
-            self.chatSessions = chatSessions.map(Self.normalizedSessionTitle)
+            self.chatSessions = chatSessions
+                .map(Self.sanitizedSessionForInMemory)
+                .map(Self.normalizedSessionTitle)
         }
         self.selectedSessionID = Self.loadSelectedSessionID()
 
@@ -51,6 +60,7 @@ final class AppStateStore {
 
         reconcilePersistedInstalledModelsWithCurrentCatalog()
         migrateUnsupportedCatalogEntriesIfNeeded()
+        ensureSystemFoundationModelAvailable()
     }
 
     var selectedSession: ChatSession? {
@@ -169,7 +179,8 @@ final class AppStateStore {
             return
         }
 
-        chatSessions[sessionIndex].messages.append(message)
+        chatSessions[sessionIndex].messages.append(Self.sanitizedMessageForInMemory(message))
+        chatSessions[sessionIndex] = Self.sanitizedSessionForInMemory(chatSessions[sessionIndex])
         chatSessions[sessionIndex].updatedAt = .now
         chatSessions[sessionIndex] = Self.normalizedSessionTitle(chatSessions[sessionIndex])
         saveChatSessions()
@@ -190,7 +201,7 @@ final class AppStateStore {
             return
         }
 
-        chatSessions[sessionIndex].messages[messageIndex].text = text
+        chatSessions[sessionIndex].messages[messageIndex].text = Self.trimInMemoryText(text)
         chatSessions[sessionIndex].updatedAt = .now
         if persist {
             saveChatSessions()
@@ -206,7 +217,7 @@ final class AppStateStore {
     ) {
         guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
         guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
-        chatSessions[sessionIndex].messages[messageIndex].thinkingContent = thinkingContent
+        chatSessions[sessionIndex].messages[messageIndex].thinkingContent = thinkingContent.map(Self.trimInMemoryThinking)
         chatSessions[sessionIndex].messages[messageIndex].thinkingDurationSeconds = thinkingDurationSeconds
         chatSessions[sessionIndex].updatedAt = .now
         if persist { saveChatSessions() }
@@ -240,7 +251,7 @@ final class AppStateStore {
     }
 
     func reconcileInstalledFiles() {
-        for item in catalog where item.runtimeType == .gguf {
+        for item in catalog where item.runtimeType == .gguf || item.runtimeType == .liteRTLM {
             guard let localPath = URLModelDownloadService.installedLocalPath(for: item) else { continue }
             markInstallCompleted(for: item, localPath: localPath)
         }
@@ -285,20 +296,76 @@ final class AppStateStore {
     }
 
     private func saveChatSessions() {
-        let sanitized = chatSessions.map(Self.sanitizedSessionForPersistence)
+        let sanitized = Self.boundedSessionsForPersistence(chatSessions)
+            .map(Self.sanitizedSessionForPersistence)
         guard let data = try? JSONEncoder().encode(sanitized) else { return }
         UserDefaults.standard.set(data, forKey: Self.chatSessionsKey)
     }
 
     private static func loadChatSessions() -> [ChatSession]? {
         guard let data = UserDefaults.standard.data(forKey: chatSessionsKey) else { return nil }
-        return try? JSONDecoder().decode([ChatSession].self, from: data)
+        guard let sessions = try? JSONDecoder().decode([ChatSession].self, from: data) else {
+            return nil
+        }
+        return boundedSessionsForPersistence(sessions).map(sanitizedSessionForPersistence)
     }
 
     private static func sanitizedSessionForPersistence(_ session: ChatSession) -> ChatSession {
         var sanitized = session
-        sanitized.messages = session.messages.map(Self.sanitizedMessageForPersistence)
+        sanitized.messages = Self.boundedMessagesForLongChat(
+            session.messages,
+            maxMessages: Self.maxPersistedMessagesPerSession
+        ).map(Self.sanitizedMessageForPersistence)
         return sanitized
+    }
+
+    private static func sanitizedSessionForInMemory(_ session: ChatSession) -> ChatSession {
+        var sanitized = session
+        sanitized.messages = Self.boundedMessagesForLongChat(
+            session.messages,
+            maxMessages: Self.maxInMemoryMessagesPerSession
+        ).map(Self.sanitizedMessageForInMemory)
+        return sanitized
+    }
+
+    private static func boundedSessionsForPersistence(_ sessions: [ChatSession]) -> [ChatSession] {
+        sessions
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(maxPersistedSessions)
+            .map { $0 }
+    }
+
+    private static func boundedMessagesForLongChat(_ messages: [ChatMessage], maxMessages: Int) -> [ChatMessage] {
+        guard messages.count > maxMessages else { return messages }
+        guard maxMessages > 1 else { return Array(messages.suffix(maxMessages)) }
+
+        let firstUser = messages.first(where: { $0.role == .user })
+        var retained = Array(messages.suffix(maxMessages))
+        if let firstUser, !retained.contains(where: { $0.id == firstUser.id }) {
+            retained = [firstUser] + retained.suffix(maxMessages - 1)
+        }
+        return retained
+    }
+
+    private static func sanitizedMessageForInMemory(_ message: ChatMessage) -> ChatMessage {
+        ChatMessage(
+            id: message.id,
+            role: message.role,
+            text: trimInMemoryText(message.text),
+            createdAt: message.createdAt,
+            citations: message.citations,
+            attachments: message.attachments,
+            thinkingContent: message.thinkingContent.map(trimInMemoryThinking),
+            thinkingDurationSeconds: message.thinkingDurationSeconds
+        )
+    }
+
+    private static func trimInMemoryText(_ text: String) -> String {
+        InferenceBudget.trimHistoryText(text, maxCharacters: maxInMemoryMessageTextCharacters)
+    }
+
+    private static func trimInMemoryThinking(_ text: String) -> String {
+        InferenceBudget.trimHistoryText(text, maxCharacters: maxInMemoryThinkingCharacters)
     }
 
     private static func sanitizedMessageForPersistence(_ message: ChatMessage) -> ChatMessage {
@@ -309,11 +376,13 @@ final class AppStateStore {
         return ChatMessage(
             id: message.id,
             role: message.role,
-            text: message.text,
+            text: InferenceBudget.trimHistoryText(message.text, maxCharacters: maxPersistedMessageTextCharacters),
             createdAt: message.createdAt,
             citations: message.citations,
             attachments: sanitizedAttachments,
-            thinkingContent: message.thinkingContent,
+            thinkingContent: message.thinkingContent.map {
+                InferenceBudget.trimHistoryText($0, maxCharacters: maxPersistedThinkingCharacters)
+            },
             thinkingDurationSeconds: message.thinkingDurationSeconds
         )
     }
@@ -374,9 +443,13 @@ final class AppStateStore {
         }
 
         switch model.catalogItem.runtimeType {
-        case .gguf:
+        case .gguf, .liteRTLM:
             guard let fileURL = model.fileURL else { return false }
-            return FileManager.default.fileExists(atPath: fileURL.path)
+            guard FileManager.default.fileExists(atPath: fileURL.path) else { return false }
+            if model.catalogItem.runtimeType == .liteRTLM {
+                return fileURL.pathExtension == "litertlm"
+            }
+            return true
         case .mlx:
 #if targetEnvironment(simulator)
             return false
@@ -399,7 +472,14 @@ final class AppStateStore {
                 return model
             }
             let reconciledPath = reconciledLocalPath(model: model, currentCatalogItem: currentCatalogItem)
-            guard currentCatalogItem != model.catalogItem || reconciledPath != model.localPath else {
+            let reconciledState = reconciledInstallState(
+                model: model,
+                currentCatalogItem: currentCatalogItem,
+                reconciledPath: reconciledPath
+            )
+            guard currentCatalogItem != model.catalogItem
+                    || reconciledPath != model.localPath
+                    || reconciledState != model.installState else {
                 return model
             }
 
@@ -407,9 +487,9 @@ final class AppStateStore {
             let updated = InstalledModel(
                 id: model.id,
                 catalogItem: currentCatalogItem,
-                installState: model.installState,
-                progress: model.progress,
-                installedAt: model.installedAt,
+                installState: reconciledState,
+                progress: reconciledState == .installed ? model.progress : 0,
+                installedAt: reconciledState == .installed ? model.installedAt : nil,
                 localPath: reconciledPath,
                 isDefault: model.isDefault,
                 statusMessage: model.statusMessage
@@ -434,11 +514,11 @@ final class AppStateStore {
         }
 
         switch model.catalogItem.runtimeType {
-        case .gguf:
+        case .gguf, .liteRTLM:
             guard let localPath = model.localPath else { return nil }
             let fileName = URL(fileURLWithPath: localPath).lastPathComponent
             return catalog.first {
-                $0.runtimeType == .gguf &&
+                $0.runtimeType == model.catalogItem.runtimeType &&
                 $0.downloadFileName == fileName
             }
         case .mlx:
@@ -458,6 +538,13 @@ final class AppStateStore {
         switch currentCatalogItem.runtimeType {
         case .gguf:
             return model.localPath
+        case .liteRTLM:
+            if let localPath = model.localPath,
+               FileManager.default.fileExists(atPath: localPath),
+               URL(fileURLWithPath: localPath).pathExtension == "litertlm" {
+                return localPath
+            }
+            return URLModelDownloadService.installedLocalPath(for: currentCatalogItem)
         case .mlx:
             return currentCatalogItem.mlxModelID
         case .foundationModels:
@@ -465,15 +552,31 @@ final class AppStateStore {
         }
     }
 
+    private func reconciledInstallState(
+        model: InstalledModel,
+        currentCatalogItem: ModelCatalogItem,
+        reconciledPath: String?
+    ) -> InstalledModel.InstallState {
+        guard currentCatalogItem.runtimeType == .liteRTLM else {
+            return model.installState
+        }
+        guard let reconciledPath,
+              FileManager.default.fileExists(atPath: reconciledPath) else {
+            return .notInstalled
+        }
+        return model.installState
+    }
+
     /// One-time migration for catalog entries that are no longer supported by the shipped runtimes.
     private func migrateUnsupportedCatalogEntriesIfNeeded() {
         let deprecatedModelIDs: Set<String> = [
-            "mlx-community/gemma-4-e2b-it-4bit",
-            "mlx-community/gemma-4-e4b-it-4bit",
             "mlx-community/gemma-3n-E2B-it-4bit",
             "mlx-community/gemma-3n-E4B-it-4bit",
             "mlx-community/gemma-3n-E2B-it-lm-4bit",
             "mlx-community/gemma-3n-E4B-it-lm-4bit",
+            "mlx-community/gemma-3-4b-it-4bit",
+            "mlx-community/gemma-4-e2b-it-4bit",
+            "mlx-community/gemma-4-e4b-it-4bit",
             "mlx-community/OpenELM-270M-Instruct-4bit",
             "mlx-community/OpenELM-1_1B-Instruct-4bit",
             "mlx-community/granite-3.3-8b-instruct-4bit",
@@ -484,13 +587,30 @@ final class AppStateStore {
             "mlx-community/Qwen3-4B-Thinking-2507-4bit",
             "mlx-community/Qwen3-8B-4bit"
         ]
+        let deprecatedLiteRTFileNames: Set<String> = [
+            "gemma3-270m-it-q4_0-web.task",
+            "gemma3-270m-it-q8-web.task",
+            "gemma3-270m-it-q8.task",
+            "gemma-3-270m-it.task"
+        ]
 
         var didChange = false
         var migratedDefaultModelID = settings.defaultModelID
 
         let migrated = installedModels.compactMap { model -> InstalledModel? in
-            guard let oldModelID = model.catalogItem.mlxModelID,
-                                    deprecatedModelIDs.contains(oldModelID) else {
+            let oldModelID = model.catalogItem.mlxModelID
+            let fileName = model.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ""
+            let displayName = model.catalogItem.displayName.lowercased()
+            let isDeprecatedMLX = oldModelID.map(deprecatedModelIDs.contains) ?? false
+            let isDeprecatedLiteRT = model.catalogItem.runtimeType == .liteRTLM
+                && (
+                    deprecatedLiteRTFileNames.contains(fileName)
+                    || fileName.hasSuffix(".task")
+                    || displayName.contains("gemma 3 270m")
+                    || displayName.contains("gemma 3 1b")
+                )
+
+            guard isDeprecatedMLX || isDeprecatedLiteRT else {
                 return model
             }
 
@@ -507,5 +627,39 @@ final class AppStateStore {
             saveInstalledModels()
             saveSettings()
         }
+    }
+
+    private func ensureSystemFoundationModelAvailable() {
+        guard let systemModel = catalog.first(where: { $0.runtimeType == .foundationModels }) else {
+            return
+        }
+
+        guard !installedModels.contains(where: { $0.catalogItem.id == systemModel.id }) else {
+            return
+        }
+
+        let shouldMakeDefault = settings.defaultModelID == nil || defaultModel == nil
+        if shouldMakeDefault {
+            installedModels = installedModels.map { model in
+                var updated = model
+                updated.isDefault = false
+                return updated
+            }
+            settings.defaultModelID = systemModel.id
+        }
+
+        installedModels.insert(
+            InstalledModel(
+                catalogItem: systemModel,
+                installState: .installed,
+                progress: 1,
+                localPath: AppleFoundationModelService.localPathMarker,
+                isDefault: shouldMakeDefault
+            ),
+            at: 0
+        )
+
+        saveInstalledModels()
+        saveSettings()
     }
 }

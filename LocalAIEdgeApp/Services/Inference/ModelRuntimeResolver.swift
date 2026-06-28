@@ -17,7 +17,7 @@ enum ModelRuntimeResolver {
         let profile = store.profile(for: catalog.id) ?? RuntimeProfile.safeMinimum(catalogID: catalog.id)
 
         // Detect mismatches so UI can surface "claimed but not verified".
-        let visionMismatch = catalog.supportsVision && profile.verifiedVision == .none
+        let visionMismatch = catalog.sourceSupportsVision && profile.verifiedVision != .imageAndText
         let toolMismatch = catalog.supportsToolCalling && profile.verifiedToolCalling == nil
         let thinkMismatch = catalog.isThinkingModel && profile.verifiedThinking == nil
 

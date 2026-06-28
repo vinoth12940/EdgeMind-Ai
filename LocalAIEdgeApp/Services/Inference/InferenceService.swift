@@ -396,7 +396,7 @@ enum SearchResultFallbackComposer {
 }
 
 enum InferenceBudget {
-    static func safeContextWindow(for model: InstalledModel) -> Int {
+    static func safeContextWindow(for model: InstalledModel, tier: DeviceTier = .current()) -> Int {
         let catalogContext = model.catalogItem.contextWindowTokenCount
 
         switch model.catalogItem.runtimeType {
@@ -407,9 +407,15 @@ enum InferenceBudget {
             }
             return max(512, deviceContext)
         case .mlx:
-            return max(4_096, catalogContext > 0 ? catalogContext : 8_192)
+            let deviceContext = tier.safeContextTokens
+            let requestedContext = catalogContext > 0 ? catalogContext : deviceContext
+            return max(2_048, min(deviceContext, requestedContext))
+        case .liteRTLM:
+            let requestedContext = catalogContext > 0 ? catalogContext : 2_048
+            return max(1_024, min(2_048, requestedContext))
         case .foundationModels:
-            return max(4_096, catalogContext > 0 ? catalogContext : 4_096)
+            let requestedContext = catalogContext > 0 ? catalogContext : tier.safeContextTokens
+            return max(2_048, min(tier.safeContextTokens, requestedContext))
         }
     }
 
@@ -422,14 +428,54 @@ enum InferenceBudget {
 
     static func mlxHistoryBudget(for model: InstalledModel, searchContext: SearchContext?, maxGeneratedTokens: Int) -> Int {
         let contextWindow = safeContextWindow(for: model)
-        let reservedPromptSpace = searchContext == nil ? 3_072 : 8_192
-        return max(4_096, contextWindow - maxGeneratedTokens - reservedPromptSpace)
+        let reservedPromptSpace = searchContext == nil
+            ? min(2_048, max(768, contextWindow / 3))
+            : min(4_096, max(1_024, contextWindow / 2))
+        return max(512, contextWindow - maxGeneratedTokens - reservedPromptSpace)
     }
 
     static func mlxSearchBudgetCharacters(for model: InstalledModel, maxGeneratedTokens: Int) -> Int {
         let contextWindow = safeContextWindow(for: model)
         let promptBudget = max(4_096, contextWindow - maxGeneratedTokens - 4_096)
         return min(36_000, max(12_000, promptBudget * 2))
+    }
+
+    static func maxHistoryMessages(for model: InstalledModel, searchContext: SearchContext?, tier: DeviceTier = .current()) -> Int {
+        let base: Int
+        switch tier {
+        case .compact:  base = 12
+        case .standard: base = 18
+        case .pro:      base = 28
+        case .ultra:    base = 40
+        }
+
+        let visionPenalty = model.catalogItem.supportsVision ? 6 : 0
+        let searchPenalty = searchContext == nil ? 0 : 6
+        return max(8, base - visionPenalty - searchPenalty)
+    }
+
+    static func maxHistoryCharactersPerMessage(for model: InstalledModel, tier: DeviceTier = .current()) -> Int {
+        let base: Int
+        switch tier {
+        case .compact:  base = 2_000
+        case .standard: base = 3_000
+        case .pro:      base = 4_500
+        case .ultra:    base = 6_000
+        }
+        return model.catalogItem.supportsVision ? max(1_500, base / 2) : base
+    }
+
+    static func trimHistoryText(_ text: String, maxCharacters: Int) -> String {
+        guard text.count > maxCharacters else { return text }
+        guard maxCharacters > 256 else { return String(text.suffix(maxCharacters)) }
+
+        let marker = "\n\n[Earlier part of this long turn was trimmed for on-device memory safety.]\n\n"
+        let available = max(128, maxCharacters - marker.count)
+        let headCount = max(64, available / 4)
+        let tailCount = max(64, available - headCount)
+        let head = text.prefix(headCount)
+        let tail = text.suffix(tailCount)
+        return "\(head)\(marker)\(tail)"
     }
 }
 

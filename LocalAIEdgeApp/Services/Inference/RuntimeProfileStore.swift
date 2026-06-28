@@ -5,14 +5,24 @@ import OSLog
 private let logger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "RuntimeProfileStore")
 
 /// Loads bundled RuntimeProfiles.json once, exposes profile lookup.
-/// In Debug builds, a local Documents override can shadow bundled entries.
-/// In Release builds, the override path is compiled out — no override can ship.
+/// Debug override profiles are opt-in for explicit audit runs. Normal app
+/// launches must not be silently changed by a stale Documents override.
 final class RuntimeProfileStore {
     private let profiles: [UUID: RuntimeProfile]
 
-    init(bundleLoader: (() -> [RuntimeProfile])? = nil, overrideLoader: (() -> [RuntimeProfile])? = nil) {
+    enum OverridePolicy {
+        case disabled
+        case enabled
+    }
+
+    init(
+        bundleLoader: (() -> [RuntimeProfile])? = nil,
+        overrideLoader: (() -> [RuntimeProfile])? = nil,
+        overridePolicy: OverridePolicy? = nil
+    ) {
         let bundled = (bundleLoader ?? Self.loadBundled)()
-        let overridden = (overrideLoader ?? Self.loadOverride)()
+        let policy = overridePolicy ?? Self.defaultOverridePolicy()
+        let overridden = policy == .enabled ? (overrideLoader ?? Self.loadOverride)() : []
         var merged = Dictionary(uniqueKeysWithValues: bundled.map { ($0.catalogID, $0) })
         for o in overridden {
             merged[o.catalogID] = o  // override shadows bundled
@@ -37,6 +47,14 @@ final class RuntimeProfileStore {
             logger.error("Failed to decode RuntimeProfiles.json: \(error.localizedDescription, privacy: .public)")
             return []
         }
+    }
+
+    private static func defaultOverridePolicy() -> OverridePolicy {
+        #if DEBUG
+        CommandLine.arguments.contains("--localai-run-model-audit") ? .enabled : .disabled
+        #else
+        .disabled
+        #endif
     }
 
     #if DEBUG

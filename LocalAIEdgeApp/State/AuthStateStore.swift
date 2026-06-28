@@ -67,6 +67,11 @@ final class AuthStateStore {
         completeSignIn(with: guestProfile)
     }
 
+    func ensureAnonymousSession() {
+        guard !isAuthenticated else { return }
+        continueAsGuest()
+    }
+
     func signInWithCredentials(displayName: String, email: String) {
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedName.count >= 2 else {
@@ -173,10 +178,9 @@ final class AuthStateStore {
     }
 
     func signOut() {
-        isAuthenticated = false
-        profile = nil
         lastErrorMessage = nil
         UserDefaults.standard.removeObject(forKey: Self.profileKey)
+        continueAsGuest()
     }
 
     func clearError() {
@@ -228,8 +232,7 @@ final class AuthStateStore {
     private func restorePersistedSession() {
         guard let data = UserDefaults.standard.data(forKey: Self.profileKey),
               let decodedProfile = try? JSONDecoder().decode(UserProfile.self, from: data) else {
-            isAuthenticated = false
-            profile = nil
+            continueAsGuest()
             return
         }
 

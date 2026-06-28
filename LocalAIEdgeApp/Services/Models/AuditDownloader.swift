@@ -19,7 +19,18 @@ struct DefaultAuditDownloader: AuditDownloader {
 
     @MainActor
     func installedModel(for item: ModelCatalogItem, store: AppStateStore) -> InstalledModel? {
-        store.installedModels.first(where: { $0.catalogItem.id == item.id })
+        store.installedModels.first { model in
+            guard model.catalogItem.id == item.id else { return false }
+            switch item.runtimeType {
+            case .gguf, .liteRTLM:
+                guard let fileURL = model.fileURL else { return false }
+                return FileManager.default.fileExists(atPath: fileURL.path)
+            case .mlx:
+                return model.localPath == item.mlxModelID
+            case .foundationModels:
+                return model.localPath == AppleFoundationModelService.localPathMarker
+            }
+        }
     }
 
     func preloadIfNeeded(
@@ -32,7 +43,7 @@ struct DefaultAuditDownloader: AuditDownloader {
         }
 
         switch item.runtimeType {
-        case .gguf:
+        case .gguf, .liteRTLM:
             return try await ggufService.beginInstall(for: item) { event in
                 progress(event.progress)
             }
@@ -41,7 +52,9 @@ struct DefaultAuditDownloader: AuditDownloader {
                 throw ModelDownloadServiceError.missingDownloadURL
             }
             #if canImport(MLXLLM) && !targetEnvironment(simulator)
-            try await MLXRuntime.shared.preloadModel(mlxModelID, isVision: item.supportsVision, progress: progress)
+            try await MLXRuntime.shared.preloadModel(mlxModelID, isVision: item.supportsVision) { downloadProgress in
+                progress(downloadProgress.fraction)
+            }
             #else
             progress(1.0)
             #endif
@@ -66,7 +79,7 @@ struct DefaultAuditDownloader: AuditDownloader {
 
     func remove(_ model: InstalledModel, store: AppStateStore) async throws {
         switch model.catalogItem.runtimeType {
-        case .gguf:
+        case .gguf, .liteRTLM:
             try await ggufService.removeInstall(for: model)
         case .mlx:
             guard let mlxModelID = model.catalogItem.mlxModelID else { return }

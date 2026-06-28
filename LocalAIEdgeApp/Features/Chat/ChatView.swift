@@ -3,6 +3,20 @@ import OSLog
 
 private let chatLogger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "ChatView")
 
+private enum GenerationInterruptionReason {
+    case user
+    case memoryWarning
+
+    var notice: String {
+        switch self {
+        case .user:
+            return "Response stopped by user"
+        case .memoryWarning:
+            return "Your device needed memory — response was interrupted"
+        }
+    }
+}
+
 struct ChatView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(\.selectedTab) private var selectedTab
@@ -13,8 +27,10 @@ struct ChatView: View {
     @State private var isSending = false
     @State private var generationTask: Task<Void, Never>?
     @State private var activeGenerationID: UUID?
+    @State private var generationInterruptionReason: GenerationInterruptionReason?
     @State private var inferenceService: InferenceService = LocalLlamaInferenceService()
     @State private var mlxInferenceService: InferenceService = MLXInferenceService()
+    @State private var liteRTInferenceService: InferenceService = LiteRTInferenceService()
     @State private var appleFoundationInferenceService: InferenceService = AppleFoundationInferenceService()
     @State private var showModelPicker = false
     @State private var scrollProxy: ScrollViewProxy?
@@ -109,7 +125,31 @@ Rules:
             return AppleFoundationModelService.availabilityMessage ?? "This model uses Apple's system Foundation Models runtime. The app does not download or own these weights."
         }
 
+        if model.catalogItem.sourceSupportsVision && resolved(for: model).vision != .imageAndText {
+            return "\(model.catalogItem.displayName) supports multimodal inputs upstream, but this app has not verified a memory-stable image path for this phone. Text chat stays enabled; choose a green vision model for image prompts."
+        }
+
         return nil
+    }
+
+    private var activeContextDisplay: String {
+        guard let model = activeModel else { return "None" }
+        return Self.formattedTokenWindow(InferenceBudget.safeContextWindow(for: model))
+    }
+
+    private var activeContextDetail: String {
+        guard let model = activeModel else { return "No model" }
+        if model.catalogItem.contextWindowTokenCount > InferenceBudget.safeContextWindow(for: model) {
+            return "Device-safe"
+        }
+        return "Runtime window"
+    }
+
+    private static func formattedTokenWindow(_ tokens: Int) -> String {
+        if tokens >= 1_000 {
+            return "\(tokens / 1_000)K"
+        }
+        return "\(tokens)"
     }
 
     private func memoryGuardMessage(for model: InstalledModel) -> String? {
@@ -137,6 +177,8 @@ Rules:
             return inferenceService
         case .mlx:
             return mlxInferenceService
+        case .liteRTLM:
+            return liteRTInferenceService
         case .foundationModels:
             return appleFoundationInferenceService
         }
@@ -148,6 +190,7 @@ Rules:
 
             VStack(spacing: 0) {
                 compactTopBar
+                sessionOverviewStrip
 
                 if activeMessages.isEmpty {
                     ScrollView {
@@ -245,13 +288,9 @@ Rules:
         .onAppear {
             store.reconcileInstalledFiles()
             applyIntentHandoff()
-            // Auto-enable search when a provider is configured.
-            // The user can still toggle it OFF per-chat via the composer "+" menu.
             if !searchAutoInitialized {
                 searchAutoInitialized = true
-                if SearchGatewayFactory.shouldAutoEnableLiveSearch(settings: store.settings) {
-                    liveSearchEnabled = true
-                }
+                liveSearchEnabled = SearchGatewayFactory.shouldAutoEnableLiveSearch(settings: store.settings)
             }
         }
         .onChange(of: voiceController.transcript) {
@@ -261,6 +300,9 @@ Rules:
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             applyIntentHandoff()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            handleMemoryWarning()
         }
         .onChange(of: store.settings.voiceModeEnabled) {
             if !store.settings.voiceModeEnabled {
@@ -385,13 +427,13 @@ Rules:
                 sessionMetricCard(
                     title: "Runtime",
                     value: activeModel?.catalogItem.runtimeType.label ?? "No runtime",
-                    detail: activeModel?.catalogItem.parameterSize ?? "Install a model",
+                    detail: activeModel?.catalogItem.parameterSize ?? "Browse MLX",
                     color: activeModel?.catalogItem.runtimeType == .mlx ? AppTheme.accent : AppTheme.warning
                 )
                 sessionMetricCard(
                     title: "Context",
-                    value: activeModel?.catalogItem.contextWindow ?? "None",
-                    detail: "Model window",
+                    value: activeContextDisplay,
+                    detail: activeContextDetail,
                     color: AppTheme.warning
                 )
                 sessionMetricCard(
@@ -406,6 +448,19 @@ Rules:
                     detail: store.settings.voiceModeEnabled ? "Dictation + playback" : "Text first",
                     color: store.settings.voiceModeEnabled ? AppTheme.accentSoft : AppTheme.textSecondary
                 )
+                Button {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                        selectedTab.wrappedValue = 1
+                    }
+                } label: {
+                    sessionMetricCard(
+                        title: "Library",
+                        value: "MLX Models",
+                        detail: "Browse providers",
+                        color: AppTheme.accent
+                    )
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
@@ -578,9 +633,10 @@ Rules:
                     HStack(spacing: 6) {
                         if let model = activeModel {
                             headerChip(label: model.catalogItem.parameterSize, tone: .neutral)
-                            headerChip(label: model.catalogItem.contextWindow, tone: .neutral)
+                            headerChip(label: activeContextDisplay, tone: .neutral)
                             headerChip(label: model.catalogItem.runtimeType.label, tone: model.catalogItem.runtimeType == .mlx ? .accent : .neutral)
-                            headerChip(label: model.catalogItem.supportsVision ? "Vision" : "Text", tone: model.catalogItem.supportsVision ? .accent : .neutral)
+                            let runtimeVisionReady = resolved(for: model).vision == .imageAndText
+                            headerChip(label: runtimeVisionReady ? "Image ready" : "Text", tone: runtimeVisionReady ? .accent : .neutral)
 
                             if resolved(for: model).tools != nil {
                                 headerChip(label: "Tools", tone: .warning)
@@ -755,6 +811,22 @@ Rules:
 
         return NavigationStack {
             List {
+                Section {
+                    Button {
+                        showModelPicker = false
+                        withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
+                            selectedTab.wrappedValue = 1
+                        }
+                    } label: {
+                        Label("Browse MLX Community and open-source providers", systemImage: "shippingbox.fill")
+                    }
+                } header: {
+                    Label("Find More Local Models", systemImage: "magnifyingglass")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(AppTheme.accent)
+                        .textCase(nil)
+                }
+
                 if !installedItems.isEmpty {
                     Section {
                         ForEach(installedItems, id: \.id) { item in
@@ -874,7 +946,7 @@ Rules:
                 HStack(spacing: 6) {
                     emptyStateMetaPill(label: model.catalogItem.parameterSize)
                     emptyStateMetaPill(label: model.catalogItem.runtimeType.label)
-                    emptyStateMetaPill(label: model.catalogItem.supportsVision ? "Image ready" : "Text only")
+                    emptyStateMetaPill(label: resolved(for: model).vision == .imageAndText ? "Image ready" : "Text only")
                 }
             }
 
@@ -988,11 +1060,34 @@ Rules:
     }
 
     private func stopGeneration() {
+        generationInterruptionReason = .user
         generationTask?.cancel()
         generationTask = nil
         activeGenerationID = nil
         isSending = false
         scheduleIdleRuntimeRelease()
+    }
+
+    private func handleMemoryWarning() {
+        guard isSending || generationTask != nil else {
+            Task { await RuntimeMemoryCoordinator.releaseAll() }
+            return
+        }
+
+        generationInterruptionReason = .memoryWarning
+        generationTask?.cancel()
+        generationTask = nil
+        activeGenerationID = nil
+        isSending = false
+
+        if let sessionID = store.selectedSession?.id {
+            store.appendMessage(
+                ChatMessage(role: .system, text: GenerationInterruptionReason.memoryWarning.notice),
+                to: sessionID
+            )
+        }
+
+        Task { await RuntimeMemoryCoordinator.releaseAll() }
     }
 
     private func toggleVoiceInput() {
@@ -1103,18 +1198,35 @@ Rules:
         return SearchResultFallbackComposer.compose(query: prompt, searchContext: searchContext)
     }
 
-    private func encodedAttachmentData(from image: UIImage?) -> Data? {
+    private func encodedAttachmentData(from image: UIImage?, model: InstalledModel) -> Data? {
         guard let image else { return nil }
 
-        let maxBytes = 700_000
+        let isMLXVision = (model.catalogItem.runtimeType == .mlx || model.catalogItem.runtimeType == .liteRTLM)
+            && (model.catalogItem.supportsVision || model.catalogItem.sourceSupportsVision)
+        let preparedImage = isMLXVision ? Self.downsampleImage(image, maxDimension: 640) : image
+        let maxBytes = isMLXVision ? 320_000 : 700_000
         let qualitySteps: [CGFloat] = [0.75, 0.65, 0.55, 0.45, 0.35, 0.25]
         for quality in qualitySteps {
-            guard let data = image.jpegData(compressionQuality: quality) else { continue }
+            guard let data = preparedImage.jpegData(compressionQuality: quality) else { continue }
             if data.count <= maxBytes {
                 return data
             }
         }
-        return image.jpegData(compressionQuality: 0.25)
+        return preparedImage.jpegData(compressionQuality: 0.25)
+    }
+
+    nonisolated private static func downsampleImage(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let size = image.size
+        let maxSide = max(size.width, size.height)
+        guard maxSide > maxDimension else { return image }
+        let scale = maxDimension / maxSide
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
     }
 
     @MainActor
@@ -1138,7 +1250,14 @@ Rules:
         isSending = false
         generationTask = nil
         activeGenerationID = nil
+        generationInterruptionReason = nil
         scheduleIdleRuntimeRelease()
+    }
+
+    private func currentGenerationInterruptionNotice() async -> String {
+        await MainActor.run {
+            (generationInterruptionReason ?? .user).notice
+        }
     }
 
     private func sendPrompt() {
@@ -1167,7 +1286,7 @@ Rules:
         }
 
         // Encode image at bounded size to avoid memory spikes during persistence/inference.
-        let jpegData = encodedAttachmentData(from: currentImage)
+        let jpegData = encodedAttachmentData(from: currentImage, model: model)
         let attachments = ([jpegData.map { ChatAttachment.image($0) }].compactMap { $0 } + currentDocuments)
         let documentContext = DocumentExtractionService.promptContext(from: attachments)
         let inferencePrompt = documentContext.isEmpty ? trimmedPrompt : "\(trimmedPrompt)\n\n\(documentContext)"
@@ -1193,6 +1312,7 @@ Rules:
 
         let taskID = UUID()
         activeGenerationID = taskID
+        generationInterruptionReason = nil
 
         let task = Task {
             do {
@@ -1275,7 +1395,8 @@ Rules:
 
                 for await event in stream {
                     if Task.isCancelled {
-                        accumulated += "\n\n*(Response stopped by user)*"
+                        let interruptionNotice = await currentGenerationInterruptionNotice()
+                        accumulated += "\n\n*(\(interruptionNotice))*"
                         stoppedByUser = true
                         updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID, persist: true)
                         break
@@ -1329,7 +1450,7 @@ Rules:
                         // 3) {"name":"web_search","arguments":"{\"query\":\"...\"}"} (string args)
                         guard let data = argsJSON.data(using: .utf8),
                               let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                            chatLogger.log("Failed to parse tool call JSON: \(argsJSON.prefix(200), privacy: .public)")
+                            chatLogger.log("Failed to parse tool call JSON: \(argsJSON.prefix(200), privacy: .private)")
                             break
                         }
                         // Try nested dict arguments, then flat query, then string-encoded arguments
@@ -1343,10 +1464,10 @@ Rules:
                         }
                         if query == nil { query = raw["query"] as? String }
                         guard let query, !query.isEmpty else {
-                            chatLogger.log("Could not extract query from tool call JSON: \(argsJSON.prefix(200), privacy: .public)")
+                            chatLogger.log("Could not extract query from tool call JSON: \(argsJSON.prefix(200), privacy: .private)")
                             break
                         }
-                        chatLogger.log("Tool call parsed — query: \(query, privacy: .public)")
+                        chatLogger.log("Tool call parsed — query: \(query, privacy: .private)")
 
                         // Remove the first assistant placeholder entirely so the
                         // "No visible answer" recovery card never appears in the chat.
@@ -1357,7 +1478,7 @@ Rules:
 
                         var agenticSearchContext: SearchContext? = nil
                         if let gateway = SearchGatewayFactory.make(settings: store.settings) {
-                            chatLogger.log("Calling search gateway for query: \(query, privacy: .public)")
+                            chatLogger.log("Calling search gateway for query: \(query, privacy: .private)")
                             do {
                                 agenticSearchContext = try await gateway.search(query: query)
                                 chatLogger.log("Search returned \(agenticSearchContext?.snippets.count ?? 0) snippets")
@@ -1446,7 +1567,7 @@ Rules:
                    modelCanUseToolLoop,
                    let query = Self.extractToolCallQuery(from: accumulated),
                    SearchGatewayFactory.make(settings: store.settings) != nil {
-                    chatLogger.log("Post-stream fallback FIRED — query: \(query, privacy: .public)")
+                    chatLogger.log("Post-stream fallback FIRED — query: \(query, privacy: .private)")
                     await MainActor.run { store.removeMessage(messageID, from: sessionID) }
 
                     let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(query)…")
@@ -1529,13 +1650,13 @@ Rules:
 
                 // Sanitize the final text — this is what gets stored in conversation history,
                 // so template tokens must be stripped to prevent feedback loops on next turn.
-                chatLogger.log("Raw accumulated text (\(accumulated.count) chars): \(accumulated.prefix(500), privacy: .public)")
+                chatLogger.log("Raw accumulated text (\(accumulated.count) chars): \(accumulated.prefix(500), privacy: .private)")
                 let finalText = resolvedAssistantText(
                     from: accumulated,
                     prompt: trimmedPrompt,
                     thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
-                chatLogger.log("Resolved final text (\(finalText.count) chars): \(finalText.prefix(300), privacy: .public)")
+                chatLogger.log("Resolved final text (\(finalText.count) chars): \(finalText.prefix(300), privacy: .private)")
 
                 // OpenELM-specific retry path: if the first pass echoed instructions,
                 // retry once with an ultra-minimal system prompt and no history/search.
@@ -1740,7 +1861,7 @@ Rules:
 
                     } else if let gateway = SearchGatewayFactory.make(settings: store.settings) {
                         // ── Branch B: no search was done → auto-search and retry ──
-                        chatLogger.log("Empty-output auto-search fallback triggered for: \(trimmedPrompt, privacy: .public)")
+                        chatLogger.log("Empty-output auto-search fallback triggered for: \(trimmedPrompt, privacy: .private)")
                         await MainActor.run { store.removeMessage(messageID, from: sessionID) }
 
                         let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(trimmedPrompt)…")

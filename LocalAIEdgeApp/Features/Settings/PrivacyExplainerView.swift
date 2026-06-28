@@ -43,7 +43,7 @@ struct PrivacyExplainerView: View {
 
     private var dataSection: some View {
         policyCard(title: "Data stored by the app", icon: "internaldrive.fill") {
-            privacyRow(icon: "person.crop.circle", text: "Local profile data can include display name, optional email, sign-in method, and last login time.")
+            privacyRow(icon: "person.crop.circle", text: "No account is required. The app creates an anonymous local guest profile automatically; optional profile details stay on this device.")
             privacyRow(icon: "message.fill", text: "Chat sessions are saved locally. Image attachments are downsampled before local persistence and inference.")
             privacyRow(icon: "key.fill", text: "Hugging Face tokens are stored in Keychain. Search API keys and gateway settings are stored locally in app settings.")
         }
@@ -59,8 +59,8 @@ struct PrivacyExplainerView: View {
 
     private var rightsSection: some View {
         policyCard(title: "Your choices", icon: "slider.horizontal.3") {
-            privacyRow(icon: "wifi.slash", text: "Use Guest mode and keep Live Search off for an offline-first chat experience.")
-            privacyRow(icon: "rectangle.portrait.and.arrow.right", text: "Sign out from Settings to remove the local profile session.")
+            privacyRow(icon: "wifi.slash", text: "Keep Live Search off after model installation for an offline-first chat experience.")
+            privacyRow(icon: "arrow.counterclockwise.circle", text: "Reset the local profile from Settings without creating a remote account.")
             privacyRow(icon: "envelope.fill", text: "Use the support URL listed on the App Store page for privacy or data deletion requests.")
         }
     }

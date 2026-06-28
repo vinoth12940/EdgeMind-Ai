@@ -7,8 +7,16 @@ enum RuntimeMemoryCoordinator {
             #if canImport(MLXLLM) && !targetEnvironment(simulator)
             await MLXRuntime.shared.unloadAndClearCache()
             #endif
-        case .mlx:
+            #if canImport(LiteRTLM) && !targetEnvironment(simulator)
+            await LiteRTRuntime.shared.unload()
+            #endif
+        case .mlx, .liteRTLM:
             await LocalLlamaRuntime.shared.unload()
+            if runtimeType == .liteRTLM {
+                #if canImport(MLXLLM) && !targetEnvironment(simulator)
+                await MLXRuntime.shared.unloadAndClearCache()
+                #endif
+            }
         case .foundationModels:
             await releaseAll()
         }
@@ -22,6 +30,10 @@ enum RuntimeMemoryCoordinator {
             #if canImport(MLXLLM) && !targetEnvironment(simulator)
             await MLXRuntime.shared.unloadAndClearCache()
             #endif
+        case .liteRTLM:
+            #if canImport(LiteRTLM) && !targetEnvironment(simulator)
+            await LiteRTRuntime.shared.unload()
+            #endif
         case .foundationModels:
             return
         }
@@ -31,6 +43,9 @@ enum RuntimeMemoryCoordinator {
         await LocalLlamaRuntime.shared.unload()
         #if canImport(MLXLLM) && !targetEnvironment(simulator)
         await MLXRuntime.shared.unloadAndClearCache()
+        #endif
+        #if canImport(LiteRTLM) && !targetEnvironment(simulator)
+        await LiteRTRuntime.shared.unload()
         #endif
     }
 }
