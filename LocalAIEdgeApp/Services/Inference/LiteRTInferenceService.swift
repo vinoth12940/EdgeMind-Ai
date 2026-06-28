@@ -10,6 +10,7 @@ actor LiteRTRuntime {
     static let shared = LiteRTRuntime()
 
     private var activeModelPath: String?
+    private var activeMultimodal = false
     private var activeEngine: Engine?
 
     private func cacheDirectory() throws -> String {
@@ -24,9 +25,9 @@ actor LiteRTRuntime {
     }
 
     private func ensureEngine(modelPath: String, multimodal: Bool) async throws -> Engine {
-        if activeModelPath != modelPath || activeEngine == nil {
+        if activeModelPath != modelPath || activeMultimodal != multimodal || activeEngine == nil {
             unload()
-            liteRTLogger.log("Loading LiteRT-LM model at \(modelPath, privacy: .public)")
+            liteRTLogger.log("Loading LiteRT-LM model at \(modelPath, privacy: .public), multimodal=\(multimodal)")
             let config = try EngineConfig(
                 modelPath: modelPath,
                 backend: .gpu,
@@ -38,6 +39,7 @@ actor LiteRTRuntime {
             let engine = Engine(engineConfig: config)
             try await engine.initialize()
             activeModelPath = modelPath
+            activeMultimodal = multimodal
             activeEngine = engine
         }
 
@@ -102,11 +104,14 @@ actor LiteRTRuntime {
     func unload() {
         activeEngine = nil
         activeModelPath = nil
+        activeMultimodal = false
     }
 }
 #endif
 
 struct LiteRTInferenceService: InferenceService {
+    static let defaultMultimodalStreamTimeout: TimeInterval = 75
+
     func generateReply(
         prompt: String,
         model: InstalledModel,
@@ -175,7 +180,7 @@ struct LiteRTInferenceService: InferenceService {
             rawStream: rawStream,
             leakTokens: runtimeProfile.knownLeakTokens,
             v2Enabled: settings?.streamProcessorV2Enabled ?? AppSettings.default.streamProcessorV2Enabled,
-            hangTimeout: settings?.inferenceV2Timeout ?? AppSettings.default.inferenceV2Timeout,
+            hangTimeout: Self.streamHangTimeout(settings: settings, imageData: imageData),
             repetitionNgram: 6,
             repetitionCount: 3,
             activeThinkFormats: Set(runtimeProfile.verifiedThinking.map { [$0] } ?? [])
@@ -222,6 +227,12 @@ struct LiteRTInferenceService: InferenceService {
         return LiteRTLM.Message(contents: contents, role: .user)
     }
 #endif
+
+    static func streamHangTimeout(settings: AppSettings?, imageData: Data?) -> TimeInterval {
+        let configuredTimeout = settings?.inferenceV2Timeout ?? AppSettings.default.inferenceV2Timeout
+        guard imageData != nil else { return configuredTimeout }
+        return max(configuredTimeout, defaultMultimodalStreamTimeout)
+    }
 
     private static func systemPrompt(base: String, searchContext: SearchContext?) -> String {
         guard let searchContext else { return base }

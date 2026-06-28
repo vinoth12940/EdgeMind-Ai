@@ -61,4 +61,25 @@ final class ChatAttachmentTests: XCTestCase {
         XCTAssertFalse(ChatInputCapability.acceptsImage(textOnlyModel, profileStore: store))
         XCTAssertTrue(ChatInputCapability.imageUnsupportedMessage.contains("vision model"))
     }
+
+    func test_liteRTImageStreamsUseLongerWatchdogThanTextStreams() {
+        var settings = AppSettings.default
+        settings.inferenceV2Timeout = 15
+
+        XCTAssertEqual(LiteRTInferenceService.streamHangTimeout(settings: settings, imageData: nil), 15)
+        XCTAssertEqual(
+            LiteRTInferenceService.streamHangTimeout(settings: settings, imageData: Data([0xFF, 0xD8, 0xFF, 0xD9])),
+            LiteRTInferenceService.defaultMultimodalStreamTimeout
+        )
+    }
+
+    func test_liteRTImageStreamsRespectHigherConfiguredWatchdog() {
+        var settings = AppSettings.default
+        settings.inferenceV2Timeout = 90
+
+        XCTAssertEqual(
+            LiteRTInferenceService.streamHangTimeout(settings: settings, imageData: Data([0xFF, 0xD8, 0xFF, 0xD9])),
+            90
+        )
+    }
 }
