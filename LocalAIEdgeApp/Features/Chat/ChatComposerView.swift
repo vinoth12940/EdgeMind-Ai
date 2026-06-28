@@ -26,6 +26,7 @@ struct ChatComposerView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var showSearchNotConfigured = false
     @State private var attachmentError: String?
+    @State private var previewItem: AttachmentPreviewItem?
 
     private var canSend: Bool {
         let hasText = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -191,6 +192,9 @@ struct ChatComposerView: View {
         } message: {
             Text(attachmentError ?? "")
         }
+        .sheet(item: $previewItem) { item in
+            AttachmentPreviewSheet(item: item)
+        }
         .fileImporter(
             isPresented: $showDocumentPicker,
             allowedContentTypes: DocumentExtractionService.supportedTypes,
@@ -283,15 +287,29 @@ struct ChatComposerView: View {
             HStack(alignment: .top, spacing: 8) {
                 if let image = attachedImage {
                     ZStack(alignment: .topTrailing) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 72, height: 72)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(AppTheme.accent.opacity(0.3), lineWidth: 1)
-                            )
+                        Button {
+                            previewItem = .image(image, title: "Image")
+                        } label: {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 72, height: 72)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(AppTheme.accent.opacity(0.3), lineWidth: 1)
+                                )
+                                .overlay(alignment: .bottomTrailing) {
+                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 22, height: 22)
+                                        .background(Circle().fill(Color.black.opacity(0.54)))
+                                        .padding(5)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Preview image attachment")
 
                         Button {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
@@ -316,10 +334,22 @@ struct ChatComposerView: View {
 
                     ForEach(attachedDocuments) { attachment in
                         HStack(spacing: 6) {
-                            Image(systemName: "doc.text")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(attachment.fileName)
-                                .lineLimit(1)
+                            Button {
+                                previewItem = .document(attachment)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "doc.text")
+                                        .font(.system(size: 11, weight: .semibold))
+                                    Text(attachment.fileName)
+                                        .lineLimit(1)
+                                    Image(systemName: "chevron.up.right")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .opacity(0.62)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Preview \(attachment.fileName)")
+
                             Button {
                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                                     attachedDocuments.removeAll { $0.id == attachment.id }

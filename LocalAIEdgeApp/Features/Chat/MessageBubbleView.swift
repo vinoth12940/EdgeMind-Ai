@@ -6,6 +6,7 @@ struct MessageBubbleView: View {
 
     @State private var thinkingExpanded = false
     @State private var searchExpanded = false
+    @State private var previewItem: AttachmentPreviewItem?
 
     private var isUser: Bool { message.role == .user }
     private var isAssistant: Bool { message.role == .assistant }
@@ -26,11 +27,21 @@ struct MessageBubbleView: View {
         VStack(alignment: .trailing, spacing: 2) {
             VStack(alignment: .leading, spacing: 6) {
                 if let imageData = message.imageData, let uiImage = previewImage(from: imageData) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 220, maxHeight: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    Button {
+                        previewItem = .image(data: imageData, title: "Image")
+                    } label: {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 220, maxHeight: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(alignment: .bottomTrailing) {
+                                previewBadge
+                                    .padding(8)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Preview image attachment")
                 }
 
                 if !documentAttachments.isEmpty {
@@ -51,6 +62,9 @@ struct MessageBubbleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 42)
+        .sheet(item: $previewItem) { item in
+            AttachmentPreviewSheet(item: item)
+        }
     }
 
     private var assistantRow: some View {
@@ -75,12 +89,22 @@ struct MessageBubbleView: View {
             }
 
             if let imageData = message.imageData, let uiImage = previewImage(from: imageData) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 260, maxHeight: 260)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .padding(.top, 4)
+                Button {
+                    previewItem = .image(data: imageData, title: "Image")
+                } label: {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 260, maxHeight: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(alignment: .bottomTrailing) {
+                            previewBadge
+                                .padding(8)
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Preview image attachment")
+                .padding(.top, 4)
             }
 
             if !documentAttachments.isEmpty {
@@ -105,6 +129,9 @@ struct MessageBubbleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 24)
         .padding(.vertical, 4)
+        .sheet(item: $previewItem) { item in
+            AttachmentPreviewSheet(item: item)
+        }
     }
 
     private var documentAttachments: [ChatAttachment] {
@@ -114,20 +141,37 @@ struct MessageBubbleView: View {
     private var attachmentChips: some View {
         FlowLayout(spacing: 6) {
             ForEach(documentAttachments) { attachment in
-                HStack(spacing: 5) {
-                    Image(systemName: icon(for: attachment.kind))
-                        .font(.system(size: 10, weight: .bold))
-                    Text(attachment.fileName)
-                        .lineLimit(1)
+                Button {
+                    previewItem = .document(attachment)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: icon(for: attachment.kind))
+                            .font(.system(size: 10, weight: .bold))
+                        Text(attachment.fileName)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle((isUser ? Color.white : AppTheme.textSecondary).opacity(0.62))
+                    }
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(isUser ? Color.white.opacity(0.92) : AppTheme.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(isUser ? 0.16 : 0.06))
+                    .clipShape(Capsule(style: .continuous))
                 }
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(isUser ? Color.white.opacity(0.92) : AppTheme.textSecondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(Color.white.opacity(isUser ? 0.16 : 0.06))
-                .clipShape(Capsule(style: .continuous))
+                .buttonStyle(.plain)
+                .accessibilityLabel("Preview \(attachment.fileName)")
             }
         }
+    }
+
+    private var previewBadge: some View {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 24, height: 24)
+            .background(Circle().fill(Color.black.opacity(0.54)))
     }
 
     private func icon(for kind: ChatAttachment.Kind) -> String {
@@ -189,6 +233,158 @@ struct MessageBubbleView: View {
             return nil
         }
         return UIImage(cgImage: cgImage)
+    }
+}
+
+struct AttachmentPreviewItem: Identifiable {
+    let id = UUID()
+    let title: String
+    let fileName: String
+    let kindLabel: String
+    let mimeType: String
+    let image: UIImage?
+    let extractedText: String?
+    let rawByteCount: Int?
+
+    static func image(data: Data, title: String) -> AttachmentPreviewItem {
+        AttachmentPreviewItem(
+            title: title,
+            fileName: title,
+            kindLabel: "Image",
+            mimeType: "image/jpeg",
+            image: UIImage(data: data),
+            extractedText: nil,
+            rawByteCount: data.count
+        )
+    }
+
+    static func image(_ image: UIImage, title: String) -> AttachmentPreviewItem {
+        AttachmentPreviewItem(
+            title: title,
+            fileName: title,
+            kindLabel: "Image",
+            mimeType: "image/jpeg",
+            image: image,
+            extractedText: nil,
+            rawByteCount: image.jpegData(compressionQuality: 0.9)?.count
+        )
+    }
+
+    static func document(_ attachment: ChatAttachment) -> AttachmentPreviewItem {
+        AttachmentPreviewItem(
+            title: attachment.fileName,
+            fileName: attachment.fileName,
+            kindLabel: attachment.displayLabel,
+            mimeType: attachment.mimeType,
+            image: nil,
+            extractedText: attachment.extractedText,
+            rawByteCount: attachment.rawData?.count
+        )
+    }
+}
+
+struct AttachmentPreviewSheet: View {
+    let item: AttachmentPreviewItem
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let image = item.image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+                            )
+                    } else {
+                        documentMetadata
+
+                        if let text = item.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                            Text(text)
+                                .font(.system(size: 14, weight: .regular, design: .monospaced))
+                                .foregroundStyle(AppTheme.textPrimary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                                .background(AppTheme.panelRaised.opacity(0.82))
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        } else {
+                            unavailableDocumentPreview
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .background(AppTheme.background.ignoresSafeArea())
+            .navigationTitle(item.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var documentMetadata: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AppTheme.accent)
+                Text(item.fileName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .lineLimit(2)
+            }
+
+            FlowLayout(spacing: 8) {
+                previewMetaPill(item.kindLabel)
+                previewMetaPill(item.mimeType)
+                if let rawByteCount = item.rawByteCount {
+                    previewMetaPill(ByteCountFormatter.string(fromByteCount: Int64(rawByteCount), countStyle: .file))
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.panelRaised.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var unavailableDocumentPreview: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(AppTheme.textTertiary)
+            Text("No preview text is available for this attachment.")
+                .font(.appBody(14))
+                .foregroundStyle(AppTheme.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(24)
+        .background(AppTheme.panelRaised.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func previewMetaPill(_ value: String) -> some View {
+        Text(value)
+            .font(.appCaps(10))
+            .foregroundStyle(AppTheme.textSecondary)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(0.06))
+            .clipShape(Capsule())
     }
 }
 
