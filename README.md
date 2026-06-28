@@ -4,14 +4,14 @@ A **privacy-first, on-device AI assistant** for iOS and iPadOS. All inference ru
 
 Now includes a first-run authentication landing flow with local credentials, device authentication (Face ID / Touch ID / passcode), and guest access. Sign in with Apple code is present but hidden in the App Store-ready build until the App ID entitlement is enabled.
 
-Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX** (MLX models), with a curated chat catalog of 15 runtime-backed models from 4 AI labs.
+Built with **SwiftUI**, powered by **llama.cpp** (GGUF models), **Apple MLX** (MLX models), **LiteRT-LM**, and Apple Foundation Models, with a curated chat catalog of 21 runtime-backed models.
 
 ---
 
 ## Features
 
 ### On-Device Inference
-- **Dual runtime**: llama.cpp for GGUF models, Apple MLX for MLX-optimized models
+- **Local runtimes**: llama.cpp for GGUF models, Apple MLX for MLX-optimized models, LiteRT-LM for Gemma image models, and Apple Foundation Models when available
 - **Streaming responses**: Token-by-token output via `AsyncStream`
 - **Device-aware context window**: 2048 tokens on A14 (iPhone 12), 4096 on A15/A16, 8192 on A17/A18 and iPad — prevents KV cache OOM crashes
 - **Flash attention**: Automatically enabled on A15+ for ~20-30% speedup
@@ -19,11 +19,11 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models) and **Apple MLX**
 - **Stop generation**: Cancel in-progress responses at any time
 
 ### Model Library
-- **15 chat models** from 4 labs: Google DeepMind (Gemma), Apple (OpenELM), Alibaba Cloud (Qwen), and Liquid AI (LFM)
-- **4 GGUF models** (llama.cpp runtime) + **11 MLX models** (Apple MLX runtime)
+- **21 chat models** across Apple Intelligence, Gemma, Granite, Llama, Phi, DeepSeek, Mistral, SmolLM, Qwen, and LFM families
+- **2 GGUF models** (llama.cpp runtime), **16 MLX models** (Apple MLX runtime), **2 LiteRT-LM models**, and **1 Apple Foundation Models entry**
 - Filter by lab, capability (Thinking, Vision, Tool Calling), runtime type, iPhone compatibility
-- Capability badges grounded in actual model card specs: native tool-call tokens, vision encoders in weights
-- OpenELM runs through a plain completion prompt; LFM runs through the documented ChatML-style template
+- Capability badges are grounded in verified app runtime behavior, not just upstream model-card claims
+- LFM text models run through the documented ChatML-style template; verified VLM/LiteRT entries expose image input
 - Model specs: parameter count, context window, disk size, quantization level
 - Expandable cards with model descriptions and capability badges
 - All download URLs verified and working against HuggingFace
@@ -154,19 +154,25 @@ LocalAIEdgeAppTests/
 
 | Lab | Family | Models | Runtimes |
 |-----|--------|--------|----------|
-| Google DeepMind | Gemma | 2 | GGUF |
-| Apple | OpenELM | 1 | MLX |
-| Alibaba Cloud | Qwen | 9 | GGUF, MLX |
-| Liquid AI | LFM | 3 | MLX |
+| Apple | Apple Intelligence | 1 | Foundation Models |
+| Google DeepMind | Gemma | 4 | MLX, LiteRT-LM |
+| IBM | Granite | 1 | MLX |
+| Meta | Llama | 1 | MLX |
+| Microsoft | Phi | 1 | MLX |
+| DeepSeek | DeepSeek | 1 | MLX |
+| Mistral AI | Mistral | 1 | MLX |
+| Hugging Face | SmolLM | 1 | MLX |
+| Alibaba Cloud | Qwen | 6 | GGUF, MLX |
+| Liquid AI | LFM | 4 | MLX |
 
 ### Capabilities
 - **Thinking**: Native Qwen thinking blocks plus Gemma channel-style thinking output are parsed into the chat thinking lane.
-- **Vision**: Qwen 3 VL accepts image + text through MLX. Gemma GGUF entries disclose source vision capability but run as text-only in the app.
+- **Vision**: Verified Qwen 3.5 VL, LFM2.5 VL, and Gemma 4 LiteRT-LM entries accept image + text. Text-only models stay text/document-only.
 - **Tool Calling**: Runtime profiles enable tool-call handling only for catalog entries with a verified app-side parser path.
 - **Reasoning**: Enhanced logical reasoning and instruction following
 
 ### Quantization
-All GGUF models use **Q4_K_M** quantization for optimal size/quality balance on mobile devices. MLX models use 4-bit or 8-bit quantization from `mlx-community`.
+GGUF models use **Q4_K_M** quantization for optimal size/quality balance on mobile devices. MLX models use curated 4-bit or 6-bit quantization from `mlx-community`; LiteRT-LM entries use INT4 packaged model assets.
 
 ---
 

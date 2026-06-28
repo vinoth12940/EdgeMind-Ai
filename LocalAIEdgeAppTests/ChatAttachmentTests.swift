@@ -44,4 +44,21 @@ final class ChatAttachmentTests: XCTestCase {
         XCTAssertTrue(context.contains("brief.md"))
         XCTAssertTrue(context.contains("Cedar"))
     }
+
+    func test_imageInputPolicyAllowsVerifiedVisionModelsOnly() throws {
+        let store = RuntimeProfileStore()
+        let visionItem = MockCatalogData.items.first {
+            $0.supportsVision && ModelRuntimeResolver.resolve(catalog: $0, store: store).vision == .imageAndText
+        }
+        let textOnlyItem = MockCatalogData.items.first {
+            !$0.supportsVision && $0.primaryUse == .chat
+        }
+
+        let visionModel = InstalledModel(catalogItem: try XCTUnwrap(visionItem), installState: .installed)
+        let textOnlyModel = InstalledModel(catalogItem: try XCTUnwrap(textOnlyItem), installState: .installed)
+
+        XCTAssertTrue(ChatInputCapability.acceptsImage(visionModel, profileStore: store))
+        XCTAssertFalse(ChatInputCapability.acceptsImage(textOnlyModel, profileStore: store))
+        XCTAssertTrue(ChatInputCapability.imageUnsupportedMessage.contains("vision model"))
+    }
 }

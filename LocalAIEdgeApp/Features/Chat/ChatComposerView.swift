@@ -1,7 +1,6 @@
 import SwiftUI
 import PhotosUI
 import ImageIO
-import AVFoundation
 import UniformTypeIdentifiers
 
 struct ChatComposerView: View {
@@ -23,10 +22,8 @@ struct ChatComposerView: View {
     @FocusState private var isFocused: Bool
     @State private var showCamera = false
     @State private var showPhotoPicker = false
-    @State private var showVideoPicker = false
     @State private var showDocumentPicker = false
     @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var selectedVideoItem: PhotosPickerItem?
     @State private var showSearchNotConfigured = false
     @State private var attachmentError: String?
 
@@ -45,18 +42,138 @@ struct ChatComposerView: View {
         VStack(spacing: 6) {
             utilityLane
             attachmentPreview
-            inputRow
+            
+            // Unified Composer Capsule
+            HStack(alignment: .bottom, spacing: 8) {
+                // Left Attachment Button
+                Menu {
+                    Button {
+                        if !liveSearchEnabled && !isSearchConfigured {
+                            showSearchNotConfigured = true
+                            return
+                        }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            liveSearchEnabled.toggle()
+                        }
+                    } label: {
+                        Label(liveSearchEnabled ? "Turn search off" : "Turn search on", systemImage: liveSearchEnabled ? "sparkle.magnifyingglass" : "bolt.slash")
+                    }
+
+                    if isVisionModel {
+                        Button { showCamera = true } label: {
+                            Label("Take photo", systemImage: "camera")
+                        }
+                        Button { showPhotoPicker = true } label: {
+                            Label("Attach photo", systemImage: "photo.on.rectangle")
+                        }
+                    }
+
+                    Button { showDocumentPicker = true } label: {
+                        Label("Attach file", systemImage: "doc.badge.plus")
+                    }
+                } label: {
+                    let hasAttachment = attachedImage != nil || !attachedDocuments.isEmpty
+                    Image(systemName: hasAttachment ? "paperclip" : "plus")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(hasAttachment ? AppTheme.accentSoft : AppTheme.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.white.opacity(hasAttachment ? 0.16 : 0.06)))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 4)
+                .padding(.bottom, 3)
+
+                // Text Input
+                TextField("Ask anything…", text: $prompt, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.appBody(15))
+                    .lineLimit(1...6)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .focused($isFocused)
+                    .foregroundStyle(.white)
+                    .tint(AppTheme.accent)
+                    .padding(.vertical, 8)
+                
+                // Right Action Button (Send / Stop / Microphone)
+                Group {
+                    if isSending, let onStop {
+                        Button(action: onStop) {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(AppTheme.destructive))
+                        }
+                        .accessibilityLabel("Stop generation")
+                    } else if canSend {
+                        Button(action: onSend) {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(AppTheme.accentGradient))
+                        }
+                        .accessibilityLabel("Send message")
+                    } else if voiceModeEnabled {
+                        Button(action: onToggleVoiceInput) {
+                            Image(systemName: isListening ? "stop.fill" : "waveform")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(isListening ? AppTheme.destructive : AppTheme.warning))
+                        }
+                        .accessibilityLabel(isListening ? "Stop voice input" : "Start voice input")
+                        .disabled(isSending)
+                    } else {
+                        Button(action: onSend) {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color.white.opacity(0.2))
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(Color.white.opacity(0.04)))
+                        }
+                        .accessibilityLabel("Send message")
+                        .disabled(true)
+                    }
+                }
+                .padding(.trailing, 4)
+                .padding(.bottom, 5)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        isFocused
+                            ? AppTheme.accent.opacity(0.35)
+                            : Color.white.opacity(0.08),
+                        lineWidth: isFocused ? 1.2 : 0.6
+                    )
+                    .animation(.easeOut(duration: 0.15), value: isFocused)
+            )
+            
+            if let voiceStatusMessage, !voiceStatusMessage.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.warning)
+
+                    Text(voiceStatusMessage)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary)
+
+                    Spacer()
+                }
+                .padding(.leading, 8)
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(AppTheme.surfaceGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
-        )
+        .padding(.horizontal, 0)
+        .padding(.vertical, 0)
+        .background(Color.clear)
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(image: $attachedImage)
                 .ignoresSafeArea()
@@ -101,7 +218,6 @@ struct ChatComposerView: View {
             }
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared())
-        .photosPicker(isPresented: $showVideoPicker, selection: $selectedVideoItem, matching: .videos, photoLibrary: .shared())
         .onAppear {
             isFocused = isInputFocused
         }
@@ -129,27 +245,6 @@ struct ChatComposerView: View {
                         attachedImage = loadedImage
                     }
                     selectedPhotoItem = nil
-                }
-            }
-        }
-        .onChange(of: selectedVideoItem) { _, newItem in
-            Task {
-                guard let newItem else { return }
-
-                let storyboard: UIImage?
-                if let movieURL = try? await newItem.loadTransferable(type: URL.self) {
-                    storyboard = await Task.detached(priority: .userInitiated) {
-                        await Self.extractStoryboardImage(from: movieURL, frameCount: 4, maxDimension: 1024)
-                    }.value
-                } else {
-                    storyboard = nil
-                }
-
-                await MainActor.run {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        attachedImage = storyboard
-                    }
-                    selectedVideoItem = nil
                 }
             }
         }
@@ -248,133 +343,6 @@ struct ChatComposerView: View {
         }
     }
 
-    private var inputRow: some View {
-        VStack(spacing: 6) {
-            HStack(alignment: .bottom, spacing: 8) {
-                Menu {
-                    Button {
-                        if !liveSearchEnabled && !isSearchConfigured {
-                            showSearchNotConfigured = true
-                            return
-                        }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            liveSearchEnabled.toggle()
-                        }
-                    } label: {
-                        Label(liveSearchEnabled ? "Turn search off" : "Turn search on", systemImage: liveSearchEnabled ? "sparkle.magnifyingglass" : "bolt.slash")
-                    }
-
-                    if isVisionModel {
-                        Button { showCamera = true } label: {
-                            Label("Take photo", systemImage: "camera")
-                        }
-                        Button { showPhotoPicker = true } label: {
-                            Label("Attach photo", systemImage: "photo.on.rectangle")
-                        }
-                        Button { showVideoPicker = true } label: {
-                            Label("Attach video", systemImage: "video")
-                        }
-                    }
-
-                    Button { showDocumentPicker = true } label: {
-                        Label("Attach file", systemImage: "doc.badge.plus")
-                    }
-                } label: {
-                    let hasAttachment = attachedImage != nil || !attachedDocuments.isEmpty
-                    composerRoundButton(icon: hasAttachment ? "paperclip" : "plus", tint: hasAttachment ? AppTheme.accentSoft : AppTheme.textPrimary, fill: Color.white.opacity(hasAttachment ? 0.16 : 0.08))
-                }
-
-                TextField("Ask anything…", text: $prompt, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.appBody(16))
-                    .lineLimit(1...6)
-                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                    .focused($isFocused)
-                    .foregroundStyle(.white)
-                    .tint(AppTheme.accent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(
-                                isFocused
-                                    ? AppTheme.accent.opacity(0.4)
-                                    : Color.white.opacity(0.08),
-                                lineWidth: isFocused ? 1.5 : 0.5
-                            )
-                            .animation(.easeOut(duration: 0.2), value: isFocused)
-                    )
-                    .frame(minHeight: 42)
-                    .submitLabel(.send)
-                    .onSubmit {
-                        if canSend {
-                            onSend()
-                        }
-                    }
-                    .toolbar {
-                        ToolbarItemGroup(placement: .keyboard) {
-                            Spacer()
-                            Button {
-                                isFocused = false
-                            } label: {
-                                Image(systemName: "keyboard.chevron.compact.down")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(AppTheme.accent)
-                            }
-                        }
-                    }
-
-                if isSending, let onStop {
-                    Button(action: onStop) {
-                        composerRoundButton(icon: "stop.fill", tint: .white, fill: AppTheme.destructive)
-                    }
-                    .accessibilityLabel("Stop generation")
-                } else if canSend {
-                    Button(action: onSend) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(
-                                Circle().fill(AppTheme.accentGradient)
-                            )
-                    }
-                    .accessibilityLabel("Send message")
-                } else if voiceModeEnabled {
-                    Button(action: onToggleVoiceInput) {
-                        composerRoundButton(icon: isListening ? "stop.fill" : "waveform", tint: .white, fill: isListening ? AppTheme.destructive : AppTheme.warning)
-                    }
-                    .accessibilityLabel(isListening ? "Stop voice input" : "Start voice input")
-                    .disabled(isSending)
-                } else {
-                    Button(action: onSend) {
-                        composerRoundButton(icon: "arrow.up", tint: Color.white.opacity(0.28), fill: Color.white.opacity(0.06))
-                    }
-                    .accessibilityLabel("Send message")
-                    .disabled(!canSend)
-                }
-            }
-
-            if let voiceStatusMessage, !voiceStatusMessage.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AppTheme.warning)
-
-                    Text(voiceStatusMessage)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AppTheme.textSecondary)
-
-                    Spacer()
-                }
-            }
-        }
-    }
-
     private func composerRoundButton(icon: String, tint: Color, fill: Color) -> some View {
         Image(systemName: icon)
             .font(.system(size: 14, weight: .bold))
@@ -422,64 +390,4 @@ struct ChatComposerView: View {
         return UIImage(cgImage: cgImage)
     }
 
-    nonisolated private static func extractStoryboardImage(from videoURL: URL, frameCount: Int, maxDimension: CGFloat) async -> UIImage? {
-        let asset = AVURLAsset(url: videoURL)
-        let duration = (try? await asset.load(.duration)) ?? .zero
-        let durationSeconds = max(0.1, CMTimeGetSeconds(duration))
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-
-        let framePoints: [Double]
-        if frameCount <= 1 {
-            framePoints = [0.5]
-        } else {
-            framePoints = (0..<frameCount).map { idx in
-                0.1 + (0.8 * Double(idx) / Double(frameCount - 1))
-            }
-        }
-
-        var frames: [UIImage] = []
-        frames.reserveCapacity(frameCount)
-
-        for point in framePoints {
-            let t = CMTime(seconds: durationSeconds * point, preferredTimescale: 600)
-            if let cg = try? generator.copyCGImage(at: t, actualTime: nil) {
-                let frame = downsample(UIImage(cgImage: cg), maxDimension: maxDimension)
-                frames.append(frame)
-            }
-        }
-
-        guard !frames.isEmpty else { return nil }
-        if frames.count == 1 { return frames[0] }
-        return makeCollage(from: frames, maxDimension: maxDimension)
-    }
-
-    nonisolated private static func makeCollage(from images: [UIImage], maxDimension: CGFloat) -> UIImage? {
-        let columns = 2
-        let rows = Int(ceil(Double(images.count) / Double(columns)))
-        let tile = maxDimension / CGFloat(columns)
-        let canvasSize = CGSize(width: tile * CGFloat(columns), height: tile * CGFloat(rows))
-        let renderer = UIGraphicsImageRenderer(size: canvasSize)
-
-        return renderer.image { _ in
-            UIColor.black.setFill()
-            UIRectFill(CGRect(origin: .zero, size: canvasSize))
-
-            for (index, image) in images.enumerated() {
-                let row = index / columns
-                let col = index % columns
-                let cell = CGRect(x: CGFloat(col) * tile, y: CGFloat(row) * tile, width: tile, height: tile)
-
-                let fitScale = min(cell.width / image.size.width, cell.height / image.size.height)
-                let drawSize = CGSize(width: image.size.width * fitScale, height: image.size.height * fitScale)
-                let drawRect = CGRect(
-                    x: cell.midX - drawSize.width / 2,
-                    y: cell.midY - drawSize.height / 2,
-                    width: drawSize.width,
-                    height: drawSize.height
-                )
-                image.draw(in: drawRect)
-            }
-        }
-    }
 }

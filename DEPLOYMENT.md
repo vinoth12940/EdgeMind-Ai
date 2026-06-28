@@ -60,9 +60,9 @@
 
 ### 🚀 Core Features:
 - ✅ Local AI inference (llama.cpp + MLX)
-- ✅ 36+ model catalog with GGUF and MLX variants
-- ✅ Vision model support (image understanding)
-- ✅ Voice interaction (speech-to-text, text-to-speech)
+- ✅ Curated 21-model catalog with GGUF, MLX, LiteRT-LM, and Apple Foundation Models variants
+- ✅ Verified vision model support for camera/photo image understanding
+- ✅ Voice dictation and playback through iOS speech-to-text/text-to-speech
 - ✅ Live web search integration
 - ✅ Chat history with sessions
 - ✅ Model download and management
@@ -105,12 +105,12 @@
 
 4. **Download a Model:**
    - Go to Models tab
-   - Browse catalog (36+ models available)
+   - Browse the curated catalog
    - Tap download on your preferred model
    - Recommended starters:
-     - **Qwen 2.5 0.5B** (278 MB) - Fast, lightweight
-     - **Gemma 2 2B** (1.5 GB) - Balanced performance
-     - **SmolLM2 1.7B** (974 MB) - Great quality
+     - **LFM2.5 350M (MLX)** (~0.4 GB) - Fast, lightweight
+     - **Granite 3.3 2B Instruct (MLX)** (~1.4 GB) - Balanced text and tool workflows
+     - **Qwen 3.5 VL 0.8B (MLX)** (~1.0 GB) - Lightweight image understanding on supported devices
 
 5. **Start Chatting:**
    - Return to Chat tab
@@ -191,7 +191,7 @@ xcrun devicectl device install app \
 ✅ **Ready to Use!** Your iPhone and iPad now have the full-featured Local AI Edge app.
 
 **Recommended Actions:**
-1. Download your first model (suggest: Qwen 2.5 0.5B for testing)
+1. Download your first model (suggest: LFM2.5 350M for quick text testing, or Qwen 3.5 VL 0.8B for image testing)
 2. Try voice interaction if enabled
 3. Test vision models with photos
 4. Enable privacy mode for fully local operation

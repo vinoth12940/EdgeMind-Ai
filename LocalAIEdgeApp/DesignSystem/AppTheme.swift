@@ -2,19 +2,19 @@ import SwiftUI
 
 enum AppTheme {
     // MARK: - Core Palette (Carbon / Ember / Cyan)
-    static let background = Color(red: 0.03, green: 0.03, blue: 0.04)
-    static let panel = Color(red: 0.08, green: 0.08, blue: 0.10)
-    static let panelRaised = Color(red: 0.12, green: 0.11, blue: 0.13)
-    static let panelHover = Color(red: 0.17, green: 0.16, blue: 0.18)
+    static let background = Color(red: 0.08, green: 0.08, blue: 0.09)
+    static let panel = Color(red: 0.12, green: 0.12, blue: 0.13)
+    static let panelRaised = Color(red: 0.16, green: 0.16, blue: 0.17)
+    static let panelHover = Color(red: 0.20, green: 0.20, blue: 0.22)
     static let accent = Color(red: 0.13, green: 0.79, blue: 0.84)
     static let accentSoft = Color(red: 0.85, green: 0.57, blue: 0.34)
     static let accentWarm = Color(red: 1.0, green: 0.41, blue: 0.22)
     static let success = Color(red: 0.37, green: 0.87, blue: 0.49)
     static let warning = Color(red: 1.0, green: 0.70, blue: 0.24)
     static let destructive = Color(red: 1.0, green: 0.33, blue: 0.31)
-    static let textPrimary = Color(red: 0.97, green: 0.96, blue: 0.94)
-    static let textSecondary = Color(red: 0.81, green: 0.78, blue: 0.74)
-    static let textTertiary = Color(red: 0.57, green: 0.55, blue: 0.53)
+    static let textPrimary = Color(red: 0.98, green: 0.98, blue: 0.98)
+    static let textSecondary = Color(red: 0.75, green: 0.75, blue: 0.77)
+    static let textTertiary = Color(red: 0.52, green: 0.52, blue: 0.55)
     static let hairline = Color.white.opacity(0.10)
     static let divider = Color.white.opacity(0.06)
 
@@ -37,8 +37,8 @@ enum AppTheme {
 
     static let userBubbleGradient = LinearGradient(
         colors: [
-            Color(red: 0.14, green: 0.74, blue: 0.80),
-            Color(red: 0.80, green: 0.45, blue: 0.26)
+            Color(red: 0.18, green: 0.18, blue: 0.19),
+            Color(red: 0.15, green: 0.15, blue: 0.16)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -145,21 +145,21 @@ struct AppBackdropView: View {
             AppTheme.meshBackground.ignoresSafeArea()
 
             RoundedRectangle(cornerRadius: 180, style: .continuous)
-                .fill(AppTheme.accent.opacity(0.16))
+                .fill(AppTheme.accent.opacity(0.04))
                 .frame(width: 340, height: 260)
                 .rotationEffect(.degrees(16))
                 .blur(radius: 110)
                 .offset(x: drift ? -145 : -105, y: -310)
 
             RoundedRectangle(cornerRadius: 180, style: .continuous)
-                .fill(AppTheme.accentSoft.opacity(0.14))
+                .fill(AppTheme.accentSoft.opacity(0.03))
                 .frame(width: 260, height: 260)
                 .rotationEffect(.degrees(-20))
                 .blur(radius: 105)
                 .offset(x: drift ? 170 : 130, y: -160)
 
             Circle()
-                .fill(AppTheme.accentWarm.opacity(0.10))
+                .fill(AppTheme.accentWarm.opacity(0.02))
                 .frame(width: 250, height: 250)
                 .blur(radius: 110)
                 .offset(x: drift ? 140 : 95, y: 320)
@@ -331,14 +331,14 @@ extension View {
 
 extension Font {
     static func appDisplay(_ size: CGFloat) -> Font {
-        .custom("AvenirNext-DemiBold", size: size, relativeTo: .title2)
+        .system(size: size, weight: .semibold, design: .default)
     }
 
     static func appBody(_ size: CGFloat) -> Font {
-        .custom("AvenirNext-Regular", size: size, relativeTo: .body)
+        .system(size: size, weight: .regular, design: .default)
     }
 
     static func appCaps(_ size: CGFloat) -> Font {
-        .custom("AvenirNextCondensed-DemiBold", size: size, relativeTo: .caption)
+        .system(size: size, weight: .medium, design: .default)
     }
 }

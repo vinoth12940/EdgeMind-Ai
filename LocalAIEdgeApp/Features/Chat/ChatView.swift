@@ -17,6 +17,14 @@ private enum GenerationInterruptionReason {
     }
 }
 
+enum ChatInputCapability {
+    static let imageUnsupportedMessage = "This model supports text and document prompts only. Choose a vision model such as Qwen 3.5 VL, LFM2.5 VL, or Gemma 4 LiteRT-LM to ask about an image."
+
+    static func acceptsImage(_ model: InstalledModel, profileStore: RuntimeProfileStore) -> Bool {
+        ModelRuntimeResolver.resolve(catalog: model.catalogItem, store: profileStore).vision == .imageAndText
+    }
+}
+
 struct ChatView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(\.selectedTab) private var selectedTab
@@ -79,7 +87,7 @@ Rules:
         guard let model = store.defaultModel else { return false }
         // Runtime profile is the gate here. Source/model-card vision claims are
         // not enough to keep image attachments enabled after a red device audit.
-        return resolved(for: model).vision == .imageAndText
+        return ChatInputCapability.acceptsImage(model, profileStore: profileStore)
     }
 
     private var activeModel: InstalledModel? {
@@ -190,7 +198,6 @@ Rules:
 
             VStack(spacing: 0) {
                 compactTopBar
-                sessionOverviewStrip
 
                 if activeMessages.isEmpty {
                     ScrollView {
@@ -202,6 +209,7 @@ Rules:
                                 )
                             )
                             .padding(.top, 8)
+                            .padding(.bottom, 16)
                             .frame(maxWidth: .infinity)
                     }
                     .scrollDismissesKeyboard(.interactively)
@@ -229,7 +237,7 @@ Rules:
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 6)
-                            .padding(.bottom, 10)
+                            .padding(.bottom, 16)
                             .frame(maxWidth: .infinity)
                         }
                         .scrollDismissesKeyboard(.interactively)
@@ -251,40 +259,40 @@ Rules:
                         }
                     }
                 }
+
+                // ChatComposerView integrated directly at bottom of VStack
+                ChatComposerView(
+                    prompt: $prompt,
+                    liveSearchEnabled: $liveSearchEnabled,
+                    attachedImage: $attachedImage,
+                    attachedDocuments: $attachedDocuments,
+                    isInputFocused: $isInputFocused,
+                    voiceModeEnabled: store.settings.voiceModeEnabled,
+                    isListening: voiceController.isListening,
+                    voiceStatusMessage: voiceController.lastError,
+                    isVisionModel: isVisionModel,
+                    isSending: isSending,
+                    isSearchConfigured: searchGatewayConfigured,
+                    onSend: sendPrompt,
+                    onToggleVoiceInput: toggleVoiceInput,
+                    onStop: stopGeneration
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, composerBottomSpacing)
+                .background(
+                    LinearGradient(
+                        colors: [Color.clear, AppTheme.background.opacity(0.72), AppTheme.background.opacity(0.96)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea(edges: .bottom)
+                )
             }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .floatingDockHidden()
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            ChatComposerView(
-                prompt: $prompt,
-                liveSearchEnabled: $liveSearchEnabled,
-                attachedImage: $attachedImage,
-                attachedDocuments: $attachedDocuments,
-                isInputFocused: $isInputFocused,
-                voiceModeEnabled: store.settings.voiceModeEnabled,
-                isListening: voiceController.isListening,
-                voiceStatusMessage: voiceController.lastError,
-                isVisionModel: isVisionModel,
-                isSending: isSending,
-                isSearchConfigured: searchGatewayConfigured,
-                onSend: sendPrompt,
-                onToggleVoiceInput: toggleVoiceInput,
-                onStop: stopGeneration
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, composerBottomSpacing)
-            .background(
-                LinearGradient(
-                    colors: [Color.clear, AppTheme.background.opacity(0.72), AppTheme.background.opacity(0.96)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea(edges: .bottom)
-            )
-        }
         .onAppear {
             store.reconcileInstalledFiles()
             applyIntentHandoff()
@@ -341,78 +349,66 @@ Rules:
     }
 
     private var compactTopBar: some View {
-        HStack(spacing: 10) {
+        HStack {
+            // Sidebar Toggle
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    store.isSidebarOpen.toggle()
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open history sidebar")
+            
+            Spacer()
+            
+            // Model Picker (Centered)
             Button {
                 showModelPicker = true
             } label: {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(searchStatusColor)
-                        .frame(width: 6, height: 6)
+                HStack(spacing: 5) {
                     Text(activeModel?.catalogItem.displayName ?? "Select Model")
-                        .font(.appCaps(12))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
                         .lineLimit(1)
+                    
                     Image(systemName: "chevron.down")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(AppTheme.textTertiary)
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 9)
+                .padding(.vertical, 8)
                 .background(
-                    Capsule(style: .continuous)
-                        .fill(AppTheme.panelRaised.opacity(0.82))
+                    Capsule()
+                        .fill(Color.white.opacity(0.06))
                 )
             }
             .buttonStyle(.plain)
-
-            Spacer(minLength: 0)
-
-            Menu {
-                Button {
-                    isInputFocused = false
+            
+            Spacer()
+            
+            // New Chat Button
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
                     store.createSession(using: store.defaultModel?.catalogItem.id)
-                } label: {
-                    Label("New Chat", systemImage: "plus")
-                }
-
-                Button {
-                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
-                        selectedTab.wrappedValue = 1
-                    }
-                } label: {
-                    Label("Models", systemImage: "square.stack.3d.up")
-                }
-
-                Button {
-                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
-                        selectedTab.wrappedValue = 2
-                    }
-                } label: {
-                    Label("History", systemImage: "clock.arrow.circlepath")
-                }
-
-                Button {
-                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
-                        selectedTab.wrappedValue = 3
-                    }
-                } label: {
-                    Label("Settings", systemImage: "slider.horizontal.3")
                 }
             } label: {
-                ZStack {
-                    Circle()
-                        .fill(AppTheme.panelRaised.opacity(0.9))
-                        .frame(width: 34, height: 34)
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(AppTheme.textPrimary)
-                }
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
             }
-            .accessibilityLabel("Open menu")
+            .buttonStyle(.plain)
+            .accessibilityLabel("Start new chat")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
         .padding(.bottom, 4)
         .sheet(isPresented: $showModelPicker) {
             modelPickerSheet
@@ -818,10 +814,10 @@ Rules:
                             selectedTab.wrappedValue = 1
                         }
                     } label: {
-                        Label("Browse MLX Community and open-source providers", systemImage: "shippingbox.fill")
+                        Label("Browse curated local models", systemImage: "shippingbox.fill")
                     }
                 } header: {
-                    Label("Find More Local Models", systemImage: "magnifyingglass")
+                    Label("Find Local Models", systemImage: "magnifyingglass")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(AppTheme.accent)
                         .textCase(nil)
@@ -924,108 +920,114 @@ Rules:
 
     private var emptyState: some View {
         let columns = [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12)
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8)
         ]
 
-        return VStack(alignment: .leading, spacing: 22) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(activeModel == nil ? "Start from a private local canvas" : "Shape the first turn with \(activeModel?.catalogItem.displayName ?? "your model")")
-                    .font(.system(size: 28, weight: .heavy, design: .rounded))
-                    .multilineTextAlignment(.leading)
-                    .foregroundStyle(AppTheme.textPrimary)
-
-                Text(activeModel?.catalogItem.summary ?? "Install a model from the library to start writing, summarizing, and reasoning entirely on-device.")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(AppTheme.textSecondary)
-                    .multilineTextAlignment(.leading)
-                    .lineSpacing(2)
+        return VStack(spacing: 16) {
+            Spacer(minLength: 12)
+            
+            // Centered Brand & Logo
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(AppTheme.accentGradient.opacity(0.12))
+                        .frame(width: 56, height: 56)
+                        .blur(radius: 4)
+                    
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(AppTheme.accentGradient)
+                }
+                
+                Text(activeModel == nil ? "Start a local conversation" : "What can I help with?")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                
+                if let model = activeModel {
+                    Text(model.catalogItem.summary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .lineLimit(2)
+                }
             }
-
+            .padding(.top, 10)
+            
+            // Model Info Chips (Centered)
             if let model = activeModel {
                 HStack(spacing: 6) {
                     emptyStateMetaPill(label: model.catalogItem.parameterSize)
                     emptyStateMetaPill(label: model.catalogItem.runtimeType.label)
-                    emptyStateMetaPill(label: resolved(for: model).vision == .imageAndText ? "Image ready" : "Text only")
+                    emptyStateMetaPill(label: resolved(for: model).vision == .imageAndText ? "Vision Ready" : "Text Only")
+                    if model.catalogItem.supportsReasoning || model.catalogItem.isThinkingModel {
+                        emptyStateMetaPill(label: "Reasoning")
+                    }
                 }
             }
-
-            HStack(spacing: 10) {
-                emptyStateFeature(icon: "lock.shield.fill", title: "Local by default", detail: "Your prompt, model, and history stay on this device.", color: AppTheme.success)
-                emptyStateFeature(icon: "globe", title: searchGatewayConfigured ? "Search lane ready" : "Offline lane", detail: searchGatewayConfigured ? "Turn on live grounding when you need current results." : "Add Serper or a gateway in Settings.", color: searchStatusColor)
+            
+            Spacer(minLength: 12)
+            
+            // Info Row (Minimal)
+            HStack(spacing: 12) {
+                emptyStateFeature(icon: "lock.shield.fill", title: "100% Private", detail: "On-device processing", color: AppTheme.success)
+                emptyStateFeature(icon: "globe", title: "Web Grounding", detail: searchGatewayConfigured ? "Grounding ready" : "Offline mode", color: searchStatusColor)
             }
-
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(promptStarters) { starter in
-                    Button {
-                        primePrompt(starter)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Image(systemName: starter.icon)
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(AppTheme.accent)
-                                .frame(width: 36, height: 36)
-                                .background(AppTheme.accent.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                            Text(starter.title)
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                                .foregroundStyle(AppTheme.textPrimary)
-
-                            Text(starter.subtitle)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(AppTheme.textSecondary)
-                                .multilineTextAlignment(.leading)
+            .padding(.horizontal, 8)
+            
+            // Bottom Prompt Starters
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Suggested")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(AppTheme.textTertiary)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 4)
+                
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(promptStarters) { starter in
+                        Button {
+                            primePrompt(starter)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Image(systemName: starter.icon)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(AppTheme.accent)
+                                
+                                Spacer(minLength: 2)
+                                
+                                Text(starter.title)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(AppTheme.textPrimary)
+                                    .lineLimit(1)
+                                
+                                Text(starter.subtitle)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(AppTheme.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 72)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.white.opacity(0.04))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.white.opacity(0.04), lineWidth: 0.5)
+                            )
                         }
-                        .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
-                        .padding(14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .fill(AppTheme.panelRaised.opacity(0.88))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .stroke(Color.white.opacity(0.07), lineWidth: 0.8)
-                        )
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
-
-            if store.defaultModel == nil {
-                Button {
-                    withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
-                        selectedTab.wrappedValue = 1
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "square.stack.3d.up.fill")
-                            .font(.system(size: 14, weight: .bold))
-                        Text("Browse Models")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(AppTheme.accentGradient)
-                    )
-                    .shadow(color: AppTheme.accent.opacity(0.25), radius: 16, x: 0, y: 6)
-                }
-                .buttonStyle(.plain)
-            }
+            .padding(.horizontal, 4)
         }
-        .padding(22)
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(AppTheme.surfaceGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
-        )
         .padding(.horizontal, 16)
+        .padding(.bottom, 16)
     }
 
     private func emptyStateMetaPill(label: String) -> some View {
@@ -1282,6 +1284,11 @@ Rules:
 
         if let memoryGuardMessage = memoryGuardMessage(for: model) {
             store.appendMessage(ChatMessage(role: .assistant, text: memoryGuardMessage), to: sessionID)
+            return
+        }
+
+        if currentImage != nil && !ChatInputCapability.acceptsImage(model, profileStore: profileStore) {
+            store.appendMessage(ChatMessage(role: .assistant, text: ChatInputCapability.imageUnsupportedMessage), to: sessionID)
             return
         }
 

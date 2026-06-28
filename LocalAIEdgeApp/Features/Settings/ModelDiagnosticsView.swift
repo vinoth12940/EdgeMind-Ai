@@ -24,11 +24,7 @@ struct ModelDiagnosticsView: View {
         }
         .navigationTitle("Model Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                TabSwitcherMenuButton()
-            }
-        }
+
     }
 
     private var hero: some View {
@@ -291,11 +287,7 @@ private struct AuditResultDetailView: View {
         }
         .navigationTitle(result.displayName)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                TabSwitcherMenuButton()
-            }
-        }
+
     }
 
     private func verdictText(_ verdict: Verdict) -> String {

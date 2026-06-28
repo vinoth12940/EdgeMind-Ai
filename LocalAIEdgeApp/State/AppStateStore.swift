@@ -11,6 +11,7 @@ final class AppStateStore {
         didSet { saveSelectedSessionID() }
     }
     var settings: AppSettings
+    var isSidebarOpen = false
 
     private static let installedModelsKey = "persistedInstalledModels"
     private static let settingsKey = "persistedAppSettings"

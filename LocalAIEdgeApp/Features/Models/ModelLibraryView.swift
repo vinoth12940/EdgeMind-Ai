@@ -23,40 +23,57 @@ struct ModelLibraryView: View {
             AppBackdropView()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    heroSection
-                    latestReleaseSection
-                    systemSection
+                VStack(alignment: .leading, spacing: 24) {
+                    // Minimal Header
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Model Library")
+                            .font(.appDisplay(32))
+                            .foregroundStyle(AppTheme.textPrimary)
+
+                        Text("Download and manage local weights running entirely on-device.")
+                            .font(.appBody(15))
+                            .foregroundStyle(AppTheme.textSecondary)
+                    }
+                    .padding(.top, 16)
+
                     simulatorRuntimeSection
 
-                    if !installedModels.isEmpty {
-                        installedSection
-                    }
-
-                    featuredFamiliesSection
                     catalogSearchSection
 
                     if hasActiveQuery {
                         searchResultsSection
                     } else {
+                        if !installedModels.isEmpty {
+                            installedSection
+                        }
+
                         familyDirectorySection
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
                 .padding(.bottom, 104)
             }
             .scrollDismissesKeyboard(.interactively)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        store.isSidebarOpen.toggle()
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open history sidebar")
+            }
             ToolbarItem(placement: .principal) {
                 Text("Models")
                     .font(.appDisplay(18))
                     .foregroundStyle(AppTheme.textPrimary)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                TabSwitcherMenuButton()
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -224,19 +241,8 @@ struct ModelLibraryView: View {
                 overviewBadge(icon: "arrow.down.circle.fill", text: totalInstalledCountLabel, color: AppTheme.warning)
             }
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(AppTheme.surfaceGradient)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(AppTheme.heroGradient.opacity(0.55))
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 0.7)
-        )
+        .padding(.vertical, 8)
+        .background(Color.clear)
     }
 
     private var latestReleaseSection: some View {
@@ -307,11 +313,11 @@ struct ModelLibraryView: View {
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(AppTheme.surfaceGradient)
+                .fill(AppTheme.panel)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(color.opacity(0.18), lineWidth: 0.7)
+                .stroke(color.opacity(0.12), lineWidth: 0.7)
         )
     }
 
@@ -1315,11 +1321,7 @@ private struct FamilyDetailView: View {
         .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle(family.rawValue)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                TabSwitcherMenuButton()
-            }
-        }
+
         .floatingDockHidden()
     }
 

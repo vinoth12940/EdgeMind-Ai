@@ -72,8 +72,8 @@ final class RuntimeProfileTests: XCTestCase {
         for item in gemmaItems {
             let resolved = ModelRuntimeResolver.resolve(catalog: item, store: store)
             XCTAssertTrue(item.sourceSupportsVision)
-            XCTAssertTrue(item.sourceSupportsVideo)
-            XCTAssertTrue(item.sourceSupportsAudio)
+            XCTAssertFalse(item.sourceSupportsVideo)
+            XCTAssertFalse(item.sourceSupportsAudio)
             XCTAssertTrue(item.supportsVision)
             XCTAssertEqual(resolved.vision, .imageAndText)
             XCTAssertFalse(resolved.isMismatch)

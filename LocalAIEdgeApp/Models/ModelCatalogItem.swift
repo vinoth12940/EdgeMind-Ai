@@ -430,12 +430,6 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         if sourceSupportsVision {
             result.append(.image)
         }
-        if sourceSupportsVideo {
-            result.append(.video)
-        }
-        if sourceSupportsAudio {
-            result.append(.audio)
-        }
         if inputModes.contains(.document) {
             result.append(.document)
         }
@@ -501,7 +495,6 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         var modes: [InputCategory] = [.text, .document]
         if (runtimeType == .mlx || runtimeType == .liteRTLM) && supportsVision {
             modes.append(.image)
-            modes.append(.video)
         }
         return modes
     }

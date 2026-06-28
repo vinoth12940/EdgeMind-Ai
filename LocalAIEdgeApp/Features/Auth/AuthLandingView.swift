@@ -61,17 +61,19 @@ struct AuthLandingView: View {
             TextField("Display name", text: $displayName)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
-                .padding(10)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
                 .background(AppTheme.panelRaised.opacity(0.65))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(Capsule())
 
             TextField("Email (optional)", text: $email)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .padding(10)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
                 .background(AppTheme.panelRaised.opacity(0.65))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(Capsule())
 
             Button {
                 authStore.signInWithCredentials(displayName: displayName, email: email)
@@ -79,13 +81,13 @@ struct AuthLandingView: View {
                 HStack {
                     Image(systemName: "person.text.rectangle")
                     Text("Continue with Credentials")
-                        .fontWeight(.semibold)
+                        .fontWeight(.bold)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 11)
-                .background(AppTheme.accent.opacity(0.18))
-                .foregroundStyle(AppTheme.accent)
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .padding(.vertical, 12)
+                .background(AppTheme.accentGradient)
+                .foregroundStyle(.white)
+                .clipShape(Capsule())
             }
         }
         .foregroundStyle(AppTheme.textPrimary)
@@ -106,9 +108,10 @@ struct AuthLandingView: View {
             TextField("Name for device profile (optional)", text: $deviceAuthNameHint)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
-                .padding(10)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
                 .background(AppTheme.panelRaised.opacity(0.65))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(Capsule())
 
             Button {
                 guard !isProcessingDeviceAuth else { return }
@@ -123,13 +126,13 @@ struct AuthLandingView: View {
                 HStack {
                     Image(systemName: "faceid")
                     Text(isProcessingDeviceAuth ? "Authenticating..." : "Continue with \(authStore.deviceAuthLabel)")
-                        .fontWeight(.semibold)
+                        .fontWeight(.bold)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 11)
-                .background(authStore.canUseDeviceAuthentication ? AppTheme.success.opacity(0.18) : AppTheme.panelRaised)
-                .foregroundStyle(authStore.canUseDeviceAuthentication ? AppTheme.success : AppTheme.textTertiary)
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .padding(.vertical, 12)
+                .background(authStore.canUseDeviceAuthentication ? AppTheme.accentGradient : LinearGradient(colors: [AppTheme.panelRaised, AppTheme.panelRaised], startPoint: .top, endPoint: .bottom))
+                .foregroundStyle(authStore.canUseDeviceAuthentication ? .white : AppTheme.textTertiary)
+                .clipShape(Capsule())
             }
             .disabled(!authStore.canUseDeviceAuthentication || isProcessingDeviceAuth)
         }
@@ -148,12 +151,12 @@ struct AuthLandingView: View {
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
             .foregroundStyle(AppTheme.textSecondary)
-            .background(AppTheme.panel)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Color.white.opacity(0.06))
+            .clipShape(Capsule())
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                Capsule()
                     .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
             )
         }

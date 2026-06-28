@@ -54,65 +54,57 @@ struct MessageBubbleView: View {
     }
 
     private var assistantRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            VStack(alignment: .leading, spacing: 0) {
-                if !message.citations.isEmpty {
-                    SearchDisclosureRow(
-                        citations: message.citations,
-                        isExpanded: $searchExpanded
-                    )
-                }
-
-                if let thinkingContent = message.thinkingContent {
-                    ThinkingDisclosureRow(
-                        thinkingContent: thinkingContent,
-                        durationSeconds: message.thinkingDurationSeconds,
-                        isExpanded: $thinkingExpanded
-                    )
-                }
-
-                if let imageData = message.imageData, let uiImage = previewImage(from: imageData) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 220, maxHeight: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .padding(.horizontal, 14)
-                        .padding(.top, 10)
-                }
-
-                if !documentAttachments.isEmpty {
-                    attachmentChips
-                        .padding(.horizontal, 12)
-                        .padding(.top, 10)
-                }
-
-                if isRecoveryMessage {
-                    recoveryCard
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                } else if !message.text.isEmpty {
-                    MarkdownTextView(text: message.text, isUser: false, citations: message.citations)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                } else if message.thinkingContent != nil && message.thinkingDurationSeconds == nil {
-                    Color.clear.frame(height: 4)
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            if !message.citations.isEmpty {
+                SearchDisclosureRow(
+                    citations: message.citations,
+                    isExpanded: $searchExpanded
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.bottom, 2)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(AppTheme.surfaceGradient)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 0.7)
-                    )
-            )
+
+            if let thinkingContent = message.thinkingContent {
+                ThinkingDisclosureRow(
+                    thinkingContent: thinkingContent,
+                    durationSeconds: message.thinkingDurationSeconds,
+                    isExpanded: $thinkingExpanded
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.bottom, 2)
+            }
+
+            if let imageData = message.imageData, let uiImage = previewImage(from: imageData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 260, maxHeight: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.top, 4)
+            }
+
+            if !documentAttachments.isEmpty {
+                attachmentChips
+                    .padding(.top, 4)
+            }
+
+            if isRecoveryMessage {
+                recoveryCard
+                    .padding(.vertical, 8)
+            } else if !message.text.isEmpty {
+                MarkdownTextView(text: message.text, isUser: false, citations: message.citations)
+                    .textSelection(.enabled)
+                    .padding(.vertical, 2)
+            } else if message.thinkingContent != nil && message.thinkingDurationSeconds == nil {
+                Color.clear.frame(height: 4)
+            }
 
             messageTimestamp
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, 18)
+        .padding(.trailing, 24)
+        .padding(.vertical, 4)
     }
 
     private var documentAttachments: [ChatAttachment] {

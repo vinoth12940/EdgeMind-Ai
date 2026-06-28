@@ -33,24 +33,35 @@ struct ChatHistoryView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        store.isSidebarOpen.toggle()
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open history sidebar")
+            }
             ToolbarItem(placement: .principal) {
                 Text("History")
                     .font(.appDisplay(18))
                     .foregroundStyle(AppTheme.textPrimary)
             }
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     store.createSession(using: store.defaultModel?.catalogItem.id)
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AppTheme.accent)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
                         .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.plain)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                TabSwitcherMenuButton()
+                .accessibilityLabel("Create new chat session")
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -82,15 +93,8 @@ struct ChatHistoryView: View {
                 heroBadge(icon: "clock.arrow.circlepath", text: "Resume instantly", color: AppTheme.warning)
             }
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(AppTheme.surfaceGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.7)
-        )
+        .padding(.vertical, 8)
+        .background(Color.clear)
     }
 
     private func statPill(value: String, label: String) -> some View {
@@ -179,11 +183,11 @@ struct ChatHistoryView: View {
             .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(AppTheme.surfaceGradient)
+                    .fill(AppTheme.panel)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+                    .stroke(Color.white.opacity(0.04), lineWidth: 0.7)
             )
         }
         .contextMenu {
@@ -211,13 +215,6 @@ struct ChatHistoryView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(AppTheme.surfaceGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.7)
-        )
+        .background(Color.clear)
     }
 }

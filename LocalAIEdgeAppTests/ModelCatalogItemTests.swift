@@ -179,14 +179,26 @@ final class ModelCatalogItemTests: XCTestCase {
         XCTAssertEqual(gemmaItems.count, 2)
         for item in gemmaItems {
             XCTAssertTrue(item.sourceInputCategories.contains(.image))
-            XCTAssertTrue(item.sourceInputCategories.contains(.video))
-            XCTAssertTrue(item.sourceInputCategories.contains(.audio))
+            XCTAssertFalse(item.sourceInputCategories.contains(.video))
+            XCTAssertFalse(item.sourceInputCategories.contains(.audio))
             XCTAssertTrue(item.supportsVision)
             XCTAssertTrue(item.runtimeInputCategories.contains(.image))
             XCTAssertFalse(item.runtimeInputCategories.contains(.video))
             XCTAssertFalse(item.runtimeInputCategories.contains(.audio))
-            XCTAssertTrue(item.inputCategoriesDifferByRuntime)
+            XCTAssertFalse(item.inputCategoriesDifferByRuntime)
             XCTAssertNotNil(item.downloadURL)
+        }
+    }
+
+    func test_chatCatalogDoesNotExposeAudioOrVideoInputs() {
+        let chatItems = MockCatalogData.items.filter { $0.primaryUse == .chat }
+
+        XCTAssertFalse(chatItems.isEmpty)
+        for item in chatItems {
+            XCTAssertFalse(item.sourceInputCategories.contains(.video), "\(item.displayName) should not advertise source video input in the publish catalog")
+            XCTAssertFalse(item.sourceInputCategories.contains(.audio), "\(item.displayName) should not advertise source audio input in the publish catalog")
+            XCTAssertFalse(item.runtimeInputCategories.contains(.video), "\(item.displayName) should not expose runtime video input")
+            XCTAssertFalse(item.runtimeInputCategories.contains(.audio), "\(item.displayName) should not expose runtime audio input")
         }
     }
 
