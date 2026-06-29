@@ -11,6 +11,7 @@ struct AppSettings: Codable, Hashable {
     var voicePreset: VoicePreset
     var autoPlayVoiceResponses: Bool
     var voiceResponseRate: Double
+    var appearanceMode: AppearanceMode
 
     // Web Search API Configuration
     var webSearchProvider: WebSearchProvider
@@ -87,6 +88,31 @@ struct AppSettings: Codable, Hashable {
         }
     }
 
+    enum AppearanceMode: String, Codable, Hashable, CaseIterable {
+        case system = "System"
+        case dark = "Dark"
+        case light = "Light"
+
+        var iconName: String {
+            switch self {
+            case .system: return "circle.lefthalf.filled"
+            case .dark: return "moon.fill"
+            case .light: return "sun.max.fill"
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .system:
+                return "Follow the iPhone appearance setting."
+            case .dark:
+                return "Use the high-contrast dark interface."
+            case .light:
+                return "Use a bright interface for daylight reading."
+            }
+        }
+    }
+
     static let `default` = AppSettings(
         defaultModelID: nil,
         systemPrompt: "You are a helpful AI assistant. Answer the user's question directly and accurately. Be concise but thorough. If you are unsure or do not know the answer, say so honestly instead of guessing. Do not repeat the question back. Do not add unnecessary filler or disclaimers. Refuse requests for instructions that enable physical harm, weapon construction, cyber abuse, credential theft, or self-harm methods, and redirect to safety-focused help. When web search results are provided, use them to give current and factual answers, citing sources by number.",
@@ -98,6 +124,7 @@ struct AppSettings: Codable, Hashable {
         voicePreset: .balanced,
         autoPlayVoiceResponses: false,
         voiceResponseRate: 1.0,
+        appearanceMode: .system,
         webSearchProvider: .none,
         webSearchAPIKey: "",
         huggingFaceToken: "",
@@ -118,6 +145,7 @@ extension AppSettings {
         case voicePreset
         case autoPlayVoiceResponses
         case voiceResponseRate
+        case appearanceMode
         case webSearchProvider
         case webSearchAPIKey
         case huggingFaceToken
@@ -137,6 +165,7 @@ extension AppSettings {
         voicePreset = try container.decodeIfPresent(VoicePreset.self, forKey: .voicePreset) ?? Self.default.voicePreset
         autoPlayVoiceResponses = try container.decodeIfPresent(Bool.self, forKey: .autoPlayVoiceResponses) ?? Self.default.autoPlayVoiceResponses
         voiceResponseRate = try container.decodeIfPresent(Double.self, forKey: .voiceResponseRate) ?? Self.default.voiceResponseRate
+        appearanceMode = try container.decodeIfPresent(AppearanceMode.self, forKey: .appearanceMode) ?? Self.default.appearanceMode
         webSearchProvider = try container.decodeIfPresent(WebSearchProvider.self, forKey: .webSearchProvider) ?? Self.default.webSearchProvider
         webSearchAPIKey = try container.decodeIfPresent(String.self, forKey: .webSearchAPIKey) ?? Self.default.webSearchAPIKey
         huggingFaceToken = try container.decodeIfPresent(String.self, forKey: .huggingFaceToken) ?? Self.default.huggingFaceToken

@@ -1,22 +1,71 @@
 import SwiftUI
+import UIKit
 
 enum AppTheme {
+    private static func adaptive(
+        dark: (red: Double, green: Double, blue: Double, alpha: Double),
+        light: (red: Double, green: Double, blue: Double, alpha: Double)
+    ) -> Color {
+        Color(UIColor { traitCollection in
+            let value = traitCollection.userInterfaceStyle == .dark ? dark : light
+            return UIColor(
+                red: value.red,
+                green: value.green,
+                blue: value.blue,
+                alpha: value.alpha
+            )
+        })
+    }
+
+    private static func adaptiveOpacity(dark: UIColor, light: UIColor) -> Color {
+        Color(UIColor { traitCollection in
+            traitCollection.userInterfaceStyle == .dark ? dark : light
+        })
+    }
+
     // MARK: - Core Palette (Carbon / Ember / Cyan)
-    static let background = Color(red: 0.08, green: 0.08, blue: 0.09)
-    static let panel = Color(red: 0.12, green: 0.12, blue: 0.13)
-    static let panelRaised = Color(red: 0.16, green: 0.16, blue: 0.17)
-    static let panelHover = Color(red: 0.20, green: 0.20, blue: 0.22)
+    static let background = adaptive(
+        dark: (0.08, 0.08, 0.09, 1),
+        light: (0.96, 0.97, 0.98, 1)
+    )
+    static let panel = adaptive(
+        dark: (0.12, 0.12, 0.13, 1),
+        light: (1.00, 1.00, 1.00, 1)
+    )
+    static let panelRaised = adaptive(
+        dark: (0.16, 0.16, 0.17, 1),
+        light: (0.91, 0.93, 0.95, 1)
+    )
+    static let panelHover = adaptive(
+        dark: (0.20, 0.20, 0.22, 1),
+        light: (0.86, 0.89, 0.92, 1)
+    )
     static let accent = Color(red: 0.13, green: 0.79, blue: 0.84)
     static let accentSoft = Color(red: 0.85, green: 0.57, blue: 0.34)
     static let accentWarm = Color(red: 1.0, green: 0.41, blue: 0.22)
     static let success = Color(red: 0.37, green: 0.87, blue: 0.49)
     static let warning = Color(red: 1.0, green: 0.70, blue: 0.24)
     static let destructive = Color(red: 1.0, green: 0.33, blue: 0.31)
-    static let textPrimary = Color(red: 0.98, green: 0.98, blue: 0.98)
-    static let textSecondary = Color(red: 0.75, green: 0.75, blue: 0.77)
-    static let textTertiary = Color(red: 0.52, green: 0.52, blue: 0.55)
-    static let hairline = Color.white.opacity(0.10)
-    static let divider = Color.white.opacity(0.06)
+    static let textPrimary = adaptive(
+        dark: (0.98, 0.98, 0.98, 1),
+        light: (0.07, 0.09, 0.12, 1)
+    )
+    static let textSecondary = adaptive(
+        dark: (0.75, 0.75, 0.77, 1),
+        light: (0.30, 0.34, 0.40, 1)
+    )
+    static let textTertiary = adaptive(
+        dark: (0.52, 0.52, 0.55, 1),
+        light: (0.50, 0.55, 0.62, 1)
+    )
+    static let hairline = adaptiveOpacity(
+        dark: UIColor.white.withAlphaComponent(0.10),
+        light: UIColor.black.withAlphaComponent(0.10)
+    )
+    static let divider = adaptiveOpacity(
+        dark: UIColor.white.withAlphaComponent(0.06),
+        light: UIColor.black.withAlphaComponent(0.07)
+    )
 
     // MARK: - Gradients
     static let glow = LinearGradient(
@@ -27,9 +76,9 @@ enum AppTheme {
 
     static let meshBackground = LinearGradient(
         colors: [
-            Color(red: 0.05, green: 0.04, blue: 0.03),
-            Color(red: 0.07, green: 0.06, blue: 0.07),
-            Color(red: 0.03, green: 0.03, blue: 0.04)
+            adaptive(dark: (0.05, 0.04, 0.03, 1), light: (0.98, 0.99, 1.00, 1)),
+            adaptive(dark: (0.07, 0.06, 0.07, 1), light: (0.93, 0.96, 0.98, 1)),
+            adaptive(dark: (0.03, 0.03, 0.04, 1), light: (0.89, 0.93, 0.96, 1))
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -37,8 +86,8 @@ enum AppTheme {
 
     static let userBubbleGradient = LinearGradient(
         colors: [
-            Color(red: 0.18, green: 0.18, blue: 0.19),
-            Color(red: 0.15, green: 0.15, blue: 0.16)
+            adaptive(dark: (0.18, 0.18, 0.19, 1), light: (0.16, 0.56, 0.62, 1)),
+            adaptive(dark: (0.15, 0.15, 0.16, 1), light: (0.11, 0.45, 0.52, 1))
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -80,7 +129,10 @@ enum AppTheme {
     )
 
     // MARK: - Shadows
-    static let softShadow = Color.black.opacity(0.50)
+    static let softShadow = adaptiveOpacity(
+        dark: UIColor.black.withAlphaComponent(0.50),
+        light: UIColor.black.withAlphaComponent(0.12)
+    )
     static let glowShadow = accent.opacity(0.15)
 
     // MARK: - Lab Colors

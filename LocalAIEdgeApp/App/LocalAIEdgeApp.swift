@@ -14,7 +14,20 @@ struct LocalAIEdgeApp: App {
             LaunchRootView()
             .environment(store)
             .environment(authStore)
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(store.settings.appearanceMode.preferredColorScheme)
+        }
+    }
+}
+
+private extension AppSettings.AppearanceMode {
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system:
+            return nil
+        case .dark:
+            return .dark
+        case .light:
+            return .light
         }
     }
 }

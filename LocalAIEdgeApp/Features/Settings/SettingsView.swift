@@ -28,6 +28,10 @@ struct SettingsView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     profileSection
+
+                    settingsGroupCard(icon: "paintpalette.fill", title: "Appearance", iconColor: AppTheme.accent) {
+                        appearanceSectionContent
+                    }
                     
                     settingsGroupCard(icon: "brain.head.profile", title: "AI Configuration", iconColor: AppTheme.accentSoft) {
                         behaviorSectionContent
@@ -133,6 +137,34 @@ struct SettingsView: View {
     private var profileSection: some View {
         settingsGroupCard(icon: "person.crop.circle.fill", title: "Profile", iconColor: AppTheme.accent) {
             profileSectionContent
+        }
+    }
+
+    @ViewBuilder
+    private var appearanceSectionContent: some View {
+        Picker("Appearance", selection: Binding(
+            get: { store.settings.appearanceMode },
+            set: {
+                store.settings.appearanceMode = $0
+                store.persistSettings()
+            }
+        )) {
+            ForEach(AppSettings.AppearanceMode.allCases, id: \.self) { mode in
+                Label(mode.rawValue, systemImage: mode.iconName)
+                    .tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .tint(AppTheme.accent)
+
+        HStack(spacing: 8) {
+            Image(systemName: store.settings.appearanceMode.iconName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppTheme.accent)
+
+            Text(store.settings.appearanceMode.description)
+                .font(.system(size: 12))
+                .foregroundStyle(AppTheme.textTertiary)
         }
     }
 
