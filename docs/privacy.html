@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — Edge Mind Ai</title>
+<meta name="description" content="Edge Mind Ai privacy policy. Your data stays on your device. No telemetry, no accounts, no cloud.">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #14141c;
+    --text: #e8e8ee;
+    --muted: #9a9aa8;
+    --accent: #6366f1;
+    --border: #26262f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+  }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 28px;
+    margin-bottom: 36px;
+  }
+  h1 {
+    font-size: 2.1rem;
+    margin: 0 0 6px;
+    letter-spacing: -0.02em;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 1rem;
+    margin: 0;
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(99, 102, 241, 0.14);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-bottom: 18px;
+  }
+  .updated {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 14px;
+  }
+  h2 {
+    font-size: 1.2rem;
+    margin: 38px 0 10px;
+    color: #f4f4f8;
+  }
+  p, li { color: #c9c9d4; }
+  a { color: #a5b4fc; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin: 18px 0;
+  }
+  .card strong { color: var(--text); }
+  ul { padding-left: 1.2em; }
+  .contact {
+    margin-top: 40px;
+    padding: 20px 24px;
+    background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0.02));
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 14px;
+  }
+  footer {
+    margin-top: 60px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="badge">Privacy Policy</span>
+    <h1>Edge Mind Ai</h1>
+    <p class="subtitle">A privacy-first, on-device AI assistant for iPhone &amp; iPad.</p>
+    <p class="updated">Last updated: June 29, 2026</p>
+  </header>
+
+  <p>Edge Mind Ai (&ldquo;the app&rdquo;) is built on a simple principle: <strong>your data stays on your device.</strong> This policy describes what the app does and does not do with your information.</p>
+
+  <div class="card">
+    <strong>Summary:</strong> We do not collect, transmit, sell, or share any personal data. We do not run analytics, advertising, or tracking. All chat content, settings, and downloaded models remain on your device. The only thing that ever leaves your device is a single search query — and only when <em>you</em> explicitly turn on Live Web Search.
+  </div>
+
+  <h2>1. What we collect</h2>
+  <p>Nothing. Edge Mind Ai does not collect, transmit, sell, or share any personal data with the developer or any third party. We do not run analytics, telemetry, crash reporting, advertising, or tracking SDKs.</p>
+
+  <h2>2. What stays on your device</h2>
+  <ul>
+    <li>Your chat conversations and chat history</li>
+    <li>Your app settings and system prompt</li>
+    <li>Any AI models you choose to download</li>
+    <li>Your optional HuggingFace access token (stored in the iOS Keychain)</li>
+    <li>Optional local sign-in profile (display name, optional email)</li>
+  </ul>
+  <p>All of the above are stored locally in the app&rsquo;s sandbox on your device and are never sent anywhere by the app.</p>
+
+  <h2>3. Data the app processes locally for features</h2>
+  <ul>
+    <li><strong>Photos</strong> you attach to a chat prompt are read from your library, downsampled, and passed to an on-device vision model, then processed locally. They are not uploaded.</li>
+    <li><strong>Audio</strong> from voice dictation is handled by Apple&rsquo;s on-device speech recognition and is not sent to any server by this app.</li>
+    <li><strong>Face ID / Touch ID</strong> checks are performed by iOS LocalAuthentication; the app never receives or stores biometric data.</li>
+  </ul>
+
+  <h2>4. The only thing that leaves your device &mdash; and only when you ask</h2>
+  <p>Live Web Search is <strong>off by default</strong>. If you turn it on (per-prompt or in Settings) and provide your own API key for Tavily, Brave Search, Serper, or a custom gateway, the app sends <strong>only your individual search query</strong> to that provider so it can return results. No other data is sent. Your use of that provider is governed by the provider&rsquo;s own privacy policy.</p>
+
+  <h2>5. Model downloads</h2>
+  <p>When you download a model, it is fetched directly from its source (typically Hugging Face) over HTTPS. If the model is gated, your HuggingFace token is sent only to <code>huggingface.co</code> to authorize the download. Model files are stored locally on your device.</p>
+
+  <h2>6. Children</h2>
+  <p>The app is rated 12+ and is not directed at children under 12. We do not knowingly collect any data from anyone, including children.</p>
+
+  <h2>7. Third-party links</h2>
+  <p>The app may display citations or links returned by an optional web search you explicitly enabled. Following a link opens it in your browser and is subject to that site&rsquo;s policy.</p>
+
+  <h2>8. Your choices</h2>
+  <p>You can delete any chat, model, or your local profile at any time from within the app. Uninstalling the app removes all locally stored data.</p>
+
+  <h2>9. Changes to this policy</h2>
+  <p>Material changes will be reflected by updating this page with a new date.</p>
+
+  <div class="contact">
+    <strong style="color:#f4f4f8">Contact</strong><br>
+    Questions about this policy: <a href="mailto:vinoth.rajalingam@icloud.com">vinoth.rajalingam@icloud.com</a>
+  </div>
+
+  <footer>
+    &copy; 2026 Vinoth Rajalingam &middot; Edge Mind Ai is an independent project and is not affiliated with or endorsed by Apple, Google, Meta, Microsoft, IBM, Alibaba, Mistral, Hugging Face, or Liquid AI.
+  </footer>
+</div>
+</body>
+</html>
