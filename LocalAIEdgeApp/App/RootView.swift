@@ -322,6 +322,11 @@ struct RootView: View {
                     selectedTab = 1
                     store.isSidebarOpen = false
                 }
+
+                sidebarNavItem(icon: "clock.arrow.circlepath", label: "History") {
+                    selectedTab = 2
+                    store.isSidebarOpen = false
+                }
                 
                 sidebarNavItem(icon: "slider.horizontal.3", label: "Settings") {
                     selectedTab = 3
