@@ -18,7 +18,7 @@
 - **Code Sign Style:** Automatic
 
 ### Build Configuration
-- **Scheme:** LocalAIEdgeApp
+- **Scheme:** EdgeMindAi
 - **Configuration:** Debug
 - **SDK:** iOS 26.2
 - **Architecture:** arm64
@@ -28,7 +28,7 @@
 ## Changes Made for Deployment
 
 ### 1. Entitlements Adjustment
-**File:** `LocalAIEdgeApp/LocalAIEdgeApp.entitlements`
+**File:** `EdgeMindAi/EdgeMindAi.entitlements`
 
 **Change:** Temporarily disabled "Sign In with Apple" capability
 - **Reason:** Free Apple Developer accounts don't support this capability
@@ -73,13 +73,13 @@
 ## Installation Locations
 
 **iPhone:**
-- Bundle ID: `io.example.LocalAIEdgeApp`
-- Path: `/private/var/containers/Bundle/Application/676D6B45-DFF3-47F7-BE95-EE5E89C8BF2D/LocalAIEdgeApp.app/`
+- Bundle ID: `io.example.EdgeMindAi`
+- Path: `/private/var/containers/Bundle/Application/676D6B45-DFF3-47F7-BE95-EE5E89C8BF2D/EdgeMindAi.app/`
 - Database UUID: `41FFBEF2-1026-494D-B24D-0F3EAA1B9830`
 
 **iPad:**
-- Bundle ID: `io.example.LocalAIEdgeApp`
-- Path: `/private/var/containers/Bundle/Application/A8D312B1-8468-414D-97A1-3A5188040EA4/LocalAIEdgeApp.app/`
+- Bundle ID: `io.example.EdgeMindAi`
+- Path: `/private/var/containers/Bundle/Application/A8D312B1-8468-414D-97A1-3A5188040EA4/EdgeMindAi.app/`
 - Database UUID: `D74BB050-1C0C-435F-93AF-F45575EDE1B1`
 
 ---
@@ -140,10 +140,10 @@
 To rebuild and reinstall (e.g., after updates or certificate expiry):
 
 ```bash
-cd /Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/LocalAI_Edge_App
+cd /Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge\ Mind\ Ai
 
 # Build for iPhone
-xcodebuild -scheme LocalAIEdgeApp \
+xcodebuild -scheme EdgeMindAi \
   -destination 'platform=iOS,id=00008150-00056CA11A6A401C' \
   clean build \
   DEVELOPMENT_TEAM=43NV5DTHKG \
@@ -152,11 +152,11 @@ xcodebuild -scheme LocalAIEdgeApp \
 
 # Sign framework and install to iPhone
 codesign --force --sign "Apple Development: vinoth.rajalingam@icloud.com (3TUK6Q66NM)" \
-  --deep ~/Library/Developer/Xcode/DerivedData/LocalAIEdgeApp-*/Build/Products/Debug-iphoneos/LocalAIEdgeApp.app/Frameworks/llama.framework
+  --deep ~/Library/Developer/Xcode/DerivedData/EdgeMindAi-*/Build/Products/Debug-iphoneos/EdgeMindAi.app/Frameworks/llama.framework
 
 xcrun devicectl device install app \
   --device 00008150-00056CA11A6A401C \
-  ~/Library/Developer/Xcode/DerivedData/LocalAIEdgeApp-*/Build/Products/Debug-iphoneos/LocalAIEdgeApp.app
+  ~/Library/Developer/Xcode/DerivedData/EdgeMindAi-*/Build/Products/Debug-iphoneos/EdgeMindAi.app
 
 # For iPad, use device ID: 00008130-0002701821C0001C
 ```
@@ -208,7 +208,7 @@ xcrun devicectl device install app \
 ## Build Artifacts
 
 **Build Location:**
-`/Users/vinothrajalingam/Library/Developer/Xcode/DerivedData/LocalAIEdgeApp-gllewxtrntbibwghleczjzxazpss/Build/Products/Debug-iphoneos/LocalAIEdgeApp.app`
+`/Users/vinothrajalingam/Library/Developer/Xcode/DerivedData/EdgeMindAi-gllewxtrntbibwghleczjzxazpss/Build/Products/Debug-iphoneos/EdgeMindAi.app`
 
 **Build Output:**
 - ✅ Compiled successfully

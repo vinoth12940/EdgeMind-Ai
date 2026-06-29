@@ -1,4 +1,4 @@
-# EdgeMind AI
+# Edge Mind Ai
 
 A **privacy-first, on-device AI assistant** for iOS and iPadOS. All inference runs locally on Apple Silicon and no data leaves your device unless you explicitly enable live web search.
 
@@ -75,9 +75,9 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models), **Apple MLX** (M
 ## Architecture
 
 ```
-LocalAIEdgeApp/
+EdgeMindAi/
 ├── App/
-│   ├── LocalAIEdgeApp.swift          # @main entry point, auth gate + injects AppStateStore/AuthStateStore
+│   ├── EdgeMindAiApp.swift          # @main entry point, auth gate + injects AppStateStore/AuthStateStore
 │   └── RootView.swift                # Tab navigation (Chat, Models, History, Settings)
 │
 ├── Models/                            # Data models (Codable structs)
@@ -134,7 +134,7 @@ LocalAIEdgeApp/
 │
 └── Resources/                         # Assets, app icon
 
-LocalAIEdgeAppTests/
+EdgeMindAiTests/
 ├── DeviceCapabilityTests.swift        # n_ctx tier + flash attention for all device tiers
 └── PromptRendererTests.swift          # Token budget math, HTML stripping
 ```
@@ -198,13 +198,13 @@ xcodegen generate
 
 ```bash
 # Step 1: Build for physical iPhone (Apple Silicon MLX)
-xcodebuild -project LocalAIEdgeApp.xcodeproj -scheme LocalAIEdgeApp \
+xcodebuild -project EdgeMindAi.xcodeproj -scheme EdgeMindAi \
   -destination 'generic/platform=iOS' build \
   DEVELOPMENT_TEAM=43NV5DTHKG CODE_SIGN_STYLE=Automatic \
   -allowProvisioningUpdates 2>&1 | tail -25
 
 # Step 2: Re-sign the vendored llama.framework + install on device
-APP_PATH="/Users/vinothrajalingam/Library/Developer/Xcode/DerivedData/LocalAIEdgeApp-gllewxtrntbibwghleczjzxazpss/Build/Products/Debug-iphoneos/LocalAIEdgeApp.app"
+APP_PATH="/Users/vinothrajalingam/Library/Developer/Xcode/DerivedData/EdgeMindAi-gllewxtrntbibwghleczjzxazpss/Build/Products/Debug-iphoneos/EdgeMindAi.app"
 codesign --force \
   --sign "Apple Development: vinoth.rajalingam@icloud.com (3TUK6Q66NM)" \
   --deep "$APP_PATH/Frameworks/llama.framework" && echo "Signed OK" \
@@ -218,7 +218,7 @@ codesign --force \
 > | `DEVELOPMENT_TEAM` | `43NV5DTHKG` |
 > | Signing identity | `Apple Development: vinoth.rajalingam@icloud.com (3TUK6Q66NM)` |
 > | Device UUID ("Vinoths") | `428A7E6B-8497-56D4-B7A2-02ABAD4FC996` |
-> | DerivedData folder | `LocalAIEdgeApp-gllewxtrntbibwghleczjzxazpss` |
+> | DerivedData folder | `EdgeMindAi-gllewxtrntbibwghleczjzxazpss` |
 > | Simulator destination | `platform=iOS Simulator,name=iPhone 16 Pro Test` |
 
 ### Sign in with Apple Capability (Optional)
@@ -226,7 +226,7 @@ codesign --force \
 The App Store-ready build hides Sign in with Apple because the current entitlements file does not enable `com.apple.developer.applesignin`. This avoids exposing a broken login path to App Review.
 
 To re-enable Apple ID login for a paid developer team:
-1. Uncomment `com.apple.developer.applesignin` in `LocalAIEdgeApp/LocalAIEdgeApp.entitlements`.
+1. Uncomment `com.apple.developer.applesignin` in `EdgeMindAi/EdgeMindAi.entitlements`.
 2. Open Apple Developer portal → **Identifiers** → your App ID.
 3. Enable **Sign In with Apple**.
 4. Regenerate or refresh provisioning profiles.
@@ -240,8 +240,8 @@ confirm the App ID and provisioning profile both include this capability.
 ### Build for Simulator (GGUF only, no MLX)
 
 ```bash
-xcodebuild -project LocalAIEdgeApp.xcodeproj \
-  -scheme LocalAIEdgeApp \
+xcodebuild -project EdgeMindAi.xcodeproj \
+  -scheme EdgeMindAi \
   -destination 'generic/platform=iOS Simulator' \
   CODE_SIGNING_ALLOWED=NO \
   build
@@ -346,7 +346,7 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 | AI Labs | 4 |
 | Search providers | 4 |
 | Unit tests | 40+ XCTest coverage across device capability, prompting, streaming, runtime profiles, and catalog migration |
-| Bundle ID | `com.vinothrajalingam.LocalAIEdgeApp` |
+| Bundle ID | `com.vinothrajalingam.EdgeMindAi` |
 | Min deployment target | iOS 17.0 |
 | Color scheme | Dark mode only |
 

@@ -1,4 +1,4 @@
-name: LocalAIEdgeApp
+name: EdgeMindAi
 options:
   bundleIdPrefix: io.example
   deploymentTarget:
@@ -9,13 +9,13 @@ configs:
 settings:
   base:
     SWIFT_VERSION: 5.10
-    PRODUCT_BUNDLE_IDENTIFIER: com.vinothrajalingam.LocalAIEdgeApp
+    PRODUCT_BUNDLE_IDENTIFIER: com.vinothrajalingam.EdgeMindAi
     DEVELOPMENT_TEAM: "43NV5DTHKG"
     CODE_SIGN_STYLE: Automatic
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 0.1.0
     GENERATE_INFOPLIST_FILE: YES
-    INFOPLIST_KEY_CFBundleDisplayName: EdgeMind AI
+    INFOPLIST_KEY_CFBundleDisplayName: Edge Mind Ai
     INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
     INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleDefault
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -33,13 +33,13 @@ packages:
     url: https://github.com/huggingface/swift-transformers
     from: 1.3.0
 targets:
-  LocalAIEdgeApp:
+  EdgeMindAi:
     type: application
     platform: iOS
     sources:
-      - path: LocalAIEdgeApp
+      - path: EdgeMindAi
     resources:
-      - path: LocalAIEdgeApp/Resources
+      - path: EdgeMindAi/Resources
     dependencies:
       - framework: Vendor/build-apple/llama.xcframework
         embed: true
@@ -58,8 +58,8 @@ targets:
         product: Tokenizers
     settings:
       base:
-        CODE_SIGN_ENTITLEMENTS: LocalAIEdgeApp/LocalAIEdgeApp.entitlements
-        INFOPLIST_KEY_CFBundleName: EdgeMind AI
+        CODE_SIGN_ENTITLEMENTS: EdgeMindAi/EdgeMindAi.entitlements
+        INFOPLIST_KEY_CFBundleName: Edge Mind Ai
         INFOPLIST_KEY_LSRequiresIPhoneOS: YES
         INFOPLIST_KEY_UIRequiresFullScreen: NO
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone:
@@ -83,17 +83,17 @@ targets:
     scheme:
       gatherCoverageData: false
       testTargets:
-        - LocalAIEdgeAppTests
+        - EdgeMindAiTests
 
-  LocalAIEdgeAppTests:
+  EdgeMindAiTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: LocalAIEdgeAppTests
+      - path: EdgeMindAiTests
     resources:
-      - path: LocalAIEdgeApp/Resources/RuntimeProfiles.json
+      - path: EdgeMindAi/Resources/RuntimeProfiles.json
     dependencies:
-      - target: LocalAIEdgeApp
+      - target: EdgeMindAi
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
