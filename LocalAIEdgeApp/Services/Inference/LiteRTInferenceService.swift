@@ -123,7 +123,7 @@ struct LiteRTInferenceService: InferenceService {
     ) async throws -> ChatMessage {
 #if canImport(LiteRTLM) && !targetEnvironment(simulator)
         let modelPath = try Self.modelPath(for: model)
-        let history = Self.history(from: conversation)
+        let history = Self.history(from: conversation, model: model, multimodal: imageData != nil)
         let currentMessage = Self.message(prompt: prompt, imageData: imageData)
         let response = try await LiteRTRuntime.shared.generate(
             modelPath: modelPath,
@@ -153,7 +153,7 @@ struct LiteRTInferenceService: InferenceService {
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
 #if canImport(LiteRTLM) && !targetEnvironment(simulator)
         let modelPath = try Self.modelPath(for: model)
-        let history = Self.history(from: conversation)
+        let history = Self.history(from: conversation, model: model, multimodal: imageData != nil)
         let currentMessage = Self.message(prompt: prompt, imageData: imageData)
         let rawThrowingStream = try await LiteRTRuntime.shared.generateStream(
             modelPath: modelPath,
@@ -200,22 +200,37 @@ struct LiteRTInferenceService: InferenceService {
         return fileURL.path
     }
 
-    private static func history(from conversation: [ChatMessage]) -> [LiteRTLM.Message] {
-        conversation.compactMap { message in
+    private static func history(from conversation: [ChatMessage], model: InstalledModel, multimodal: Bool) -> [LiteRTLM.Message] {
+        if multimodal {
+            return []
+        }
+
+        let maxMessages = InferenceBudget.maxHistoryMessages(for: model, searchContext: nil)
+        let maxCharacters = InferenceBudget.maxHistoryCharactersPerMessage(for: model)
+        var retained: [LiteRTLM.Message] = []
+
+        for message in conversation.reversed() {
             let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, !AssistantResponseFallback.shouldSkipInHistory(message) else {
-                return nil
+                continue
             }
 
+            let boundedText = InferenceBudget.trimHistoryText(text, maxCharacters: maxCharacters)
             switch message.role {
             case .system:
-                return LiteRTLM.Message(text, role: .system)
+                retained.insert(LiteRTLM.Message(boundedText, role: .system), at: 0)
             case .user:
-                return LiteRTLM.Message(text, role: .user)
+                retained.insert(LiteRTLM.Message(boundedText, role: .user), at: 0)
             case .assistant:
-                return LiteRTLM.Message(text, role: .model)
+                retained.insert(LiteRTLM.Message(boundedText, role: .model), at: 0)
+            }
+
+            if retained.count >= maxMessages {
+                break
             }
         }
+
+        return retained
     }
 
     private static func message(prompt: String, imageData: Data?) -> LiteRTLM.Message {

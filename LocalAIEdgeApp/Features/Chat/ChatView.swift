@@ -25,6 +25,51 @@ enum ChatInputCapability {
     }
 }
 
+enum ChatVisionContext {
+    static func inheritedImageData(
+        explicitImageData: Data?,
+        prompt: String,
+        conversation: [ChatMessage],
+        model: InstalledModel,
+        profileStore: RuntimeProfileStore
+    ) -> Data? {
+        if let explicitImageData { return explicitImageData }
+        guard ChatInputCapability.acceptsImage(model, profileStore: profileStore),
+              isVisualFollowUp(prompt: prompt) else {
+            return nil
+        }
+        return latestImageData(in: conversation)
+    }
+
+    private static func latestImageData(in conversation: [ChatMessage]) -> Data? {
+        for message in conversation.reversed() where message.role == .user {
+            if let imageData = message.imageData {
+                return imageData
+            }
+        }
+        return nil
+    }
+
+    private static func isVisualFollowUp(prompt: String) -> Bool {
+        let normalized = prompt.lowercased()
+        let compact = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !compact.isEmpty else { return false }
+
+        let visualTerms = [
+            "image", "picture", "photo", "wearing", "shirt", "hat", "cap", "cab",
+            "color", "colour", "person", "boy", "girl", "man", "woman", "kid",
+            "dinosaur", "background", "behind", "front", "left", "right", "above",
+            "below", "this", "that", "he", "she", "they", "it"
+        ]
+
+        return visualTerms.contains { normalized.contains($0) }
+            || normalized.hasPrefix("what about")
+            || normalized.hasPrefix("what is")
+            || normalized.hasPrefix("what's")
+            || normalized.hasPrefix("describe")
+    }
+}
+
 struct ChatView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(\.selectedTab) private var selectedTab
@@ -1301,6 +1346,13 @@ Rules:
         // Capture history BEFORE appending the current user message so inference
         // services receive clean prior context without needing to deduplicate.
         let conversation = store.selectedSession?.messages ?? []
+        let effectiveImageData = ChatVisionContext.inheritedImageData(
+            explicitImageData: jpegData,
+            prompt: trimmedPrompt,
+            conversation: conversation,
+            model: model,
+            profileStore: profileStore
+        )
         let userMessage = ChatMessage(role: .user, text: trimmedPrompt, attachments: attachments)
         store.appendMessage(userMessage, to: sessionID)
         isInputFocused = false
@@ -1337,11 +1389,11 @@ Rules:
                 // Search results are passed into the model prompt; we only fall back
                 // to a grounded summary after generation if the model refuses or emits nothing usable.
                 let resolvedModel = resolved(for: model)
-                let modelCanUseToolLoop = canUseToolLoop(model: model, resolved: resolvedModel, imageData: jpegData)
+                let modelCanUseToolLoop = canUseToolLoop(model: model, resolved: resolvedModel, imageData: effectiveImageData)
                 let isOpenELM = model.catalogItem.family == .openELM
                 let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
                 // OpenELM lane: keep fully local/minimal prompt path for stability.
-                let searchArmed = !isOpenELM && (liveSearchEnabled || store.settings.useSearchByDefault)
+                let searchArmed = effectiveImageData == nil && !isOpenELM && (liveSearchEnabled || store.settings.useSearchByDefault)
                 let shouldUpfrontSearch = searchConfigured
                     && searchArmed
                     && SearchResultFallbackComposer.shouldRunUpfrontSearch(trimmedPrompt)
@@ -1385,7 +1437,7 @@ Rules:
                     conversation: conversation,
                     searchContext: searchContext,
                     systemPrompt: systemPromptForInference,
-                    imageData: jpegData,
+                    imageData: effectiveImageData,
                     settings: store.settings
                 )
 
@@ -1510,7 +1562,7 @@ Rules:
                             conversation: conversation,
                             searchContext: agenticSearchContext,
                             systemPrompt: store.settings.systemPrompt,
-                            imageData: jpegData,
+                            imageData: effectiveImageData,
                             settings: store.settings
                         )
                         let newPlaceholder = ChatMessage(id: newMessageID, role: .assistant, text: "", citations: newPendingCitations)
@@ -1606,7 +1658,7 @@ Rules:
                         conversation: conversation,
                         searchContext: agenticSearchContext,
                         systemPrompt: store.settings.systemPrompt,
-                        imageData: jpegData,
+                        imageData: effectiveImageData,
                         settings: store.settings
                     )
                     let newPlaceholder = ChatMessage(id: newMessageID, role: .assistant, text: "", citations: newPendingCitations)
@@ -1802,6 +1854,7 @@ Rules:
                 // B) No search context → auto-search and retry
                 if !stoppedByUser,
                    AssistantResponseFallback.isEmptyOutputMessage(finalText),
+                   effectiveImageData == nil,
                    SearchGatewayFactory.make(settings: store.settings) != nil {
 
                     if searchContext != nil {
@@ -1892,7 +1945,7 @@ Rules:
                                 conversation: conversation,
                                 searchContext: fallbackSearchContext,
                                 systemPrompt: store.settings.systemPrompt,
-                                imageData: jpegData,
+                                imageData: effectiveImageData,
                                 settings: store.settings
                             )
                             let fbPlaceholder = ChatMessage(id: fbMessageID, role: .assistant, text: "", citations: fallbackCitations)

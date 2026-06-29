@@ -82,4 +82,55 @@ final class ChatAttachmentTests: XCTestCase {
             90
         )
     }
+
+    func test_visualFollowUpReusesLatestPriorImageForVisionModel() throws {
+        let store = RuntimeProfileStore()
+        let item = try XCTUnwrap(MockCatalogData.items.first {
+            $0.runtimeType == .liteRTLM && $0.supportsVision
+        })
+        let model = InstalledModel(catalogItem: item, installState: .installed)
+        let imageData = Data([0xFF, 0xD8, 0xFF, 0xD9])
+        let conversation = [
+            ChatMessage(role: .user, text: "Describe this image", attachments: [.image(imageData)]),
+            ChatMessage(role: .assistant, text: "A child is standing in a library.")
+        ]
+
+        let inherited = ChatVisionContext.inheritedImageData(
+            explicitImageData: nil,
+            prompt: "What about hat?",
+            conversation: conversation,
+            model: model,
+            profileStore: store
+        )
+
+        XCTAssertEqual(inherited, imageData)
+    }
+
+    func test_visualFollowUpDoesNotAttachImageForTextOnlyModel() throws {
+        let store = RuntimeProfileStore()
+        let item = try XCTUnwrap(MockCatalogData.items.first {
+            !$0.supportsVision && $0.primaryUse == .chat
+        })
+        let model = InstalledModel(catalogItem: item, installState: .installed)
+        let conversation = [
+            ChatMessage(role: .user, text: "Describe this image", attachments: [.image(Data([1, 2, 3]))])
+        ]
+
+        let inherited = ChatVisionContext.inheritedImageData(
+            explicitImageData: nil,
+            prompt: "What about hat?",
+            conversation: conversation,
+            model: model,
+            profileStore: store
+        )
+
+        XCTAssertNil(inherited)
+    }
+
+    func test_streamTimeoutFallbackIsSkippedInHistory() {
+        let message = ChatMessage(role: .assistant, text: "_\(AssistantResponseFallback.streamTimeout)_")
+
+        XCTAssertTrue(AssistantResponseFallback.isEmptyOutputMessage(message.text))
+        XCTAssertTrue(AssistantResponseFallback.shouldSkipInHistory(message))
+    }
 }

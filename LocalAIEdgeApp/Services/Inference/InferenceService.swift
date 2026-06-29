@@ -42,6 +42,8 @@ enum InferenceServiceError: LocalizedError {
 enum AssistantResponseFallback {
     static let emptyOutput = "No visible answer was produced. Try a shorter prompt, turn off search, or switch models."
     static let emptyOutputAfterThinking = "The model reasoned, but it never produced a final answer. Try a shorter prompt, turn off search, or switch models."
+    static let streamTimeout = "The model did not produce output before the timeout. Try a smaller model or shorter prompt."
+    static let streamEmptyOutput = "The model did not produce output. Try a different model or prompt."
     static let instructionEcho = "The model repeated internal instructions instead of answering. Please resend your message or switch models."
     static let unreliableOpenELM = "OpenELM is not reliable enough for this app's chat runtime. Install and select Qwen 3 1.7B, Qwen 3.5 VL, or LFM2.5 instead."
 
@@ -50,7 +52,10 @@ enum AssistantResponseFallback {
     }
 
     static func isEmptyOutputMessage(_ text: String) -> Bool {
-        text == emptyOutput || text == emptyOutputAfterThinking
+        normalizedFallback(text) == normalizedFallback(emptyOutput)
+            || normalizedFallback(text) == normalizedFallback(emptyOutputAfterThinking)
+            || normalizedFallback(text) == normalizedFallback(streamTimeout)
+            || normalizedFallback(text) == normalizedFallback(streamEmptyOutput)
     }
 
     static func isInstructionEchoMessage(_ text: String) -> Bool {
@@ -59,6 +64,12 @@ enum AssistantResponseFallback {
 
     static func shouldSkipInHistory(_ message: ChatMessage) -> Bool {
         message.role == .assistant && (isEmptyOutputMessage(message.text) || isInstructionEchoMessage(message.text) || message.text == unreliableOpenELM)
+    }
+
+    private static func normalizedFallback(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_*"))
     }
 
     static func isPromptEcho(_ response: String, prompt: String) -> Bool {

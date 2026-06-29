@@ -98,7 +98,7 @@ actor StreamProcessor {
                 if let fallbackMessage, !finishState.hasEmitted {
                     continuation.yield(.textDelta(fallbackMessage))
                 } else if includeDone, !finishState.hasEmitted {
-                    continuation.yield(.textDelta("_The model did not produce output. Try a different model or prompt._"))
+                    continuation.yield(.textDelta(AssistantResponseFallback.streamEmptyOutput))
                 }
                 if includeDone {
                     continuation.yield(.done)
@@ -117,7 +117,7 @@ actor StreamProcessor {
                     }
                     finish(
                         includeDone: true,
-                        fallbackMessage: "_The model did not produce output before the timeout. Try a smaller model or shorter prompt._"
+                        fallbackMessage: AssistantResponseFallback.streamTimeout
                     )
                 }
             }
