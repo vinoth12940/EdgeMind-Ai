@@ -24,6 +24,33 @@ final class AppStateStoreMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func test_deleteSessionSelectsNextConversation() {
+        let first = ChatSession(title: "First", modelID: nil, messages: [])
+        let second = ChatSession(title: "Second", modelID: nil, messages: [])
+        let store = AppStateStore(catalog: [], installedModels: [], chatSessions: [first, second], settings: .default)
+
+        store.selectedSessionID = first.id
+        store.deleteSession(first.id)
+
+        XCTAssertEqual(store.chatSessions.map(\.id), [second.id])
+        XCTAssertEqual(store.selectedSessionID, second.id)
+    }
+
+    @MainActor
+    func test_deleteAllSessionsClearsSelection() {
+        let first = ChatSession(title: "First", modelID: nil, messages: [])
+        let second = ChatSession(title: "Second", modelID: nil, messages: [])
+        let store = AppStateStore(catalog: [], installedModels: [], chatSessions: [first, second], settings: .default)
+
+        store.selectedSessionID = second.id
+        store.deleteAllSessions()
+
+        XCTAssertTrue(store.chatSessions.isEmpty)
+        XCTAssertNil(store.selectedSessionID)
+        XCTAssertNil(store.selectedSession)
+    }
+
+    @MainActor
     func test_initRemovesDeprecatedOpenELMAndKeepsSupportedModels() {
         let openELM = deprecatedItem(
             name: "OpenELM 1.1B Instruct (MLX)",

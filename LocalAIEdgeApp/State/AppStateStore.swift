@@ -251,6 +251,12 @@ final class AppStateStore {
         saveChatSessions()
     }
 
+    func deleteAllSessions() {
+        chatSessions.removeAll()
+        selectedSessionID = nil
+        saveChatSessions()
+    }
+
     func reconcileInstalledFiles() {
         for item in catalog where item.runtimeType == .gguf || item.runtimeType == .liteRTLM {
             guard let localPath = URLModelDownloadService.installedLocalPath(for: item) else { continue }

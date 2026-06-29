@@ -86,6 +86,7 @@ struct ChatView: View {
     @State private var liteRTInferenceService: InferenceService = LiteRTInferenceService()
     @State private var appleFoundationInferenceService: InferenceService = AppleFoundationInferenceService()
     @State private var showModelPicker = false
+    @State private var showDeleteCurrentSessionConfirmation = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var attachedImage: UIImage?
     @State private var attachedDocuments: [ChatAttachment] = []
@@ -374,6 +375,14 @@ Rules:
             idleRuntimeReleaseTask?.cancel()
             idleRuntimeReleaseTask = nil
         }
+        .alert("Delete Conversation", isPresented: $showDeleteCurrentSessionConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteCurrentSession()
+            }
+        } message: {
+            Text("This removes the current chat from local history.")
+        }
     }
 
     private var activeMessages: [ChatMessage] {
@@ -390,6 +399,17 @@ Rules:
             Task {
                 await voiceController.toggleListening(seedText: prompt)
             }
+        }
+    }
+
+    private func deleteCurrentSession() {
+        guard let sessionID = store.selectedSession?.id else { return }
+        if isSending {
+            stopGeneration()
+        }
+        isInputFocused = false
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+            store.deleteSession(sessionID)
         }
     }
 
@@ -437,20 +457,35 @@ Rules:
             
             Spacer()
             
-            // New Chat Button
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                    store.createSession(using: store.defaultModel?.catalogItem.id)
+            HStack(spacing: 2) {
+                if store.selectedSession != nil {
+                    Button {
+                        showDeleteCurrentSessionConfirmation = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color(red: 1.0, green: 0.31, blue: 0.31))
+                            .frame(width: 38, height: 40)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Delete current chat")
                 }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
+
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                        store.createSession(using: store.defaultModel?.catalogItem.id)
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .frame(width: 38, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Start new chat")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Start new chat")
         }
         .padding(.horizontal, 8)
         .padding(.top, 4)
