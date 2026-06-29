@@ -34,7 +34,7 @@ struct AuthLandingView: View {
         VStack(spacing: 10) {
             AppBrandMark(size: 58)
 
-            Text("Welcome to EdgeMind")
+            Text("Welcome to EdgeMind AI")
                 .font(.appDisplay(30))
                 .foregroundStyle(AppTheme.textPrimary)
                 .multilineTextAlignment(.center)

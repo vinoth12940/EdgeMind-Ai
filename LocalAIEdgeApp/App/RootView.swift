@@ -202,7 +202,7 @@ struct RootView: View {
             HStack {
                 HStack(spacing: 10) {
                     AppBrandMark(size: 34)
-                    Text("EdgeMind")
+                    Text("EdgeMind AI")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(AppTheme.textPrimary)
                 }

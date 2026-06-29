@@ -14,7 +14,7 @@
 
 ## 2. Core Functionality & Testing Guidance
 
-EdgeMind is a native SwiftUI interface for on-device AI inference. To verify the app's features without downloading large models, please follow these steps:
+EdgeMind AI is a native SwiftUI interface for on-device AI inference. To verify the app's features without downloading large models, please follow these steps:
 
 1. **Launch**: Open the app. It starts directly in the **Chat** tab with a local guest profile.
 2. **Pre-configured Model**: The default active model is **"Apple Intelligence"** (System Foundation Model). You can immediately send text prompts (e.g., *"Hello on-device AI!"*) and receive instant replies. This requires **no downloading** and runs completely offline.
