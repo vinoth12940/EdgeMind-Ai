@@ -43,7 +43,7 @@ enum LocalAIIntentDestination: String, AppEnum {
     case diagnostics
     case voice
 
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Local AI Destination")
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "EdgeMind Destination")
     static var caseDisplayRepresentations: [LocalAIIntentDestination: DisplayRepresentation] = [
         .chat: "Chat",
         .models: "Installed Models",
@@ -53,8 +53,8 @@ enum LocalAIIntentDestination: String, AppEnum {
 }
 
 struct OpenLocalAIDestinationIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Local AI"
-    static var description = IntentDescription("Open Private Edge Chat to a selected local AI workflow.")
+    static var title: LocalizedStringResource = "Open EdgeMind"
+    static var description = IntentDescription("Open EdgeMind to a selected on-device AI workflow.")
     static var openAppWhenRun = true
 
     @Parameter(title: "Destination")
@@ -75,8 +75,8 @@ struct OpenLocalAIDestinationIntent: AppIntent {
 }
 
 struct AskDefaultLocalModelIntent: AppIntent {
-    static var title: LocalizedStringResource = "Ask Default Local Model"
-    static var description = IntentDescription("Open Private Edge Chat with a prompt for the default local model.")
+    static var title: LocalizedStringResource = "Ask EdgeMind"
+    static var description = IntentDescription("Open EdgeMind with a prompt for the default local model.")
     static var openAppWhenRun = true
 
     @Parameter(title: "Prompt")
@@ -101,8 +101,8 @@ struct AskDefaultLocalModelIntent: AppIntent {
 }
 
 struct StartLocalVoiceChatIntent: AppIntent {
-    static var title: LocalizedStringResource = "Start Local Voice Chat"
-    static var description = IntentDescription("Open Private Edge Chat ready for voice input.")
+    static var title: LocalizedStringResource = "Start EdgeMind Voice Chat"
+    static var description = IntentDescription("Open EdgeMind ready for voice input.")
     static var openAppWhenRun = true
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -117,9 +117,9 @@ struct LocalAIShortcutsProvider: AppShortcutsProvider {
             intent: AskDefaultLocalModelIntent(),
             phrases: [
                 "Ask \(.applicationName)",
-                "Ask local AI in \(.applicationName)"
+                "Ask EdgeMind in \(.applicationName)"
             ],
-            shortTitle: "Ask Local AI",
+            shortTitle: "Ask EdgeMind",
             systemImageName: "bubble.left.and.text.bubble.right.fill"
         )
 
@@ -127,7 +127,7 @@ struct LocalAIShortcutsProvider: AppShortcutsProvider {
             intent: OpenLocalAIDestinationIntent(destination: .diagnostics),
             phrases: [
                 "Open model diagnostics in \(.applicationName)",
-                "Check local AI models in \(.applicationName)"
+                "Check EdgeMind models in \(.applicationName)"
             ],
             shortTitle: "Model Diagnostics",
             systemImageName: "stethoscope"
@@ -137,7 +137,7 @@ struct LocalAIShortcutsProvider: AppShortcutsProvider {
             intent: StartLocalVoiceChatIntent(),
             phrases: [
                 "Start voice chat in \(.applicationName)",
-                "Talk to local AI in \(.applicationName)"
+                "Talk to EdgeMind in \(.applicationName)"
             ],
             shortTitle: "Voice Chat",
             systemImageName: "waveform.circle.fill"
@@ -147,7 +147,7 @@ struct LocalAIShortcutsProvider: AppShortcutsProvider {
             intent: OpenLocalAIDestinationIntent(destination: .models),
             phrases: [
                 "Open installed models in \(.applicationName)",
-                "Show local AI models in \(.applicationName)"
+                "Show EdgeMind models in \(.applicationName)"
             ],
             shortTitle: "Installed Models",
             systemImageName: "square.stack.3d.up.fill"

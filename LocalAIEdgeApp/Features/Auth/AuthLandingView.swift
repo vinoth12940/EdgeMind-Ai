@@ -32,11 +32,9 @@ struct AuthLandingView: View {
 
     private var headerSection: some View {
         VStack(spacing: 10) {
-            Image(systemName: "person.crop.circle.badge.checkmark")
-                .font(.system(size: 38, weight: .light))
-                .foregroundStyle(AppTheme.accent)
+            AppBrandMark(size: 58)
 
-            Text("Welcome to Local AI Edge")
+            Text("Welcome to EdgeMind")
                 .font(.appDisplay(30))
                 .foregroundStyle(AppTheme.textPrimary)
                 .multilineTextAlignment(.center)

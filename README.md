@@ -1,4 +1,4 @@
-# Private Edge Chat
+# EdgeMind
 
 A **privacy-first, on-device AI assistant** for iOS and iPadOS. All inference runs locally on Apple Silicon and no data leaves your device unless you explicitly enable live web search.
 

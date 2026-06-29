@@ -27,7 +27,7 @@ struct PrivacyExplainerView: View {
                 .font(.appDisplay(30))
                 .foregroundStyle(AppTheme.textPrimary)
 
-            Text("Private Edge Chat is designed for local AI inference. Network requests are limited to actions you enable or start, such as model downloads and live search.")
+            Text("EdgeMind is designed for local AI inference. Network requests are limited to actions you enable or start, such as model downloads and live search.")
                 .font(.appBody(14))
                 .foregroundStyle(AppTheme.textSecondary)
         }

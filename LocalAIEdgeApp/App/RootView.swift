@@ -200,11 +200,9 @@ struct RootView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Sidebar Header
             HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(AppTheme.accent)
-                    Text("LocalAI")
+                HStack(spacing: 10) {
+                    AppBrandMark(size: 34)
+                    Text("EdgeMind")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(AppTheme.textPrimary)
                 }
