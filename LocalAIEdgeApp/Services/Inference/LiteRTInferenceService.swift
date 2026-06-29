@@ -6,6 +6,51 @@ import LiteRTLM
 
 private let liteRTLogger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "LiteRTRuntime")
 
+private final class LiteRTConversationStreamState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var conversation: Conversation?
+    private var task: Task<Void, Never>?
+    private var finished = false
+
+    init(conversation: Conversation) {
+        self.conversation = conversation
+    }
+
+    func setTask(_ task: Task<Void, Never>) {
+        lock.withLock {
+            self.task = task
+        }
+    }
+
+    func finish() {
+        let retainedConversation: Conversation? = lock.withLock {
+            finished = true
+            task = nil
+            let retainedConversation = conversation
+            conversation = nil
+            return retainedConversation
+        }
+        _ = retainedConversation
+    }
+
+    func cancel() {
+        let state: (Task<Void, Never>?, Conversation?, Bool) = lock.withLock {
+            if finished { return (nil, nil, true) }
+            finished = true
+            let state = (task, conversation, false)
+            task = nil
+            conversation = nil
+            return state
+        }
+
+        guard !state.2 else { return }
+        state.0?.cancel()
+        if let conversation = state.1, conversation.isAlive {
+            try? conversation.cancel()
+        }
+    }
+}
+
 actor LiteRTRuntime {
     static let shared = LiteRTRuntime()
 
@@ -67,18 +112,29 @@ actor LiteRTRuntime {
         let messageStream = conversation.sendMessageStream(message)
 
         return AsyncThrowingStream { continuation in
-            Task {
+            let streamState = LiteRTConversationStreamState(conversation: conversation)
+            let task = Task {
                 do {
                     for try await chunk in messageStream {
+                        if Task.isCancelled {
+                            try? conversation.cancel()
+                            break
+                        }
                         let text = chunk.toString
                         if !text.isEmpty {
                             continuation.yield(text)
                         }
                     }
+                    streamState.finish()
                     continuation.finish()
                 } catch {
+                    streamState.finish()
                     continuation.finish(throwing: error)
                 }
+            }
+            streamState.setTask(task)
+            continuation.onTermination = { _ in
+                streamState.cancel()
             }
         }
     }
