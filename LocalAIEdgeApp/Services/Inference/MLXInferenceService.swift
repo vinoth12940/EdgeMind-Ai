@@ -14,6 +14,50 @@ import Tokenizers
 
 private let mlxLogger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "MLXRuntime")
 
+private final class MLXStreamCleanupState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    private var cleanedUp = false
+    private let isVision: Bool
+
+    init(isVision: Bool) {
+        self.isVision = isVision
+    }
+
+    func setTask(_ task: Task<Void, Never>) {
+        lock.withLock {
+            self.task = task
+        }
+    }
+
+    func finish() async {
+        let shouldClearCache = lock.withLock {
+            task = nil
+            guard !cleanedUp else { return false }
+            cleanedUp = true
+            return isVision
+        }
+        if shouldClearCache {
+            await MLXRuntime.shared.clearGPUCache()
+        }
+    }
+
+    func cancel() {
+        let state: (Task<Void, Never>?, Bool) = lock.withLock {
+            let state = (task, !cleanedUp && isVision)
+            task = nil
+            cleanedUp = true
+            return state
+        }
+        state.0?.cancel()
+        if state.1 {
+            Task {
+                await MLXRuntime.shared.clearGPUCache()
+            }
+        }
+    }
+}
+
 /// Builds an authenticated Hugging Face Hub client using the user's stored HF token (if any).
 private func authenticatedHubClient() -> HubClient {
     let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
@@ -619,9 +663,13 @@ actor MLXRuntime {
         }
         Self.auditLog("stream.ready model=\"\(modelID)\" vision=\(isVision)")
         return AsyncStream<String> { continuation in
-            Task {
+            let cleanupState = MLXStreamCleanupState(isVision: isVision)
+            let task = Task {
                 var yieldedFirstChunk = false
                 for await generation in mlxStream {
+                    if Task.isCancelled {
+                        break
+                    }
                     if let chunk = generation.chunk {
                         if !yieldedFirstChunk {
                             yieldedFirstChunk = true
@@ -631,10 +679,12 @@ actor MLXRuntime {
                     }
                 }
                 Self.auditLog("stream.done model=\"\(modelID)\" vision=\(isVision) yieldedFirstChunk=\(yieldedFirstChunk)")
-                if isVision {
-                    await MLXRuntime.shared.clearGPUCache()
-                }
+                await cleanupState.finish()
                 continuation.finish()
+            }
+            cleanupState.setTask(task)
+            continuation.onTermination = { _ in
+                cleanupState.cancel()
             }
         }
     }

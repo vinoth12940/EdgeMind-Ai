@@ -68,7 +68,7 @@ final class RuntimeProfileTests: XCTestCase {
                 && $0.supportsVision
         }
 
-        XCTAssertEqual(gemmaItems.count, 2)
+        XCTAssertEqual(gemmaItems.count, 1)
         for item in gemmaItems {
             let resolved = ModelRuntimeResolver.resolve(catalog: item, store: store)
             XCTAssertTrue(item.sourceSupportsVision)

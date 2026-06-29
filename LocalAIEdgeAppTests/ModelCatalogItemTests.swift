@@ -176,7 +176,7 @@ final class ModelCatalogItemTests: XCTestCase {
                 && $0.supportsVision
         }
 
-        XCTAssertEqual(gemmaItems.count, 2)
+        XCTAssertEqual(gemmaItems.count, 1)
         for item in gemmaItems {
             XCTAssertTrue(item.sourceInputCategories.contains(.image))
             XCTAssertFalse(item.sourceInputCategories.contains(.video))

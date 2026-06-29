@@ -81,14 +81,14 @@ enum MockCatalogData {
             downloadURL: URL(string: "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm"),
             runtimeType: .liteRTLM,
             sourceSupportsVision: true,
-            supportsVision: true,
+            supportsVision: false,
             supportsReasoning: true,
             supportsToolCalling: true,
             runtimeStatus: .worksWithWarnings,
-            auditVerdict: .yellow("litert-lm-runtime-pending-live-device-image-audit"),
+            auditVerdict: .yellow("image-runtime-failed-xnnpack-allocation-on-device-text-only"),
             testedDeviceTier: .pro,
             minimumTier: .pro,
-            inputModes: [.text, .image, .document]
+            inputModes: [.text, .document]
         ),
         ModelCatalogItem(
             id: UUID(uuidString: "150BD022-A9BC-5625-8D84-EA08E6578B95"),
@@ -247,10 +247,10 @@ enum MockCatalogData {
             runtimeType: .mlx,
             mlxModelID: "mlx-community/Qwen3.5-4B-4bit",
             sourceSupportsVision: true,
-            supportsVision: true,
+            supportsVision: false,
             supportsToolCalling: true,
-            runtimeStatus: .recommended,
-            auditVerdict: .green,
+            runtimeStatus: .worksWithWarnings,
+            auditVerdict: .yellow("image-prefill-memory-killed-on-device-text-only"),
             testedDeviceTier: .pro,
             minimumTier: .pro
         ),
