@@ -78,7 +78,7 @@ struct ChatComposerView: View {
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(hasAttachment ? AppTheme.accentSoft : AppTheme.textPrimary)
                         .frame(width: 36, height: 36)
-                        .background(Circle().fill(Color.white.opacity(hasAttachment ? 0.16 : 0.06)))
+                        .background(Circle().fill(hasAttachment ? AppTheme.selectedFill : AppTheme.controlFill))
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 4)
@@ -91,7 +91,7 @@ struct ChatComposerView: View {
                     .lineLimit(1...6)
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .focused($isFocused)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppTheme.textPrimary)
                     .tint(AppTheme.accent)
                     .padding(.vertical, 8)
                 
@@ -129,9 +129,9 @@ struct ChatComposerView: View {
                         Button(action: onSend) {
                             Image(systemName: "arrow.up")
                                 .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(Color.white.opacity(0.2))
+                                .foregroundStyle(AppTheme.textTertiary.opacity(0.55))
                                 .frame(width: 32, height: 32)
-                                .background(Circle().fill(Color.white.opacity(0.04)))
+                                .background(Circle().fill(AppTheme.subtleFill))
                         }
                         .accessibilityLabel("Send message")
                         .disabled(true)
@@ -144,14 +144,14 @@ struct ChatComposerView: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
+                    .fill(AppTheme.controlFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         isFocused
                             ? AppTheme.accent.opacity(0.35)
-                            : Color.white.opacity(0.08),
+                            : AppTheme.surfaceStroke,
                         lineWidth: isFocused ? 1.2 : 0.6
                     )
                     .animation(.easeOut(duration: 0.15), value: isFocused)

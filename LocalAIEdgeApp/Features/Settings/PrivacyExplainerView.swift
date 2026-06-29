@@ -91,7 +91,7 @@ struct PrivacyExplainerView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+                .stroke(AppTheme.surfaceStroke, lineWidth: 0.7)
         )
     }
 

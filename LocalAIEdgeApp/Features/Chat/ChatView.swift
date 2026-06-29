@@ -441,6 +441,7 @@ Rules:
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.82)
                     
                     Image(systemName: "chevron.down")
                         .font(.system(size: 10, weight: .bold))
@@ -450,7 +451,7 @@ Rules:
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(Color.white.opacity(0.06))
+                        .fill(AppTheme.controlFill)
                 )
             }
             .buttonStyle(.plain)
@@ -568,7 +569,7 @@ Rules:
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.26), Color.white.opacity(0.08)],
+                            colors: [AppTheme.accent.opacity(0.26), AppTheme.surfaceStroke],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -743,7 +744,7 @@ Rules:
                                 .foregroundStyle(voiceController.isSpeaking ? AppTheme.warning : AppTheme.accentSoft)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(Color.white.opacity(0.05))
+                                .background(AppTheme.subtleFill)
                                 .clipShape(Capsule())
                             }
                         }
@@ -769,11 +770,11 @@ Rules:
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(Color.white.opacity(0.08))
+                        .fill(AppTheme.controlFill)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(AppTheme.surfaceStroke, lineWidth: 1)
                 )
             }
         }
@@ -788,7 +789,7 @@ Rules:
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
+                .stroke(AppTheme.surfaceStroke, lineWidth: 0.8)
         )
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -806,7 +807,7 @@ Rules:
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(AppTheme.textSecondary)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.white.opacity(0.04)))
+                .background(Circle().fill(AppTheme.subtleFill))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -825,8 +826,8 @@ Rules:
 
         switch tone {
         case .neutral:
-            fill = Color.white.opacity(0.06)
-            foreground = AppTheme.textTertiary
+            fill = AppTheme.subtleFill
+            foreground = AppTheme.textSecondary
         case .accent:
             fill = AppTheme.accent.opacity(0.10)
             foreground = AppTheme.accent.opacity(0.85)
@@ -1023,7 +1024,7 @@ Rules:
                 
                 Text(activeModel == nil ? "Start a local conversation" : "What can I help with?")
                     .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppTheme.textPrimary)
                     .multilineTextAlignment(.center)
                 
                 if let model = activeModel {
@@ -1031,8 +1032,9 @@ Rules:
                         .font(.system(size: 13))
                         .foregroundStyle(AppTheme.textSecondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .lineLimit(2)
+                        .padding(.horizontal, 12)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.top, 10)
@@ -1081,23 +1083,25 @@ Rules:
                                 Text(starter.title)
                                     .font(.system(size: 12, weight: .bold))
                                     .foregroundStyle(AppTheme.textPrimary)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.85)
                                 
                                 Text(starter.subtitle)
                                     .font(.system(size: 10, weight: .medium))
                                     .foregroundStyle(AppTheme.textSecondary)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.85)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(height: 72)
+                            .frame(minHeight: 78, alignment: .topLeading)
                             .padding(8)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.white.opacity(0.04))
+                                    .fill(AppTheme.subtleFill)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(Color.white.opacity(0.04), lineWidth: 0.5)
+                                    .stroke(AppTheme.cardStroke, lineWidth: 0.5)
                             )
                         }
                         .buttonStyle(.plain)
@@ -1113,10 +1117,10 @@ Rules:
     private func emptyStateMetaPill(label: String) -> some View {
         Text(label)
             .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .foregroundStyle(AppTheme.textTertiary)
+            .foregroundStyle(AppTheme.textSecondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(Color.white.opacity(0.05))
+            .background(AppTheme.subtleFill)
             .clipShape(Capsule(style: .continuous))
     }
 

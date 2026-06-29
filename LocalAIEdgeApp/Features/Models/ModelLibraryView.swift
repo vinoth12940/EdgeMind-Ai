@@ -472,7 +472,7 @@ struct ModelLibraryView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                    .stroke(AppTheme.cardStroke, lineWidth: 0.5)
             )
         }
     }
@@ -632,7 +632,7 @@ struct ModelLibraryView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.5)
         )
     }
 
@@ -796,7 +796,7 @@ struct ModelLibraryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(searchText.isEmpty ? Color.white.opacity(0.06) : AppTheme.accent.opacity(0.25), lineWidth: 0.5)
+                .stroke(searchText.isEmpty ? AppTheme.cardStroke : AppTheme.accent.opacity(0.25), lineWidth: 0.5)
         )
     }
 
@@ -904,7 +904,7 @@ struct ModelLibraryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.5)
         )
     }
 
@@ -1369,7 +1369,7 @@ private struct FamilyDetailView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.5)
         )
     }
 
@@ -1400,7 +1400,7 @@ private struct FamilyDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.5)
         )
     }
 
@@ -1636,7 +1636,7 @@ private struct ModelTile: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.5)
         )
     }
 

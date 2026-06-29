@@ -50,7 +50,7 @@ struct ModelDiagnosticsView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.7)
+                .stroke(AppTheme.surfaceStroke, lineWidth: 0.7)
         )
     }
 
@@ -128,7 +128,7 @@ struct ModelDiagnosticsView: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.white.opacity(0.07), lineWidth: 0.7)
+                                .stroke(AppTheme.surfaceStroke, lineWidth: 0.7)
                         )
                     }
                     .buttonStyle(.plain)
@@ -183,6 +183,7 @@ struct ModelDiagnosticsView: View {
                 .font(.appBody(12))
                 .foregroundStyle(color)
                 .lineLimit(1)
+                .minimumScaleFactor(0.78)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

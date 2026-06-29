@@ -157,7 +157,7 @@ struct MessageBubbleView: View {
                     .foregroundStyle(isUser ? Color.white.opacity(0.92) : AppTheme.textSecondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(Color.white.opacity(isUser ? 0.16 : 0.06))
+                    .background(isUser ? Color.white.opacity(0.16) : AppTheme.subtleFill)
                     .clipShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
@@ -296,11 +296,11 @@ struct AttachmentPreviewSheet: View {
                             .resizable()
                             .scaledToFit()
                             .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.white.opacity(0.08), lineWidth: 0.8)
-                            )
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(AppTheme.surfaceStroke, lineWidth: 0.8)
+                                )
                     } else {
                         documentMetadata
 
@@ -383,7 +383,7 @@ struct AttachmentPreviewSheet: View {
             .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(Color.white.opacity(0.06))
+            .background(AppTheme.subtleFill)
             .clipShape(Capsule())
     }
 }

@@ -128,7 +128,7 @@ struct SettingsView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.04), lineWidth: 0.7)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.7)
         )
     }
 

@@ -277,18 +277,18 @@ struct MarkdownTextView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(code)
                         .font(.system(size: 14, design: .monospaced))
-                        .foregroundStyle(isUser ? .white.opacity(0.95) : Color.white.opacity(0.9))
+                        .foregroundStyle(isUser ? .white.opacity(0.95) : AppTheme.textPrimary)
                         .textSelection(.enabled)
                         .padding(14)
                 }
             }
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isUser ? Color.white.opacity(0.06) : Color(red: 0.05, green: 0.06, blue: 0.10))
+                    .fill(isUser ? Color.white.opacity(0.06) : AppTheme.panelRaised)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                    .stroke(AppTheme.cardStroke, lineWidth: 0.5)
             )
             .padding(.vertical, 4)
 
@@ -377,15 +377,15 @@ struct MarkdownTextView: View {
                     }
                     .background(
                         row % 2 == 0
-                            ? (isUser ? Color.white.opacity(0.06) : Color(red: 0.08, green: 0.10, blue: 0.14))
-                            : (isUser ? Color.white.opacity(0.03) : Color(red: 0.06, green: 0.08, blue: 0.12))
+                            ? (isUser ? Color.white.opacity(0.06) : AppTheme.panelRaised)
+                            : (isUser ? Color.white.opacity(0.03) : AppTheme.panel)
                     )
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                    .stroke(AppTheme.cardStroke, lineWidth: 0.5)
             )
         }
         .padding(.vertical, 4)

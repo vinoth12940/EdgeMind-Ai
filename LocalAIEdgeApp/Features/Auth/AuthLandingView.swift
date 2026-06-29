@@ -153,11 +153,11 @@ struct AuthLandingView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .foregroundStyle(AppTheme.textSecondary)
-            .background(Color.white.opacity(0.06))
+            .background(AppTheme.controlFill)
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                    .stroke(AppTheme.cardStroke, lineWidth: 0.5)
             )
         }
     }

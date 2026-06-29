@@ -88,7 +88,7 @@ struct RootView: View {
 
             // Dimming Overlay
             if store.isSidebarOpen {
-                Color.black.opacity(0.4)
+                AppTheme.scrim
                     .ignoresSafeArea()
                     .onTapGesture {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
@@ -183,7 +183,7 @@ struct RootView: View {
                     Capsule(style: .continuous)
                         .stroke(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.15), Color.white.opacity(0.03)],
+                                colors: [AppTheme.surfaceStroke, AppTheme.cardStroke],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
@@ -206,7 +206,7 @@ struct RootView: View {
                         .foregroundStyle(AppTheme.accent)
                     Text("LocalAI")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.textPrimary)
                 }
                 
                 Spacer()
@@ -240,11 +240,11 @@ struct RootView: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(AppTheme.background)
                         .frame(width: 24, height: 24)
-                        .background(Circle().fill(.white))
+                        .background(Circle().fill(AppTheme.textPrimary))
                     
                     Text("New Chat")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.textPrimary)
                     
                     Spacer()
                 }
@@ -252,7 +252,7 @@ struct RootView: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.08))
+                        .fill(AppTheme.controlFill)
                 )
             }
             .buttonStyle(.plain)
@@ -292,8 +292,9 @@ struct RootView: View {
                                         
                                         Text(session.title)
                                             .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
-                                            .foregroundStyle(isSelected ? .white : AppTheme.textSecondary)
+                                            .foregroundStyle(isSelected ? AppTheme.textPrimary : AppTheme.textSecondary)
                                             .lineLimit(1)
+                                            .truncationMode(.tail)
                                         
                                         Spacer()
                                     }
@@ -301,7 +302,7 @@ struct RootView: View {
                                     .padding(.vertical, 9)
                                     .background(
                                         RoundedRectangle(cornerRadius: 10)
-                                            .fill(isSelected ? Color.white.opacity(0.08) : Color.clear)
+                                            .fill(isSelected ? AppTheme.selectedFill : Color.clear)
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -316,7 +317,7 @@ struct RootView: View {
             
             // Bottom Panel Options
             VStack(spacing: 2) {
-                Divider().background(Color.white.opacity(0.08)).padding(.horizontal, 8).padding(.bottom, 6)
+                Divider().background(AppTheme.divider).padding(.horizontal, 8).padding(.bottom, 6)
                 
                 sidebarNavItem(icon: "square.stack.3d.up", label: "Model Library") {
                     selectedTab = 1
@@ -337,7 +338,7 @@ struct RootView: View {
                 HStack(spacing: 10) {
                     ZStack {
                         Circle()
-                            .fill(Color.white.opacity(0.08))
+                            .fill(AppTheme.controlFill)
                             .frame(width: 32, height: 32)
                         Image(systemName: "person.fill")
                             .font(.system(size: 14))
@@ -347,7 +348,7 @@ struct RootView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(authStore.profile?.displayName ?? "Guest User")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppTheme.textPrimary)
                         Text(authStore.isAuthenticated ? "Authenticated" : "Local Canvas")
                             .font(.system(size: 11))
                             .foregroundStyle(AppTheme.textTertiary)
@@ -357,7 +358,7 @@ struct RootView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(0.03))
+                .background(AppTheme.subtleFill)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
@@ -366,12 +367,12 @@ struct RootView: View {
         }
         .frame(width: 280)
         .background(
-            Color(red: 0.11, green: 0.11, blue: 0.12)
+            AppTheme.panel
                 .ignoresSafeArea()
         )
         .overlay(
             Rectangle()
-                .fill(Color.white.opacity(0.06))
+                .fill(AppTheme.surfaceStroke)
                 .frame(width: 1),
             alignment: .trailing
         )

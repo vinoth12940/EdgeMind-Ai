@@ -66,6 +66,30 @@ enum AppTheme {
         dark: UIColor.white.withAlphaComponent(0.06),
         light: UIColor.black.withAlphaComponent(0.07)
     )
+    static let subtleFill = adaptiveOpacity(
+        dark: UIColor.white.withAlphaComponent(0.05),
+        light: UIColor.black.withAlphaComponent(0.045)
+    )
+    static let controlFill = adaptiveOpacity(
+        dark: UIColor.white.withAlphaComponent(0.08),
+        light: UIColor.black.withAlphaComponent(0.065)
+    )
+    static let selectedFill = adaptiveOpacity(
+        dark: UIColor.white.withAlphaComponent(0.10),
+        light: UIColor(red: 0.13, green: 0.79, blue: 0.84, alpha: 0.14)
+    )
+    static let surfaceStroke = adaptiveOpacity(
+        dark: UIColor.white.withAlphaComponent(0.08),
+        light: UIColor.black.withAlphaComponent(0.09)
+    )
+    static let cardStroke = adaptiveOpacity(
+        dark: UIColor.white.withAlphaComponent(0.04),
+        light: UIColor.black.withAlphaComponent(0.07)
+    )
+    static let scrim = adaptiveOpacity(
+        dark: UIColor.black.withAlphaComponent(0.42),
+        light: UIColor.black.withAlphaComponent(0.32)
+    )
 
     // MARK: - Gradients
     static let glow = LinearGradient(
@@ -106,7 +130,7 @@ enum AppTheme {
     )
 
     static let surfaceGradient = LinearGradient(
-        colors: [panel, panelRaised.opacity(0.78)],
+        colors: [panel, panelRaised.opacity(0.86)],
         startPoint: .top,
         endPoint: .bottom
     )
@@ -254,7 +278,7 @@ struct GlassCardModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.15), Color.white.opacity(0.03)],
+                            colors: [AppTheme.surfaceStroke, AppTheme.cardStroke],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -285,7 +309,7 @@ struct AccentGlassCardModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [accentColor.opacity(0.45), Color.white.opacity(0.05)],
+                            colors: [accentColor.opacity(0.45), AppTheme.cardStroke],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),

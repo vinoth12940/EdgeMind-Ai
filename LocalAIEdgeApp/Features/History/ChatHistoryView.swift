@@ -207,10 +207,13 @@ struct ChatHistoryView: View {
                             .font(.appDisplay(18))
                             .foregroundStyle(AppTheme.textPrimary)
                             .lineLimit(1)
+                            .truncationMode(.tail)
 
                         Text(modelName)
                             .font(.appCaps(11))
                             .foregroundStyle(AppTheme.warning)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
                         if let lastMessage = session.messages.last {
                             Text(lastMessage.text)
@@ -259,7 +262,7 @@ struct ChatHistoryView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.04), lineWidth: 0.7)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.7)
         )
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .contextMenu {
