@@ -12,7 +12,8 @@ settings:
     PRODUCT_BUNDLE_IDENTIFIER: com.vinothrajalingam.EdgeMindAi
     DEVELOPMENT_TEAM: "43NV5DTHKG"
     CODE_SIGN_STYLE: Automatic
-    CURRENT_PROJECT_VERSION: 1
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+    CURRENT_PROJECT_VERSION: 2
     MARKETING_VERSION: 0.1.0
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_CFBundleDisplayName: Edge Mind Ai
@@ -97,3 +98,4 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64

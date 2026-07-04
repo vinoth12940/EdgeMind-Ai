@@ -53,14 +53,16 @@ struct InstalledModelsView: View {
                 Text(model.catalogItem.displayName)
                     .font(.appDisplay(16))
                     .foregroundStyle(AppTheme.textPrimary)
-                HStack(spacing: 6) {
+                FlowLayout(spacing: 6) {
                     Text(model.catalogItem.parameterSize)
                         .font(.appCaps(10))
                     Text("•")
+                        .font(.appBody(10))
                     Text(model.catalogItem.contextWindow + " ctx")
                         .font(.appBody(10))
                     if !model.catalogItem.capabilities.isEmpty {
                         Text("•")
+                            .font(.appBody(10))
                         ForEach(model.catalogItem.capabilities, id: \.self) { cap in
                             Image(systemName: cap.icon)
                                 .font(.system(size: 9))

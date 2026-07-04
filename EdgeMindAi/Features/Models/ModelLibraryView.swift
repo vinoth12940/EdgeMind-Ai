@@ -297,7 +297,7 @@ struct ModelLibraryView: View {
                 .foregroundStyle(AppTheme.textSecondary)
                 .lineLimit(3)
 
-            HStack(spacing: 6) {
+            FlowLayout(spacing: 6) {
                 compactMeta(text: item.parameterSize, color: AppTheme.textSecondary)
                 compactMeta(text: item.contextWindow, color: AppTheme.warning)
                 compactMeta(text: item.runtimeType.label, color: color)
@@ -443,7 +443,7 @@ struct ModelLibraryView: View {
                     Spacer(minLength: 0)
                 }
 
-                HStack(spacing: 8) {
+                FlowLayout(spacing: 6) {
                     runtimeCapsule(text: activeModel?.catalogItem.runtimeType.label ?? "Choose model", color: systemAccent)
                     runtimeCapsule(text: activeModel?.catalogItem.supportsVision == true ? "Vision ready" : "Text lane", color: activeModel?.catalogItem.supportsVision == true ? AppTheme.capVision : AppTheme.textSecondary)
                     runtimeCapsule(text: activeModel?.catalogItem.supportsToolCalling == true ? "Tool-capable" : "Offline core", color: activeModel?.catalogItem.supportsToolCalling == true ? AppTheme.capTools : AppTheme.success)
@@ -569,7 +569,7 @@ struct ModelLibraryView: View {
                         .lineLimit(1)
                 }
 
-                HStack(spacing: 6) {
+                FlowLayout(spacing: 6) {
                     compactMeta(text: model.catalogItem.parameterSize, color: AppTheme.textSecondary)
                     compactMeta(text: model.catalogItem.diskSize, color: AppTheme.textSecondary)
                     compactMeta(text: model.catalogItem.runtimeType.label, color: model.catalogItem.runtimeType == .mlx ? .orange : AppTheme.textSecondary)
@@ -884,7 +884,7 @@ struct ModelLibraryView: View {
                     .foregroundStyle(AppTheme.textSecondary)
                     .lineLimit(2)
 
-                HStack(spacing: 6) {
+                FlowLayout(spacing: 6) {
                     compactMeta(text: "\(items.count) variants", color: AppTheme.textSecondary)
                     compactMeta(text: "\(recommended) phone picks", color: AppTheme.success)
                     if installed > 0 {
@@ -1696,7 +1696,7 @@ private struct ModelTile: View {
     }
 
     private var capabilityRow: some View {
-        HStack(spacing: 6) {
+        FlowLayout(spacing: 6) {
             statusPill
 
             ForEach(item.capabilities, id: \.self) { capability in
@@ -1788,10 +1788,11 @@ private struct ModelTile: View {
     }
 
     private func inputLine(prefix: String, categories: [ModelCatalogItem.InputCategory], tint: Color) -> some View {
-        HStack(spacing: 6) {
+        FlowLayout(spacing: 6) {
             Text(prefix)
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.textSecondary)
+                .padding(.vertical, 4)
 
             ForEach(categories, id: \.self) { category in
                 HStack(spacing: 4) {

@@ -91,7 +91,7 @@ struct AppleFoundationInferenceService: InferenceService {
             let session = LanguageModelSession(instructions: buildInstructions(systemPrompt: systemPrompt, searchContext: searchContext))
             let response = try await session.respond(
                 to: buildPrompt(prompt: prompt, conversation: conversation),
-                options: GenerationOptions(temperature: 0.2, maximumResponseTokens: 1_024)
+                options: GenerationOptions(temperature: 0.2, maximumResponseTokens: 512)
             )
             return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
         }
@@ -107,9 +107,9 @@ struct AppleFoundationInferenceService: InferenceService {
         ].filter { !$0.isEmpty }
 
         if let searchContext {
-            var sourceLines = searchContext.snippets.map { "- \($0)" }
+            var sourceLines = searchContext.snippets.map { "- \($0.prefix(350))" }
             if let answer = searchContext.answer, !answer.isEmpty {
-                sourceLines.insert("- \(answer)", at: 0)
+                sourceLines.insert("- \(answer.prefix(350))", at: 0)
             }
             parts.append("Use these search results when relevant:\n\(sourceLines.joined(separator: "\n"))")
         }

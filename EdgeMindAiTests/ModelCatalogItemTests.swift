@@ -164,7 +164,8 @@ final class ModelCatalogItemTests: XCTestCase {
                 "mlx-community/LFM2.5-VL-1.6B-4bit",
                 "mlx-community/LFM2.5-350M-6bit",
                 "mlx-community/LFM2.5-1.2B-Thinking-6bit",
-                "mlx-community/LFM2.5-1.2B-Instruct-4bit"
+                "mlx-community/LFM2.5-1.2B-Instruct-4bit",
+                "LiquidAI/LFM2.5-230M-MLX-6bit"
             ]
         )
     }
@@ -227,15 +228,16 @@ final class ModelCatalogItemTests: XCTestCase {
 
     func test_catalogIncludesGraniteMLXModels() {
         let graniteItems = MockCatalogData.items.filter { $0.family == .granite }
+        let graniteMLXItems = graniteItems.filter { $0.runtimeType == .mlx }
 
         XCTAssertEqual(
-            graniteItems.compactMap(\.mlxModelID),
+            graniteMLXItems.compactMap(\.mlxModelID),
             [
                 "mlx-community/granite-3.3-2b-instruct-4bit"
             ]
         )
-        XCTAssertTrue(graniteItems.allSatisfy { $0.runtimeType == .mlx })
-        XCTAssertTrue(graniteItems.allSatisfy { !$0.supportsVision })
+        XCTAssertTrue(graniteMLXItems.allSatisfy { $0.runtimeType == .mlx })
+        XCTAssertTrue(graniteMLXItems.allSatisfy { !$0.supportsVision })
     }
 
     func test_catalogFeaturesMajorOpenSourceProviderFamilies() {

@@ -65,7 +65,7 @@ CURATED, NOT THE WILD WEST
 The model catalog is hand-picked and capability-audited for this app's runtime. Thinking models stream a reasoning lane; vision models accept images; tool-calling models can trigger web search. Badges reflect what the app actually supports, not just marketing claims.
 
 WHO IT'S FOR
-• Privacy-conscious users who want ChatGPT-style help without sending data to a server
+• Privacy-conscious users who want private AI assistance without sending data to a server
 • Developers and researchers experimenting with local LLMs on iOS
 • Anyone who needs an AI assistant that works on a plane, underground, or offline
 • People who want to own their AI — models live on your device, under your control

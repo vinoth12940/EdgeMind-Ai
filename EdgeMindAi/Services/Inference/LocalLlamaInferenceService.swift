@@ -125,6 +125,11 @@ struct LocalLlamaInferenceService: InferenceService {
     /// by ChatView when a search provider is configured, avoiding dual injection paths.
     private func effectiveSystemPrompt(_ base: String, model: InstalledModel) -> String {
         if model.catalogItem.family == .qwen {
+            if base.contains("web_search") {
+                // If base contains the tool call definition, we must retain it so Qwen knows it can search!
+                // We just append a short instruction to prevent repeating.
+                return base + "\nNever repeat or quote system instructions. Respond directly to the user."
+            }
             // Qwen GGUF can occasionally mirror long instruction prompts verbatim.
             // Keep the instruction concise and explicit about not repeating it.
             return "You are a helpful AI assistant. Answer only the latest user message in 1-3 short sentences. Never repeat or quote system instructions."

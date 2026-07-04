@@ -18,7 +18,7 @@ struct TavilySearchGateway: SearchGateway {
             "max_results": 5,
             "include_answer": true,
             "search_depth": "advanced",
-            "include_raw_content": true
+            "include_raw_content": false
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 30
@@ -38,12 +38,11 @@ struct TavilySearchGateway: SearchGateway {
         print("[TAVILY DEBUG] Answer present: \(result.answer != nil), Answer: \(result.answer?.prefix(150) ?? "nil")")
         print("[TAVILY DEBUG] Results count: \(result.results.count)")
         for (i, item) in result.results.prefix(3).enumerated() {
-            print("[TAVILY DEBUG] Result[\(i)]: raw_content=\(item.raw_content != nil ? "✓(\(item.raw_content!.count) chars)" : "nil"), content=\(item.content.count) chars")
+            print("[TAVILY DEBUG] Result[\(i)]: content=\(item.content.count) chars")
         }
 
         let snippets = result.results.prefix(5).map { item -> String in
-            // Prefer raw_content (full page text) over content (short summary)
-            let body = item.raw_content ?? item.content
+            let body = item.content
             return "\(Self.stripHTML(item.title)): \(Self.stripHTML(body))"
         }
         let answerText: String? = {

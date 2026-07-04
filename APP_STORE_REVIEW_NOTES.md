@@ -40,3 +40,11 @@ Edge Mind Ai is a native SwiftUI interface for on-device AI inference. To verify
 - **Camera & Photo Library**: Used only when attaching images to prompts for local analysis (multimodal models). Photos are processed locally and downsampled before inference.
 - **Face ID**: Optional. Used only for local profile confirmation actions in Settings; the app does not require biometric authentication to launch or chat.
 - **Data Protection**: Chat sessions, settings, and Hugging Face tokens are stored locally on the device (tokens are secured in the secure Keychain). No analytics, user telemetry, or user prompts are uploaded to remote servers.
+
+---
+
+## 5. China Mainland Availability
+
+China mainland has been removed from app availability for this version. The app is not distributed in China mainland.
+
+Metadata wording that referenced third-party AI branding has been removed. Edge Mind Ai is not affiliated with any third-party AI service provider.

@@ -123,6 +123,10 @@ struct MessageBubbleView: View {
                 Color.clear.frame(height: 4)
             }
 
+            if !message.citations.isEmpty {
+                SearchCitationsFooter(citations: message.citations)
+            }
+
             messageTimestamp
                 .padding(.top, 2)
         }
@@ -131,6 +135,18 @@ struct MessageBubbleView: View {
         .padding(.vertical, 4)
         .sheet(item: $previewItem) { item in
             AttachmentPreviewSheet(item: item)
+        }
+        .onAppear {
+            if message.thinkingContent != nil && message.thinkingDurationSeconds == nil {
+                thinkingExpanded = true
+            }
+        }
+        .onChange(of: message.thinkingDurationSeconds) { _, newValue in
+            if newValue != nil {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    thinkingExpanded = false
+                }
+            }
         }
     }
 
@@ -619,46 +635,67 @@ struct StreamingCursorView: View {
     }
 }
 
-// MARK: - FlowLayout (wrapping horizontal layout)
+struct SearchCitationsFooter: View {
+    let citations: [SearchCitation]
 
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > maxWidth, x > 0 {
-                y += rowHeight + spacing
-                x = 0
-                rowHeight = 0
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 5) {
+                Image(systemName: "safari.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color(red: 0.18, green: 0.78, blue: 0.72))
+                Text("SOURCES")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary)
             }
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
+            .padding(.horizontal, 2)
 
-        return CGSize(width: maxWidth, height: y + rowHeight)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(citations.enumerated()), id: \.element.id) { index, citation in
+                        Link(destination: citation.url) {
+                            HStack(spacing: 8) {
+                                // Index badge
+                                Text("\(index + 1)")
+                                    .font(.system(size: 8, weight: .black, design: .rounded))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 14, height: 14)
+                                    .background(Circle().fill(Color(red: 0.18, green: 0.78, blue: 0.72)))
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(citation.title)
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(AppTheme.textPrimary)
+                                        .lineLimit(1)
+
+                                    Text(domainName(for: citation.url))
+                                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                                        .foregroundStyle(AppTheme.textTertiary)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: 120, alignment: .leading)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(AppTheme.panelRaised)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(AppTheme.cardStroke, lineWidth: 0.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 2)
+            }
+        }
+        .padding(.top, 6)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x: CGFloat = bounds.minX
-        var y: CGFloat = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX, x > bounds.minX {
-                y += rowHeight + spacing
-                x = bounds.minX
-                rowHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: .unspecified)
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
+    private func domainName(for url: URL) -> String {
+        guard let host = url.host else { return "web" }
+        return host.lowercased().replacingOccurrences(of: "www.", with: "")
     }
 }

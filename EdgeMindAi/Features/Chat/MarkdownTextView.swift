@@ -355,7 +355,7 @@ struct MarkdownTextView: View {
                     ForEach(headers.indices, id: \.self) { col in
                         Text(headers[col])
                             .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(isUser ? .white : AppTheme.textPrimary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .frame(minWidth: 100, alignment: .leading)
@@ -412,8 +412,8 @@ struct MarkdownTextView: View {
             if remaining.hasPrefix("**"), let endRange = remaining.dropFirst(2).range(of: "**") {
                 let bold = remaining[remaining.index(remaining.startIndex, offsetBy: 2)..<endRange.lowerBound]
                 result = result + Text(String(bold))
-                    .fontWeight(.bold)
-                    .foregroundColor(isUser ? .white : Color.white.opacity(0.95))
+                .fontWeight(.bold)
+                .foregroundColor(isUser ? .white : AppTheme.textPrimary)
                 remaining = remaining[endRange.upperBound...]
                 continue
             }
@@ -423,8 +423,8 @@ struct MarkdownTextView: View {
                let end = remaining.dropFirst().firstIndex(of: "*") {
                 let italic = remaining[remaining.index(after: remaining.startIndex)..<end]
                 result = result + Text(String(italic))
-                    .italic()
-                    .foregroundColor(isUser ? .white.opacity(0.95) : Color.white.opacity(0.85))
+                .italic()
+                .foregroundColor(isUser ? .white.opacity(0.95) : AppTheme.textSecondary)
                 remaining = remaining[remaining.index(after: end)...]
                 continue
             }

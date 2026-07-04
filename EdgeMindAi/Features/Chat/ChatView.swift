@@ -1021,7 +1021,7 @@ Rules:
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(AppTheme.accentGradient)
                 }
-                
+
                 Text(activeModel == nil ? "Start a local conversation" : "What can I help with?")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(AppTheme.textPrimary)
@@ -1433,13 +1433,28 @@ Rules:
                 let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
                 // OpenELM lane: keep fully local/minimal prompt path for stability.
                 let searchArmed = effectiveImageData == nil && !isOpenELM && (liveSearchEnabled || store.settings.useSearchByDefault)
+
+                if searchArmed && !searchConfigured {
+                    let warning = ChatMessage(
+                        role: .system,
+                        text: "⚠️ Web Search is active, but no search API key is configured. Please go to **Settings** to add your Tavily, Brave, or Serper API key to retrieve live results."
+                    )
+                    await MainActor.run {
+                        store.appendMessage(warning, to: sessionID)
+                    }
+                }
+
+                // If the model natively supports tool calling, we let the model decide to search (think first, then search).
+                // We only perform an upfront search as a fallback for models that do NOT support tool calling.
                 let shouldUpfrontSearch = searchConfigured
                     && searchArmed
+                    && !modelCanUseToolLoop
                     && SearchResultFallbackComposer.shouldRunUpfrontSearch(trimmedPrompt)
                 if shouldUpfrontSearch,
                    let gateway = SearchGatewayFactory.make(settings: store.settings) {
                     do {
-                        searchContext = try await gateway.search(query: trimmedPrompt)
+                        let refinedQuery = SearchQueryRefiner.refine(trimmedPrompt, conversation: conversation)
+                        searchContext = try await gateway.search(query: refinedQuery)
                     } catch {
                         let warning = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
                         await MainActor.run {
@@ -1571,14 +1586,15 @@ Rules:
                         // "No visible answer" recovery card never appears in the chat.
                         await MainActor.run { store.removeMessage(messageID, from: sessionID) }
 
-                        let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(query)…")
+                        let refinedQuery = SearchQueryRefiner.refine(query, conversation: conversation)
+                        let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(refinedQuery)…")
                         await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
 
                         var agenticSearchContext: SearchContext? = nil
                         if let gateway = SearchGatewayFactory.make(settings: store.settings) {
-                            chatLogger.log("Calling search gateway for query: \(query, privacy: .private)")
+                            chatLogger.log("Calling search gateway for query: \(refinedQuery, privacy: .private)")
                             do {
-                                agenticSearchContext = try await gateway.search(query: query)
+                                agenticSearchContext = try await gateway.search(query: refinedQuery)
                                 chatLogger.log("Search returned \(agenticSearchContext?.snippets.count ?? 0) snippets")
                             } catch {
                                 chatLogger.log("Search gateway error: \(error.localizedDescription, privacy: .public)")
@@ -1668,14 +1684,15 @@ Rules:
                     chatLogger.log("Post-stream fallback FIRED — query: \(query, privacy: .private)")
                     await MainActor.run { store.removeMessage(messageID, from: sessionID) }
 
-                    let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(query)…")
+                    let refinedQuery = SearchQueryRefiner.refine(query, conversation: conversation)
+                    let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(refinedQuery)…")
                     await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
 
                     var agenticSearchContext: SearchContext? = nil
                     if let gateway = SearchGatewayFactory.make(settings: store.settings) {
                         chatLogger.log("Post-stream: calling search gateway…")
                         do {
-                            agenticSearchContext = try await gateway.search(query: query)
+                            agenticSearchContext = try await gateway.search(query: refinedQuery)
                             chatLogger.log("Post-stream: search returned \(agenticSearchContext?.snippets.count ?? 0) snippets")
                         } catch {
                             chatLogger.log("Post-stream: search error: \(error.localizedDescription, privacy: .public)")
@@ -1963,12 +1980,13 @@ Rules:
                         chatLogger.log("Empty-output auto-search fallback triggered for: \(trimmedPrompt, privacy: .private)")
                         await MainActor.run { store.removeMessage(messageID, from: sessionID) }
 
-                        let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(trimmedPrompt)…")
+                        let refinedQuery = SearchQueryRefiner.refine(trimmedPrompt, conversation: conversation)
+                        let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(refinedQuery)…")
                         await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
 
                         var fallbackSearchContext: SearchContext? = nil
                         do {
-                            fallbackSearchContext = try await gateway.search(query: trimmedPrompt)
+                            fallbackSearchContext = try await gateway.search(query: refinedQuery)
                             chatLogger.log("Auto-search fallback returned \(fallbackSearchContext?.snippets.count ?? 0) snippets")
                         } catch {
                             chatLogger.log("Auto-search fallback error: \(error.localizedDescription, privacy: .public)")

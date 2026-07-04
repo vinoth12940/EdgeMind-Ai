@@ -501,6 +501,8 @@ If DIRECT ANSWER already answers the user's question, keep the reply focused on 
 Lead with the answer instead of talking about search results or retrieved snippets.
 Do not mention tool access, prompt context, or internal search steps unless the user asks.
 If the retrieved results only point to live pages but do not expose the exact value, say that the retrieved results do not show the exact value and summarize the most relevant live sources.
+DO NOT GUESS OR HALLUCINATE ANY SPORTS SCORES OR MATCH RESULTS. If the score is not explicitly mentioned in the search results, state that it is not available.
+Maintain consistency with the conversation history: if you previously stated that a match ended or had a result, do not contradict yourself by stating it has not occurred yet. Prioritize actual match outcomes over outdated scheduled/preview snippets.
 Cite sources as [1], [2], etc.
 """
 
@@ -516,6 +518,8 @@ If DIRECT ANSWER already answers the user's question, keep the reply focused on 
 Lead with the answer instead of talking about search results or retrieved snippets.
 Do not mention tool access, prompt context, or internal search steps unless the user asks.
 If the exact value is not visible in the retrieved text, say that the retrieved results do not show the exact value and summarize the most relevant sources.
+DO NOT GUESS OR HALLUCINATE ANY SPORTS SCORES OR MATCH RESULTS. If the score is not explicitly mentioned in the search results, state that it is not available.
+Maintain consistency with the conversation history: if you previously stated that a match ended or had a result, do not contradict yourself by stating it has not occurred yet. Prioritize actual match outcomes over outdated scheduled/preview snippets.
 Cite sources as [1], [2], etc.
 """
     }
