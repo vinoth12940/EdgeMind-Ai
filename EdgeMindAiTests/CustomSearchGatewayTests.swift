@@ -4,19 +4,19 @@ import XCTest
 final class CustomSearchGatewayTests: XCTestCase {
 
     func testNormalizesRootGatewayURLToSearchEndpoint() throws {
-        let input = try XCTUnwrap(URL(string: "http://localhost:8787"))
+        let input = try XCTUnwrap(URL(string: "https://search.example.com"))
 
         let normalized = CustomSearchGateway.normalizedEndpoint(from: input)
 
-        XCTAssertEqual(normalized.absoluteString, "http://localhost:8787/api/search")
+        XCTAssertEqual(normalized.absoluteString, "https://search.example.com/api/search")
     }
 
     func testNormalizesHealthURLToSearchEndpoint() throws {
-        let input = try XCTUnwrap(URL(string: "http://localhost:8787/health"))
+        let input = try XCTUnwrap(URL(string: "https://search.example.com/health"))
 
         let normalized = CustomSearchGateway.normalizedEndpoint(from: input)
 
-        XCTAssertEqual(normalized.absoluteString, "http://localhost:8787/api/search")
+        XCTAssertEqual(normalized.absoluteString, "https://search.example.com/api/search")
     }
 
     func testPreservesExplicitCustomEndpoint() throws {
@@ -27,12 +27,22 @@ final class CustomSearchGatewayTests: XCTestCase {
         XCTAssertEqual(normalized.absoluteString, "https://example.com/custom/search")
     }
 
-    func testDefaultSettingsUseWorkingSearchGatewayPath() throws {
-        XCTAssertEqual(AppSettings.default.searchGatewayURL?.absoluteString, "http://localhost:8787/api/search")
+    func testDefaultSettingsDoNotAssumeBundledSearchGateway() throws {
+        XCTAssertNil(AppSettings.default.searchGatewayURL)
     }
 
-    func testFactoryFallsBackToCustomGatewayWhenURLExists() {
+    func testFactoryDoesNotCreateGatewayWhenSearchIsDisabledByDefault() {
         let gateway = SearchGatewayFactory.make(settings: .default)
+
+        XCTAssertNil(gateway)
+    }
+
+    func testFactoryCreatesCustomGatewayWhenExplicitlyConfigured() throws {
+        var settings = AppSettings.default
+        settings.webSearchProvider = .custom
+        settings.searchGatewayURL = try XCTUnwrap(URL(string: "https://search.example.com/api/search"))
+
+        let gateway = SearchGatewayFactory.make(settings: settings)
 
         XCTAssertNotNil(gateway)
         XCTAssertTrue(gateway is CustomSearchGateway)

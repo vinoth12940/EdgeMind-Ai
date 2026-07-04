@@ -116,7 +116,7 @@ struct AppSettings: Codable, Hashable {
     static let `default` = AppSettings(
         defaultModelID: nil,
         systemPrompt: "You are a helpful, direct, and honest AI assistant. Answer the user's question accurately, clearly, and concisely. Avoid preachy disclaimers, conversational filler, or repeating the question. If you do not know the answer, say so honestly. When web search results are provided, use them to give current and factual answers, citing sources by number (e.g. [1]).",
-        searchGatewayURL: URL(string: "http://localhost:8787/api/search"),
+        searchGatewayURL: nil,
         privacyModeEnabled: true,
         useSearchByDefault: true,
         voiceModeEnabled: false,

@@ -67,7 +67,6 @@ LocalAIEdgeAppTests/     # Unit test target (XCTest)
   PromptRendererTests.swift
   StreamProcessorTests.swift
 Vendor/build-apple/      # Pre-built llama.cpp xcframework (vendored in-repo)
-backend/search-gateway/  # Optional Node.js/Express proxy (Tavily) for self-hosted search
 ```
 
 ## Architecture
@@ -127,7 +126,7 @@ Voice models should only be cataloged when there is a fully wired inference/runt
 `VoiceInteractionController` is a `@MainActor ObservableObject` wrapping `SFSpeechRecognizer` (STT) and `AVSpeechSynthesizer` (TTS). It exposes `transcript`, `isListening`, and `isSpeaking` as `@Published` state. Requires microphone + speech recognition permissions at runtime. This path is currently independent from GGUF/MLX chat inference models.
 
 ### Search layer (`Services/Search/`)
-`SearchGateway` protocol with four implementations: Tavily, Brave, Serper, and a passthrough custom gateway. `SearchGatewayFactory` picks the active provider from `AppSettings`. API keys are stored in app settings (not Keychain). The `backend/search-gateway/` directory is an optional Node.js/Express proxy that forwards to Tavily — used when `AppSettings.customGatewayURL` points at it.
+`SearchGateway` protocol with four implementations: Tavily, Brave, Serper, and a passthrough custom gateway. `SearchGatewayFactory` picks the active provider from `AppSettings`. API keys are stored in app settings (not Keychain). The custom gateway option is for user-operated compatible POST endpoints; the iOS app does not ship or require a backend service.
 
 ### Agentic search flow
 Tool-calling models (`supportsToolCalling`) use a two-pass inference loop: the model first receives the user message **without** search results and decides whether to emit a `<tool_call>` for `web_search`. If `StreamProcessor` yields a `.toolCall` event, `ChatView` executes the search via `SearchGateway`, then re-invokes inference with the search context injected. Non-tool-calling models fall back to upfront search (auto-detect or user toggle). The `liveSearchEnabled` toggle always forces upfront search regardless of model capabilities.
@@ -152,20 +151,6 @@ Tool-calling models (`supportsToolCalling`) use a two-pass inference loop: the m
 ## llama.cpp xcframework
 
 The pre-built xcframework at `Vendor/build-apple/llama.xcframework` is vendored in-repo and linked directly via `project.yml` (`embed: true`, `codeSign: false`). Current `Info.plist` includes `ios-arm64` and `ios-arm64_x86_64-simulator` slices. Do not replace or update the xcframework without rebuilding all test targets.
-
-## Backend Search Gateway (Optional)
-
-`backend/search-gateway/` is a TypeScript/Express app. To run locally:
-
-```bash
-cd backend/search-gateway
-npm install
-cp .env.example .env   # add TAVILY_API_KEY
-npm run dev            # default port 8787
-```
-
-Point `AppSettings.searchGatewayURL` at `http://localhost:8787/api/search` in the app's Settings to use it.
-The app also normalizes the base URL `http://localhost:8787` to `/api/search` automatically for the bundled gateway.
 
 ## Gotchas
 

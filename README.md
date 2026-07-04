@@ -262,21 +262,13 @@ Configure in **Settings → Web Search**:
 | Tavily | `tvly-xxxxxxxxxx` | `api.tavily.com/search` |
 | Brave Search | `BSAxxxxxxxxxx` | `api.search.brave.com/res/v1/web/search` |
 | Serper | `xxxxxxxxxxxxxxxx` | `google.serper.dev/search` |
-| Custom Gateway | N/A | Your own POST endpoint |
+| Custom Gateway | N/A | Your own compatible POST endpoint |
 
 ### Custom Search Gateway
 
-The included `backend/search-gateway` provides a Node.js/TypeScript proxy:
+Set the gateway URL in **Settings → Custom Gateway URL** if you operate your own search endpoint. The app sends a `POST` request with a JSON body containing `query`, and expects a `SearchContext`-compatible JSON response with `query`, optional `answer`, `snippets`, and `citations`.
 
-```bash
-cd backend/search-gateway
-cp .env.example .env   # Add your search API key
-npm install
-npm run dev
-```
-
-Set the gateway URL in **Settings → Custom Gateway URL** (default: `http://localhost:8787/api/search`).
-The app also accepts the base gateway URL `http://localhost:8787` and normalizes it to the bundled `/api/search` endpoint automatically.
+If you enter a root URL or `/health` URL, the app normalizes it to `/api/search`. Edge Mind Ai does not ship or require a bundled backend service.
 
 ### HuggingFace Token
 

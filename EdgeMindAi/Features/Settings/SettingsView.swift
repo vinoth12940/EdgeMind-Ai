@@ -42,7 +42,7 @@ struct SettingsView: View {
                         Divider().foregroundStyle(AppTheme.divider)
                         webSearchSectionContent
                         Divider().foregroundStyle(AppTheme.divider)
-                        backendSectionContent
+                        gatewaySectionContent
                     }
                     
                     settingsGroupCard(icon: "lock.shield.fill", title: "Privacy", iconColor: AppTheme.success) {
@@ -617,7 +617,7 @@ struct SettingsView: View {
             if store.settings.webSearchProvider == .none {
                 Text(
                     SearchGatewayFactory.hasSuggestedGateway(settings: store.settings)
-                    ? "Live search can use the local gateway above, or you can choose an API provider."
+                    ? "Live search can use your custom gateway endpoint, or you can choose an API provider."
                     : "Enable a search provider for real-time info. Keys stay on-device."
                 )
                     .font(.system(size: 12))
@@ -627,7 +627,7 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var backendSectionContent: some View {
+    private var gatewaySectionContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Search Gateway URL")
                 .font(.system(size: 13, weight: .semibold))
@@ -654,7 +654,7 @@ struct SettingsView: View {
                     .stroke(AppTheme.hairline, lineWidth: 1)
             )
 
-            Text("Entering a gateway URL automatically switches Web Search to Custom Gateway.")
+            Text("Enter a POST endpoint that returns the app's search response JSON. This automatically switches Web Search to Custom Gateway.")
                 .font(.system(size: 12))
                 .foregroundStyle(AppTheme.textTertiary)
         }

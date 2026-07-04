@@ -3,7 +3,7 @@
 - **Date:** 2026-04-19
 - **Branch:** `codex/stabilize-local-edge-app`
 - **Scope:** Phase 1 of a two-phase app revamp. Phase 1 stabilizes MLX-on-device inference across all catalog models; Phase 2 (out of scope here) redesigns the UI.
-- **Non-goals:** UI redesign, new models, GGUF path changes, voice / STT / auth / search-gateway changes.
+- **Non-goals:** UI redesign, new models, GGUF path changes, voice / STT / auth / web-search architecture changes.
 
 ## 1. Problem
 
