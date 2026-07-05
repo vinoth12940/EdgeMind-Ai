@@ -348,47 +348,82 @@ struct MarkdownTextView: View {
     // MARK: - Table
 
     private func tableView(headers: [String], rows: [[String]]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                // Header row
-                HStack(spacing: 0) {
-                    ForEach(headers.indices, id: \.self) { col in
-                        Text(headers[col])
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(isUser ? .white : AppTheme.textPrimary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .frame(minWidth: 100, alignment: .leading)
-                            .background(AppTheme.accent.opacity(0.15))
-                    }
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            tableRow(cells: headers, isHeader: true, rowIndex: nil)
 
-                // Data rows
-                ForEach(rows.indices, id: \.self) { row in
-                    HStack(spacing: 0) {
-                        ForEach(0..<max(headers.count, rows[row].count), id: \.self) { col in
-                            Text(col < rows[row].count ? rows[row][col] : "")
-                                .font(.system(size: 13, weight: .regular))
-                                .foregroundStyle(foreground.opacity(0.95))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .frame(minWidth: 100, alignment: .leading)
+            ForEach(rows.indices, id: \.self) { row in
+                tableRow(cells: paddedRow(rows[row], columnCount: headers.count), isHeader: false, rowIndex: row)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isUser ? Color.white.opacity(0.14) : AppTheme.cardStroke, lineWidth: 0.5)
+        )
+        .padding(.vertical, 4)
+    }
+
+    private func tableRow(cells: [String], isHeader: Bool, rowIndex: Int?) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(cells.indices, id: \.self) { col in
+                tableCell(cells[col], column: col, columnCount: cells.count, isHeader: isHeader)
+                    .overlay(alignment: .trailing) {
+                        if col < cells.count - 1 {
+                            Rectangle()
+                                .fill(isUser ? Color.white.opacity(0.12) : AppTheme.cardStroke.opacity(0.75))
+                                .frame(width: 0.5)
                         }
                     }
-                    .background(
-                        row % 2 == 0
-                            ? (isUser ? Color.white.opacity(0.06) : AppTheme.panelRaised)
-                            : (isUser ? Color.white.opacity(0.03) : AppTheme.panel)
-                    )
-                }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(AppTheme.cardStroke, lineWidth: 0.5)
-            )
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tableRowBackground(isHeader: isHeader, rowIndex: rowIndex))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(isUser ? Color.white.opacity(0.12) : AppTheme.cardStroke.opacity(0.75))
+                .frame(height: 0.5)
+        }
+    }
+
+    private func tableCell(_ text: String, column: Int, columnCount: Int, isHeader: Bool) -> some View {
+        inlineMarkdown(text)
+            .font(.system(size: isHeader ? 13 : 14, weight: isHeader ? .bold : .regular, design: isHeader ? .rounded : .default))
+            .foregroundStyle(isHeader ? (isUser ? Color.white : AppTheme.textPrimary) : foreground.opacity(0.95))
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, column == 0 ? 10 : 12)
+            .padding(.vertical, isHeader ? 10 : 9)
+            .frame(
+                width: shouldUseCompactFirstColumn(column: column, columnCount: columnCount) ? 52 : nil,
+                alignment: .leading
+            )
+            .frame(maxWidth: shouldUseCompactFirstColumn(column: column, columnCount: columnCount) ? nil : .infinity, alignment: .leading)
+    }
+
+    private func tableRowBackground(isHeader: Bool, rowIndex: Int?) -> Color {
+        if isHeader {
+            return isUser ? Color.white.opacity(0.14) : AppTheme.accent.opacity(0.14)
+        }
+
+        guard let rowIndex else {
+            return isUser ? Color.white.opacity(0.04) : AppTheme.panel
+        }
+
+        return rowIndex % 2 == 0
+            ? (isUser ? Color.white.opacity(0.07) : AppTheme.panelRaised)
+            : (isUser ? Color.white.opacity(0.03) : AppTheme.panel)
+    }
+
+    private func paddedRow(_ row: [String], columnCount: Int) -> [String] {
+        guard row.count < columnCount else {
+            return row
+        }
+
+        return row + Array(repeating: "", count: columnCount - row.count)
+    }
+
+    private func shouldUseCompactFirstColumn(column: Int, columnCount: Int) -> Bool {
+        column == 0 && columnCount > 1
     }
 
     // MARK: - Inline Markdown (bold, italic, code, citation refs)
