@@ -13,7 +13,7 @@ settings:
     DEVELOPMENT_TEAM: "43NV5DTHKG"
     CODE_SIGN_STYLE: Automatic
     EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
-    CURRENT_PROJECT_VERSION: 4
+    CURRENT_PROJECT_VERSION: 5
     MARKETING_VERSION: 0.2.0
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_CFBundleDisplayName: Edge Mind Ai
@@ -21,6 +21,7 @@ settings:
     INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleDefault
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
     INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: NO
+    INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
 packages:
   mlx-swift-lm:
     url: https://github.com/ml-explore/mlx-swift-lm
