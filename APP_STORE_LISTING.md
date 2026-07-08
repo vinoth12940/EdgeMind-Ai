@@ -1,6 +1,6 @@
 # App Store Listing — Edge Mind Ai
 
-> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.1.0).
+> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.2.0).
 > Anything in `[brackets]` you must fill in (URLs, contact, demo account).
 
 ---
@@ -89,14 +89,14 @@ on-device AI,offline AI,local LLM,private chat,AI assistant,MLX,llama,vision,voi
 ## 5. What's New in This Version
 
 ```
-• Initial App Store release
-• 21-model local catalog (Apple Intelligence, Gemma, Llama, Qwen, Phi, Granite, Mistral, DeepSeek, SmolLM, LFM)
-• Streaming chat with Markdown and code highlighting
-• Vision chat via camera/photo attachment
-• Voice dictation and text-to-speech playback
-• Optional Live Web Search with citations (Tavily / Brave / Serper / custom)
-• Guest, local-credential, and Face ID / Touch ID sign-in
-• Dark-mode-first design system
+• New agentic tool support for capable local models, including calculator, device info, document reading, chat-history search, and optional web search.
+• Added a built-in prompt library for writing, coding, learning, and productivity workflows.
+• Expanded and re-audited the local model catalog across Apple Foundation Models, GGUF, MLX, and LiteRT-LM runtimes.
+• Web search is now off by default. You can enable it only when you want current web results and citations.
+• Hugging Face and search-provider keys now use secure Keychain storage with legacy settings cleanup.
+• Improved streaming output cleanup, thinking/tool-call parsing, and runtime memory handoff between models.
+• Added App Shortcuts for opening chat, model diagnostics, installed models, and voice chat.
+• Bug fixes for search configuration, document attachment handling, model capability badges, and App Store symbol packaging.
 ```
 
 ---

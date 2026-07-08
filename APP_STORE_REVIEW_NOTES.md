@@ -24,6 +24,11 @@ Edge Mind Ai is a native SwiftUI interface for on-device AI inference. To verify
    - You can download a lightweight on-device model from the curated list. For fast testing, we recommend **LFM2.5 350M (MLX)** (~0.4 GB) or **Granite 3.3 2B (MLX)** (~1.4 GB).
    - The Models tab contains a curated, device-audited catalog only. It does not expose arbitrary community repository discovery or unsupported audio/video model downloads.
    - Once downloaded, you can select it from the chat header dropdown and run text or document prompts completely offline. Verified vision models also expose camera/photo attachment for local image understanding.
+5. **Optional Tools & Web Search**:
+   - Version 0.2.0 adds local tool support for capable models, including calculator, device information, attached document reading, and local chat-history search.
+   - Live Web Search remains optional and is OFF by default. Users must configure their own search provider and explicitly enable search before a prompt is sent to a web search gateway.
+6. **Prompt Library**:
+   - The chat composer includes a built-in prompt library for writing, coding, learning, and productivity prompts. These templates are bundled locally and do not require an account or network service.
 
 ---
 
@@ -40,6 +45,7 @@ Edge Mind Ai is a native SwiftUI interface for on-device AI inference. To verify
 - **Camera & Photo Library**: Used only when attaching images to prompts for local analysis (multimodal models). Photos are processed locally and downsampled before inference.
 - **Face ID**: Optional. Used only for local profile confirmation actions in Settings; the app does not require biometric authentication to launch or chat.
 - **Data Protection**: Chat sessions, settings, and Hugging Face tokens are stored locally on the device (tokens are secured in the secure Keychain). No analytics, user telemetry, or user prompts are uploaded to remote servers.
+- **Search Provider Keys**: Optional search-provider keys are stored in the iOS Keychain. They are used only if the user enables Live Web Search.
 
 ---
 
