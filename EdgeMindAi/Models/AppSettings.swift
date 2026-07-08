@@ -118,7 +118,7 @@ struct AppSettings: Codable, Hashable {
         systemPrompt: "You are a helpful, direct, and honest AI assistant. Answer the user's question accurately, clearly, and concisely. Avoid preachy disclaimers, conversational filler, or repeating the question. If you do not know the answer, say so honestly. When web search results are provided, use them to give current and factual answers, citing sources by number (e.g. [1]).",
         searchGatewayURL: nil,
         privacyModeEnabled: true,
-        useSearchByDefault: true,
+        useSearchByDefault: false,
         voiceModeEnabled: false,
         voiceModel: .kokoro82M,
         voicePreset: .balanced,

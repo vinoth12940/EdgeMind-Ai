@@ -2,6 +2,12 @@ import XCTest
 @testable import EdgeMindAi
 
 final class AppSettingsTests: XCTestCase {
+    func testDefaultSettingsKeepWebSearchOptIn() {
+        XCTAssertFalse(AppSettings.default.useSearchByDefault)
+        XCTAssertEqual(AppSettings.default.webSearchProvider, .none)
+        XCTAssertNil(AppSettings.default.searchGatewayURL)
+    }
+
     func testDecodingLegacySettingsDefaultsAppearanceToSystem() throws {
         let legacyJSON = """
         {

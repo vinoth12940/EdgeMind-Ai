@@ -15,6 +15,7 @@ final class AppStateStore {
 
     private static let installedModelsKey = "persistedInstalledModels"
     private static let settingsKey = "persistedAppSettings"
+    private static let searchDefaultOffMigrationKey = "migration.searchDefaultOff.v020"
     private static let chatSessionsKey = "persistedChatSessions"
     private static let selectedSessionIDKey = "persistedSelectedSessionID"
     private static let placeholderSessionTitle = "New Chat"
@@ -63,6 +64,7 @@ final class AppStateStore {
         migrateUnsupportedCatalogEntriesIfNeeded()
         ensureSystemFoundationModelAvailable()
         restoreSecretsFromKeychain()
+        migrateWebSearchDefaultOffIfNeeded()
     }
 
     var selectedSession: ChatSession? {
@@ -365,6 +367,20 @@ final class AppStateStore {
         if hadLegacyPlaintext {
             saveSettings()
         }
+    }
+
+    /// v0.2.0 ships web search opt-in. Earlier builds could persist the old
+    /// default-on value, so flip it off once; future user changes are preserved.
+    private func migrateWebSearchDefaultOffIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Self.searchDefaultOffMigrationKey) else {
+            return
+        }
+
+        if settings.useSearchByDefault {
+            settings.useSearchByDefault = false
+            saveSettings()
+        }
+        UserDefaults.standard.set(true, forKey: Self.searchDefaultOffMigrationKey)
     }
 
     private static func loadSettings() -> AppSettings? {
