@@ -594,6 +594,7 @@
 				58968C1812F5ABB1A4462DF8 /* Resources */,
 				97D220DCA4651CD7F033C3A5 /* Frameworks */,
 				E4EDE6414B67788C2EC5F426 /* Embed Frameworks */,
+				0A2EC994E345D57EF3B454AA /* Generate CLiteRTLM dSYM */,
 			);
 			buildRules = (
 			);
@@ -670,6 +671,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		0A2EC994E345D57EF3B454AA /* Generate CLiteRTLM dSYM */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Generate CLiteRTLM dSYM";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nif [ \"$CONFIGURATION\" != \"Release\" ]; then\n  exit 0\nfi\n\nFRAMEWORK_BINARY=\"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/CLiteRTLM.framework/CLiteRTLM\"\nOUTPUT_DSYM=\"$DWARF_DSYM_FOLDER_PATH/CLiteRTLM.framework.dSYM\"\n\nif [ ! -f \"$FRAMEWORK_BINARY\" ]; then\n  exit 0\nfi\n\nmkdir -p \"$DWARF_DSYM_FOLDER_PATH\"\ndsymutil \"$FRAMEWORK_BINARY\" -o \"$OUTPUT_DSYM\" || true\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		4BFDFFD9428DD92D58F7C85D /* Sources */ = {
@@ -869,7 +891,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 43NV5DTHKG;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -994,7 +1016,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 43NV5DTHKG;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
