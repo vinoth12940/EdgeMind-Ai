@@ -324,9 +324,8 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
 
     /// Generate a stable UUID from displayName + variant so IDs survive across launches.
     private static func deterministicID(displayName: String, variant: String) -> UUID {
-        // UUID v5 using a fixed namespace
-        let namespace = UUID(uuidString: "A1B2C3D4-E5F6-7890-ABCD-EF1234567890")!
-        return uuidV5(namespace: namespace, name: "\(displayName)::\(variant)")
+        DeterministicID.uuidV5(namespace: DeterministicID.modelCatalogNamespace,
+                               name: "\(displayName)::\(variant)")
     }
 
     static func parseContextWindowTokenCount(_ rawValue: String) -> Int {
@@ -349,27 +348,6 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         }
 
         return Int((value * multiplier).rounded())
-    }
-
-    private static func uuidV5(namespace: UUID, name: String) -> UUID {
-        let namespaceBytes = withUnsafeBytes(of: namespace.uuid) { Array($0) }
-        let nameBytes = Array(name.utf8)
-        let data = namespaceBytes + nameBytes
-        // SHA-1 hash (only need first 16 bytes for UUID)
-        var hash = [UInt8](repeating: 0, count: 20)
-        data.withUnsafeBufferPointer { ptr in
-            var ctx = CC_SHA1_CTX()
-            CC_SHA1_Init(&ctx)
-            CC_SHA1_Update(&ctx, ptr.baseAddress, CC_LONG(ptr.count))
-            CC_SHA1_Final(&hash, &ctx)
-        }
-        // Set version (5) and variant bits
-        hash[6] = (hash[6] & 0x0F) | 0x50
-        hash[8] = (hash[8] & 0x3F) | 0x80
-        return UUID(uuid: (hash[0], hash[1], hash[2], hash[3],
-                           hash[4], hash[5], hash[6], hash[7],
-                           hash[8], hash[9], hash[10], hash[11],
-                           hash[12], hash[13], hash[14], hash[15]))
     }
 
     var capabilities: [ModelCapability] {

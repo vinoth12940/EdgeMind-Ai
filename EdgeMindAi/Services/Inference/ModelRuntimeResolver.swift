@@ -17,7 +17,10 @@ enum ModelRuntimeResolver {
         let profile = store.profile(for: catalog.id) ?? RuntimeProfile.safeMinimum(catalogID: catalog.id)
 
         // Detect mismatches so UI can surface "claimed but not verified".
-        let visionMismatch = catalog.sourceSupportsVision && profile.verifiedVision != .imageAndText
+        // Vision compares the APP-LEVEL claim (`supportsVision`), not the upstream
+        // `sourceSupportsVision`: a VLM the app deliberately runs text-only after a
+        // failed vision audit (Gemma 4 E4B, Qwen 3.5 VL 4B) is consistent, not a mismatch.
+        let visionMismatch = catalog.supportsVision && profile.verifiedVision != .imageAndText
         let toolMismatch = catalog.supportsToolCalling && profile.verifiedToolCalling == nil
         let thinkMismatch = catalog.isThinkingModel && profile.verifiedThinking == nil
 

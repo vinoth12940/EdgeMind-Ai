@@ -27,12 +27,66 @@ struct ChatComposerView: View {
     @State private var showSearchNotConfigured = false
     @State private var attachmentError: String?
     @State private var previewItem: AttachmentPreviewItem?
+    @State private var showPromptLibrary = false
 
     private var canSend: Bool {
         let hasText = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasImage = attachedImage != nil
         let hasDocument = !attachedDocuments.isEmpty
         return (hasText || hasImage || hasDocument) && !isSending
+    }
+
+    /// Drives the attachment-error alert. Extracted as a computed `Binding` so the
+    /// composer body stays simple enough for the Swift type-checker to resolve.
+    private var attachmentErrorPresented: Binding<Bool> {
+        Binding(
+            get: { attachmentError != nil },
+            set: { if !$0 { attachmentError = nil } }
+        )
+    }
+
+    /// Send / Stop / Microphone button group. Extracted from `body` so the
+    /// composer's view tree stays simple enough for the Swift type-checker.
+    @ViewBuilder private var trailingAction: some View {
+        if isSending, let onStop {
+            Button(action: onStop) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(AppTheme.destructive))
+            }
+            .accessibilityLabel("Stop generation")
+        } else if canSend {
+            Button(action: onSend) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(AppTheme.accentGradient))
+            }
+            .accessibilityLabel("Send message")
+        } else if voiceModeEnabled {
+            Button(action: onToggleVoiceInput) {
+                Image(systemName: isListening ? "stop.fill" : "waveform")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(isListening ? AppTheme.destructive : AppTheme.warning))
+            }
+            .accessibilityLabel(isListening ? "Stop voice input" : "Start voice input")
+            .disabled(isSending)
+        } else {
+            Button(action: onSend) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(AppTheme.textTertiary.opacity(0.55))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(AppTheme.subtleFill))
+            }
+            .accessibilityLabel("Send message")
+            .disabled(true)
+        }
     }
 
     private var isSearchActiveTint: Color {
@@ -58,6 +112,10 @@ struct ChatComposerView: View {
                         }
                     } label: {
                         Label(liveSearchEnabled ? "Turn search off" : "Turn search on", systemImage: liveSearchEnabled ? "sparkle.magnifyingglass" : "bolt.slash")
+                    }
+
+                    Button { showPromptLibrary = true } label: {
+                        Label("Prompt Library", systemImage: "text.book.closed")
                     }
 
                     if isVisionModel {
@@ -96,49 +154,9 @@ struct ChatComposerView: View {
                     .padding(.vertical, 8)
                 
                 // Right Action Button (Send / Stop / Microphone)
-                Group {
-                    if isSending, let onStop {
-                        Button(action: onStop) {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(AppTheme.destructive))
-                        }
-                        .accessibilityLabel("Stop generation")
-                    } else if canSend {
-                        Button(action: onSend) {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(AppTheme.accentGradient))
-                        }
-                        .accessibilityLabel("Send message")
-                    } else if voiceModeEnabled {
-                        Button(action: onToggleVoiceInput) {
-                            Image(systemName: isListening ? "stop.fill" : "waveform")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(isListening ? AppTheme.destructive : AppTheme.warning))
-                        }
-                        .accessibilityLabel(isListening ? "Stop voice input" : "Start voice input")
-                        .disabled(isSending)
-                    } else {
-                        Button(action: onSend) {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(AppTheme.textTertiary.opacity(0.55))
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(AppTheme.subtleFill))
-                        }
-                        .accessibilityLabel("Send message")
-                        .disabled(true)
-                    }
-                }
-                .padding(.trailing, 4)
-                .padding(.bottom, 5)
+                trailingAction
+                    .padding(.trailing, 4)
+                    .padding(.bottom, 5)
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 4)
@@ -175,53 +193,21 @@ struct ChatComposerView: View {
         .padding(.horizontal, 0)
         .padding(.vertical, 0)
         .background(Color.clear)
-        .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker(image: $attachedImage)
-                .ignoresSafeArea()
-        }
-        .alert("Search Not Configured", isPresented: $showSearchNotConfigured) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Go to Settings → Web Search API and select a provider with an API key.")
-        }
-        .alert("Attachment Error", isPresented: Binding(
-            get: { attachmentError != nil },
-            set: { if !$0 { attachmentError = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(attachmentError ?? "")
-        }
-        .sheet(item: $previewItem) { item in
-            AttachmentPreviewSheet(item: item)
-        }
-        .fileImporter(
-            isPresented: $showDocumentPicker,
-            allowedContentTypes: DocumentExtractionService.supportedTypes,
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Task {
-                    do {
-                        let attachment = try DocumentExtractionService.attachment(from: url)
-                        await MainActor.run {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                attachedDocuments.append(attachment)
-                            }
-                        }
-                    } catch {
-                        await MainActor.run {
-                            attachmentError = error.localizedDescription
-                        }
-                    }
-                }
-            case .failure(let error):
-                attachmentError = error.localizedDescription
-            }
-        }
-        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared())
+        .composerPresentationModifiers(
+            showCamera: $showCamera,
+            showSearchNotConfigured: $showSearchNotConfigured,
+            attachmentErrorPresented: attachmentErrorPresented,
+            attachmentError: $attachmentError,
+            showPromptLibrary: $showPromptLibrary,
+            prompt: $prompt,
+            isFocused: $isFocused,
+            previewItem: $previewItem,
+            showDocumentPicker: $showDocumentPicker,
+            attachedDocuments: $attachedDocuments,
+            showPhotoPicker: $showPhotoPicker,
+            selectedPhotoItem: $selectedPhotoItem,
+            attachedImage: $attachedImage
+        )
         .onAppear {
             isFocused = isInputFocused
         }
@@ -231,25 +217,6 @@ struct ChatComposerView: View {
         .onChange(of: isInputFocused) { _, newValue in
             if isFocused != newValue {
                 isFocused = newValue
-            }
-        }
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            Task {
-                guard let newItem else { return }
-
-                let loadedImage: UIImage?
-                if let data = try? await newItem.loadTransferable(type: Data.self) {
-                    loadedImage = Self.downsample(data: data, maxPixelSize: 1024)
-                } else {
-                    loadedImage = nil
-                }
-
-                await MainActor.run {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        attachedImage = loadedImage
-                    }
-                    selectedPhotoItem = nil
-                }
             }
         }
     }
@@ -405,7 +372,8 @@ struct ChatComposerView: View {
         return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
     }
 
-    private static func downsample(data: Data, maxPixelSize: CGFloat) -> UIImage? {
+    /// Internal so the file-local `View` extension hosting the photo picker can call it.
+    static func downsample(data: Data, maxPixelSize: CGFloat) -> UIImage? {
         let options = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -420,4 +388,93 @@ struct ChatComposerView: View {
         return UIImage(cgImage: cgImage)
     }
 
+}
+
+// MARK: - Presentation modifiers
+
+/// Hosts the composer's sheets, alerts, pickers, and lifecycle handlers. Lives in a
+/// `View` extension so the composer's `body` modifier chain stays short enough for
+/// the Swift type-checker to resolve in reasonable time.
+private extension View {
+    @ViewBuilder
+    func composerPresentationModifiers(
+        showCamera: Binding<Bool>,
+        showSearchNotConfigured: Binding<Bool>,
+        attachmentErrorPresented: Binding<Bool>,
+        attachmentError: Binding<String?>,
+        showPromptLibrary: Binding<Bool>,
+        prompt: Binding<String>,
+        isFocused: FocusState<Bool>.Binding,
+        previewItem: Binding<AttachmentPreviewItem?>,
+        showDocumentPicker: Binding<Bool>,
+        attachedDocuments: Binding<[ChatAttachment]>,
+        showPhotoPicker: Binding<Bool>,
+        selectedPhotoItem: Binding<PhotosPickerItem?>,
+        attachedImage: Binding<UIImage?>
+    ) -> some View {
+        self
+            .fullScreenCover(isPresented: showCamera) {
+                CameraPicker(image: attachedImage)
+                    .ignoresSafeArea()
+            }
+            .alert("Search Not Configured", isPresented: showSearchNotConfigured) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Go to Settings → Web Search API and select a provider with an API key.")
+            }
+            .alert("Attachment Error", isPresented: attachmentErrorPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(attachmentError.wrappedValue ?? "")
+            }
+            .sheet(isPresented: showPromptLibrary) {
+                PromptLibraryView(prompt: prompt, isFocused: isFocused)
+                    .presentationDetents([.large])
+            }
+            .sheet(item: previewItem) { item in
+                AttachmentPreviewSheet(item: item)
+            }
+            .fileImporter(
+                isPresented: showDocumentPicker,
+                allowedContentTypes: DocumentExtractionService.supportedTypes,
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    Task {
+                        do {
+                            let attachment = try DocumentExtractionService.attachment(from: url)
+                            await MainActor.run {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    attachedDocuments.wrappedValue.append(attachment)
+                                }
+                            }
+                        } catch {
+                            await MainActor.run {
+                                attachmentError.wrappedValue = error.localizedDescription
+                            }
+                        }
+                    }
+                case .failure(let error):
+                    attachmentError.wrappedValue = error.localizedDescription
+                }
+            }
+            .photosPicker(isPresented: showPhotoPicker, selection: selectedPhotoItem, matching: .images, photoLibrary: .shared())
+            .onChange(of: selectedPhotoItem.wrappedValue) { _, newItem in
+                Task {
+                    guard let newItem else { return }
+                    var loadedImage: UIImage?
+                    if let data = try? await newItem.loadTransferable(type: Data.self) {
+                        loadedImage = ChatComposerView.downsample(data: data, maxPixelSize: 1024)
+                    }
+                    await MainActor.run {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            attachedImage.wrappedValue = loadedImage
+                        }
+                        selectedPhotoItem.wrappedValue = nil
+                    }
+                }
+            }
+    }
 }

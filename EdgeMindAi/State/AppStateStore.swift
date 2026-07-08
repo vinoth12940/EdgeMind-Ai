@@ -62,6 +62,7 @@ final class AppStateStore {
         reconcilePersistedInstalledModelsWithCurrentCatalog()
         migrateUnsupportedCatalogEntriesIfNeeded()
         ensureSystemFoundationModelAvailable()
+        restoreSecretsFromKeychain()
     }
 
     var selectedSession: ChatSession? {
@@ -209,6 +210,32 @@ final class AppStateStore {
         }
     }
 
+    func updateMessageToolActivities(
+        _ messageID: UUID,
+        in sessionID: UUID,
+        toolActivities: [ChatToolActivity],
+        persist: Bool = false
+    ) {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        chatSessions[sessionIndex].messages[messageIndex].toolActivities = toolActivities
+        chatSessions[sessionIndex].updatedAt = .now
+        if persist { saveChatSessions() }
+    }
+
+    func updateMessageCitations(
+        _ messageID: UUID,
+        in sessionID: UUID,
+        citations: [SearchCitation],
+        persist: Bool = false
+    ) {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        chatSessions[sessionIndex].messages[messageIndex].citations = citations
+        chatSessions[sessionIndex].updatedAt = .now
+        if persist { saveChatSessions() }
+    }
+
     func updateMessageThinking(
         _ messageID: UUID,
         in sessionID: UUID,
@@ -220,6 +247,19 @@ final class AppStateStore {
         guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
         chatSessions[sessionIndex].messages[messageIndex].thinkingContent = thinkingContent.map(Self.trimInMemoryThinking)
         chatSessions[sessionIndex].messages[messageIndex].thinkingDurationSeconds = thinkingDurationSeconds
+        chatSessions[sessionIndex].updatedAt = .now
+        if persist { saveChatSessions() }
+    }
+
+    func updateMessageGenerationDuration(
+        _ messageID: UUID,
+        in sessionID: UUID,
+        duration: Double,
+        persist: Bool = false
+    ) {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        chatSessions[sessionIndex].messages[messageIndex].generationDurationSeconds = duration
         chatSessions[sessionIndex].updatedAt = .now
         if persist { saveChatSessions() }
     }
@@ -292,9 +332,39 @@ final class AppStateStore {
         return models.filter { $0.installState == .installed }
     }
 
+    /// Secrets are excluded from the encoded settings JSON (see `AppSettings.encode`).
+    /// The Keychain is their canonical store; the in-memory fields on `settings` are
+    /// working copies restored at launch and synced back here on every save.
     private func saveSettings() {
+        WebSearchKeyManager.key = settings.webSearchAPIKey
+        HFTokenManager.token = settings.huggingFaceToken
         guard let data = try? JSONEncoder().encode(settings) else { return }
         UserDefaults.standard.set(data, forKey: Self.settingsKey)
+    }
+
+    /// Populates the in-memory secret fields from the Keychain. If a legacy plaintext
+    /// secret is found in the persisted settings JSON (pre-Keychain builds), it is
+    /// migrated into the Keychain and the plaintext copy is scrubbed from UserDefaults.
+    private func restoreSecretsFromKeychain() {
+        // Non-empty decoded values can only come from legacy plaintext JSON —
+        // current builds never encode the secret fields.
+        let legacyKey = settings.webSearchAPIKey
+        let legacyToken = settings.huggingFaceToken
+        let hadLegacyPlaintext = !legacyKey.isEmpty || !legacyToken.isEmpty
+
+        if WebSearchKeyManager.key == nil, !legacyKey.isEmpty {
+            WebSearchKeyManager.key = legacyKey
+        }
+        settings.webSearchAPIKey = WebSearchKeyManager.key ?? ""
+
+        if HFTokenManager.token == nil, !legacyToken.isEmpty {
+            HFTokenManager.token = legacyToken
+        }
+        settings.huggingFaceToken = HFTokenManager.token ?? ""
+
+        if hadLegacyPlaintext {
+            saveSettings()
+        }
     }
 
     private static func loadSettings() -> AppSettings? {

@@ -484,6 +484,25 @@ actor MLXRuntime {
         return .init(resize: CGSize(width: maxPixelSize, height: maxPixelSize))
     }
 
+    private static func isGemma4(_ normalizedModelID: String) -> Bool {
+        normalizedModelID.contains("gemma-4") || normalizedModelID.contains("gemma4")
+    }
+
+    /// Qwen 3.5 4B is VL-native (repo `mlx-community/Qwen3.5-4B-4bit`). Its image
+    /// prefill OOM-killed the on-device audit when it ran with the generic 384px /
+    /// unbounded-KV path, so it gets the same constrained-vision treatment as Gemma 4.
+    private static func isQwen35VL4B(_ normalizedModelID: String) -> Bool {
+        normalizedModelID.contains("qwen3.5-4b")
+            || normalizedModelID.contains("qwen3-vl-4b")
+            || normalizedModelID.contains("qwen3vl-4b")
+    }
+
+    /// Vision models that need aggressive memory bounding (quantized KV cache,
+    /// tiny prefill steps, wired-memory ticket) to survive image prefill on iOS.
+    private static func isConstrainedVisionModel(_ normalizedModelID: String) -> Bool {
+        isGemma4(normalizedModelID) || isQwen35VL4B(normalizedModelID)
+    }
+
     private static func generateParameters(
         modelID: String,
         maxTokens: Int,
@@ -491,25 +510,26 @@ actor MLXRuntime {
         sampling: SamplingPreset
     ) -> GenerateParameters {
         let normalized = modelID.lowercased()
-        let isGemma4Vision = isVision && (normalized.contains("gemma-4") || normalized.contains("gemma4"))
+        let isGemma4Vision = isVision && isGemma4(normalized)
+        let isConstrainedVision = isVision && isConstrainedVisionModel(normalized)
 
         return GenerateParameters(
             maxTokens: isGemma4Vision ? min(maxTokens, 16) : maxTokens,
-            maxKVSize: isGemma4Vision ? 512 : nil,
-            kvBits: isGemma4Vision ? 4 : nil,
+            maxKVSize: isConstrainedVision ? (isGemma4Vision ? 512 : 768) : nil,
+            kvBits: isConstrainedVision ? 4 : nil,
             kvGroupSize: 64,
             quantizedKVStart: 0,
             temperature: sampling.temperature,
             topP: sampling.topP,
             repetitionPenalty: sampling.repetitionPenalty,
             repetitionContextSize: sampling.repetitionContextSize,
-            prefillStepSize: isGemma4Vision ? 16 : 512
+            prefillStepSize: isConstrainedVision ? 16 : 512
         )
     }
 
     private static func wiredMemoryTicket(modelID: String, isVision: Bool) -> WiredMemoryTicket? {
         let normalized = modelID.lowercased()
-        guard isVision, normalized.contains("gemma-4") || normalized.contains("gemma4") else {
+        guard isVision, isConstrainedVisionModel(normalized) else {
             return nil
         }
 
@@ -551,8 +571,10 @@ actor MLXRuntime {
         if normalized.contains("lfm2.5-vl") {
             return 256
         }
-        if normalized.contains("qwen3-vl-4b") || normalized.contains("qwen3vl-4b") {
-            return 224
+        if isQwen35VL4B(normalized) {
+            // 224px + generic KV settings OOM-killed the on-device image audit;
+            // rerun the audit at 192px with the constrained-vision KV bounding.
+            return 192
         }
         if normalized.contains("4b") || normalized.contains("8b") || normalized.contains("9b") {
             return 384

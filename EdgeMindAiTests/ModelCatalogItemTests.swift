@@ -261,7 +261,7 @@ final class ModelCatalogItemTests: XCTestCase {
                 "mlx-community/Ministral-3-3B-Instruct-2512-4bit"
             ],
             .smolLM: [
-                "mlx-community/SmolLM3-3B-4bit"
+                "mlx-community/SmolLM2-1.7B-Instruct"
             ]
         ]
 

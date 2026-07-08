@@ -172,4 +172,27 @@ extension AppSettings {
         streamProcessorV2Enabled = try container.decodeIfPresent(Bool.self, forKey: .streamProcessorV2Enabled) ?? true
         inferenceV2Timeout = try container.decodeIfPresent(TimeInterval.self, forKey: .inferenceV2Timeout) ?? 15
     }
+
+    /// Secrets (`webSearchAPIKey`, `huggingFaceToken`) are deliberately NOT encoded:
+    /// persisted settings land in UserDefaults as plaintext JSON, so the canonical
+    /// copies live in the Keychain (`WebSearchKeyManager` / `HFTokenManager`).
+    /// `AppStateStore` restores the in-memory fields from the Keychain at launch.
+    /// Decoding still reads both keys so legacy plaintext values migrate cleanly.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(defaultModelID, forKey: .defaultModelID)
+        try container.encode(systemPrompt, forKey: .systemPrompt)
+        try container.encodeIfPresent(searchGatewayURL, forKey: .searchGatewayURL)
+        try container.encode(privacyModeEnabled, forKey: .privacyModeEnabled)
+        try container.encode(useSearchByDefault, forKey: .useSearchByDefault)
+        try container.encode(voiceModeEnabled, forKey: .voiceModeEnabled)
+        try container.encode(voiceModel, forKey: .voiceModel)
+        try container.encode(voicePreset, forKey: .voicePreset)
+        try container.encode(autoPlayVoiceResponses, forKey: .autoPlayVoiceResponses)
+        try container.encode(voiceResponseRate, forKey: .voiceResponseRate)
+        try container.encode(appearanceMode, forKey: .appearanceMode)
+        try container.encode(webSearchProvider, forKey: .webSearchProvider)
+        try container.encode(streamProcessorV2Enabled, forKey: .streamProcessorV2Enabled)
+        try container.encode(inferenceV2Timeout, forKey: .inferenceV2Timeout)
+    }
 }

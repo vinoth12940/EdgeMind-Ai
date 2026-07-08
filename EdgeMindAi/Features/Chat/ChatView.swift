@@ -101,30 +101,6 @@ struct ChatView: View {
 
     private let streamUpdateInterval: Duration = .milliseconds(80)
 
-    /// Tool definition injected into system prompt when the search toggle is ON
-    /// so any model can decide whether to search via <tool_call>.
-    private static let toolCallDefinition = """
-
-# Tools
-
-You have access to the following tool. Call it when you need current or real-time information (news, scores, weather, prices, recent events).
-
-## web_search
-Search the web for up-to-date information.
-Parameters: query (string) — the search query
-
-To call it, output ONLY this block (no other text before the closing tag):
-<tool_call>
-{"name": "web_search", "arguments": {"query": "your search query here"}}
-</tool_call>
-
-Rules:
-- Call it for anything requiring real-time, current, or recent information.
-- If a follow-up question asks for more detail about a topic you previously searched, call web_search AGAIN with a refined query.
-- Do NOT refuse to search. If in doubt, search.
-- Call it at most once per response.
-"""
-
     private var composerBottomSpacing: CGFloat {
         isInputFocused ? 4 : 8
     }
@@ -267,7 +243,10 @@ Rules:
                                         .frame(height: 4)
 
                                 ForEach(activeMessages) { message in
-                                    MessageBubbleView(message: message)
+                                    MessageBubbleView(
+                                        message: message,
+                                        isGenerating: message.id == activeMessages.last?.id && isSending
+                                    )
                                         .id(message.id)
                                         .transition(.asymmetric(
                                             insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -1251,6 +1230,426 @@ Rules:
         return true
     }
 
+    /// Consumes a follow-up/retry inference stream (search fallback, grounding retry,
+    /// empty-output retry, OpenELM retry) into accumulated text + thinking. All retry
+    /// paths share this exact policy: batched UI flushes on `textDelta`, live thinking
+    /// updates, and `.toolCall`/`.done` ignored (retries never re-enter the tool loop).
+    /// Pass `streamsToUI: false` for lanes that only want the final text (OpenELM).
+    private func consumeFollowupStream(
+        _ stream: AsyncStream<StreamEvent>,
+        messageID: UUID,
+        sessionID: UUID,
+        clock: ContinuousClock,
+        lastFlush: ContinuousClock.Instant,
+        streamsToUI: Bool = true,
+        updatesThinking: Bool = true
+    ) async -> (text: String, thinking: String) {
+        var accumulated = ""
+        var thinkingAccumulated = ""
+        var flush = lastFlush
+        for await event in stream {
+            if Task.isCancelled { break }
+            switch event {
+            case .textDelta(let chunk):
+                accumulated += chunk
+                guard streamsToUI else { break }
+                let shouldFlush = clock.now - flush >= streamUpdateInterval
+                    || chunk.contains(where: \.isNewline)
+                    || accumulated.count <= 48
+                if shouldFlush {
+                    flush = clock.now
+                    updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
+                }
+            case .thinkingDelta(let chunk):
+                thinkingAccumulated += chunk
+                guard updatesThinking else { break }
+                let snapshot = thinkingAccumulated
+                await MainActor.run {
+                    store.updateMessageThinking(messageID, in: sessionID, thinkingContent: snapshot)
+                }
+            case .thinkingDone(let duration):
+                guard updatesThinking else { break }
+                let snapshot = thinkingAccumulated
+                await MainActor.run {
+                    store.updateMessageThinking(
+                        messageID, in: sessionID,
+                        thinkingContent: snapshot,
+                        thinkingDurationSeconds: duration,
+                        persist: true
+                    )
+                }
+            case .toolCall, .done:
+                break
+            }
+        }
+        return (accumulated, thinkingAccumulated)
+    }
+
+    /// Outcome of `runToolLoop`. The loop always finishes the generation itself
+    /// (it owns the final re-invocation stream and writes the final text), so it
+    /// returns the resolved text and a `finished` flag.
+    struct ToolLoopOutcome {
+        let finalText: String
+        let finished: Bool
+    }
+
+    /// Executes one tool call, then re-invokes inference with the tool result, and
+    /// loops if the model emits another tool call — bounded by `ToolRegistry.maxIterations`.
+    /// Each iteration's tool result text is appended to the system prompt (web_search
+    /// additionally carries its structured `searchContext` for the existing render path).
+    /// Always returns `finished: true` — the caller should treat the turn as complete.
+    private func runToolLoop(
+        toolName initialToolName: String,
+        argsJSON initialArgsJSON: String,
+        startingMessageID: UUID,
+        sessionID: UUID,
+        model: InstalledModel,
+        service: InferenceService,
+        conversation: [ChatMessage],
+        inferencePrompt: String,
+        trimmedPrompt: String,
+        effectiveImageData: Data?,
+        baseSystemPrompt: String,
+        toolContext: ToolContext,
+        availableTools: [Tool],
+        taskID: UUID,
+        clock: ContinuousClock,
+        lastFlush initialLastFlush: ContinuousClock.Instant
+    ) async -> ToolLoopOutcome {
+        var pendingToolName = initialToolName
+        var pendingArgsJSON = initialArgsJSON
+        var accumulatedToolResults: [ToolResult] = []
+        var visibleToolActivities: [ChatToolActivity] = []
+        var combinedSearchContext: SearchContext?
+        var combinedCitations: [SearchCitation] = []
+
+        // Agent trace: the model's conversation continues through the tool call so the
+        // result appears as part of its own reasoning, NOT as a detached system-prompt
+        // blob the model ignores. The original user question stays as the LAST history
+        // turn; each tool result becomes the `prompt` (the latest user turn) on
+        // re-invocation. This keeps strict user/assistant alternation that chat templates
+        // (Qwen/Llama/Gemma/LFM) require — back-to-back user turns confuse them and the
+        // model emits only <think> and no final answer.
+        var traceConversation = conversation
+        traceConversation.append(ChatMessage(role: .user, text: inferencePrompt))
+
+        var iteration = 0
+        while iteration < ToolRegistry.maxIterations {
+            iteration += 1
+            let toolName = pendingToolName
+            let argsJSON = pendingArgsJSON
+            chatLogger.log("Tool loop iter \(iteration): dispatching \(toolName, privacy: .public)")
+
+            let runningActivity = Self.toolActivity(
+                name: toolName,
+                output: Self.toolRunningOutput(for: toolName, argsJSON: argsJSON),
+                model: model,
+                status: .running
+            )
+            visibleToolActivities.append(runningActivity)
+            await MainActor.run {
+                store.updateMessageToolActivities(
+                    startingMessageID,
+                    in: sessionID,
+                    toolActivities: visibleToolActivities
+                )
+            }
+
+            // Dispatch via the registry. Unknown names yield nil and are surfaced as an error.
+            let toolStartTime = Date()
+            let result = await ToolRegistry.dispatch(name: toolName, argsJSON: argsJSON, context: toolContext)
+            let toolDuration = Date().timeIntervalSince(toolStartTime)
+
+            guard let result = result else {
+                chatLogger.log("Unknown tool: \(toolName, privacy: .public)")
+                let unknownMsg = ChatMessage(role: .system, text: "⚠️ Unknown tool: \(toolName)")
+                await MainActor.run { store.appendMessage(unknownMsg, to: sessionID) }
+                break
+            }
+
+            accumulatedToolResults.append(result)
+            if let sc = result.searchContext { combinedSearchContext = sc }
+            combinedCitations.append(contentsOf: result.citations)
+            visibleToolActivities[visibleToolActivities.count - 1] = Self.toolActivity(from: result, model: model, duration: toolDuration)
+            await MainActor.run {
+                store.updateMessageToolActivities(
+                    startingMessageID,
+                    in: sessionID,
+                    toolActivities: visibleToolActivities,
+                    persist: true
+                )
+                store.updateMessageCitations(
+                    startingMessageID,
+                    in: sessionID,
+                    citations: combinedCitations,
+                    persist: true
+                )
+            }
+
+            if let directAnswer = Self.directToolAnswer(for: result, model: model) {
+                await MainActor.run {
+                    store.updateMessageText(startingMessageID, in: sessionID, text: directAnswer, persist: true)
+                }
+                return ToolLoopOutcome(finalText: directAnswer, finished: true)
+            }
+
+            // Build the continuation prompt FROM the tool result. This becomes the
+            // latest user turn, giving clean alternation: ...history, user(question),
+            // user(tool result + "answer now"). Bounded to respect small context windows.
+            let isFinalIteration = iteration >= ToolRegistry.maxIterations
+            let boundedOutput = Self.boundToolOutputForContext(result.output, model: model)
+            let continuationPrompt = isFinalIteration
+                ? "[Tool \(result.toolName) returned]: \(boundedOutput)\n\nYou have reached the tool-call limit. Using the result above, answer the user's original question now. Do not call any more tools."
+                : "[Tool \(result.toolName) returned]: \(boundedOutput)\n\nUsing the result above, answer the user's original question. Only call another tool if the result is truly insufficient."
+
+            chatLogger.log("Tool \(toolName, privacy: .public) completed — re-invoking inference with trace (iter \(iteration))")
+
+            // Re-invoke inference. The tool result IS the prompt (latest user turn); the
+            // question lives at the end of `traceConversation` as the prior user turn.
+            // web_search also passes its structured searchContext for the existing render path.
+            let newStream: AsyncStream<StreamEvent>
+            do {
+                let genResult = try await service.generateStream(
+                    prompt: continuationPrompt,
+                    model: model,
+                    conversation: traceConversation,
+                    searchContext: combinedSearchContext,
+                    systemPrompt: baseSystemPrompt,
+                    imageData: effectiveImageData,
+                    settings: store.settings
+                )
+                newStream = genResult.stream
+            } catch {
+                chatLogger.log("Re-invocation failed: \(error.localizedDescription, privacy: .public) — ending tool loop")
+                let errMsg = ChatMessage(role: .system, text: "⚠️ \(error.localizedDescription)")
+                await MainActor.run { store.appendMessage(errMsg, to: sessionID) }
+                break
+            }
+
+            // Consume the new stream. A `.toolCall` here means the model wants another tool.
+            var accumulated = ""
+            var thinkingAccumulated = ""
+            var sawToolCall = false
+            var nextToolName = ""
+            var nextArgsJSON = ""
+            var lastFlush = initialLastFlush
+
+            let genStartTime = Date()
+            for await newEvent in newStream {
+                if Task.isCancelled { break }
+                switch newEvent {
+                case .textDelta(let chunk):
+                    accumulated += chunk
+                    let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
+                        || chunk.contains(where: \.isNewline)
+                        || accumulated.count <= 48
+                    if shouldFlush {
+                        lastFlush = clock.now
+                        updateStreamingMessage(accumulated, messageID: startingMessageID, sessionID: sessionID)
+                    }
+                case .thinkingDelta(let chunk):
+                    thinkingAccumulated += chunk
+                    let snapshot = thinkingAccumulated
+                    await MainActor.run {
+                        store.updateMessageThinking(startingMessageID, in: sessionID, thinkingContent: snapshot)
+                    }
+                case .thinkingDone(let dur):
+                    let snapshot = thinkingAccumulated
+                    await MainActor.run {
+                        store.updateMessageThinking(startingMessageID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
+                    }
+                case .toolCall(let name, let args):
+                    // Model wants another tool; keep updating the same assistant bubble.
+                    sawToolCall = true
+                    nextToolName = name
+                    nextArgsJSON = args
+                case .done:
+                    break
+                }
+            }
+
+            if !sawToolCall {
+                // No further tool call — finalize the answer.
+                let genDuration = Date().timeIntervalSince(genStartTime)
+                let thinkingSeen = !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let finalText = searchAwareAssistantText(
+                    from: accumulated,
+                    prompt: trimmedPrompt,
+                    thinkingSeen: thinkingSeen,
+                    searchContext: combinedSearchContext
+                )
+                let visibleText = AssistantResponseFallback.isEmptyOutputMessage(finalText)
+                    ? Self.fallbackToolAnswer(from: accumulatedToolResults, model: model)
+                    : finalText
+                updateStreamingMessage(visibleText, messageID: startingMessageID, sessionID: sessionID, persist: true)
+                await MainActor.run {
+                    store.updateMessageGenerationDuration(startingMessageID, in: sessionID, duration: genDuration, persist: true)
+                }
+                return ToolLoopOutcome(finalText: visibleText, finished: true)
+            }
+
+            // Prepare for the next iteration. Fold the just-used tool result + the
+            // assistant's tool-call into the trace so the next re-invocation keeps
+            // clean alternation: user(tool result 1), assistant(<tool_call 2>),
+            // then the next tool result becomes the new prompt.
+            traceConversation.append(ChatMessage(role: .user, text: continuationPrompt))
+            traceConversation.append(ChatMessage(role: .assistant, text: accumulated))
+            pendingToolName = nextToolName
+            pendingArgsJSON = nextArgsJSON
+            if iteration >= ToolRegistry.maxIterations {
+                chatLogger.log("Tool loop hit maxIterations (\(ToolRegistry.maxIterations)) — stopping")
+                let capMsg = ChatMessage(role: .system, text: "⚠️ Reached the tool-call limit (\(ToolRegistry.maxIterations)). Answering with what I have.")
+                await MainActor.run { store.appendMessage(capMsg, to: sessionID) }
+                return ToolLoopOutcome(finalText: accumulated, finished: true)
+            }
+        }
+
+        return ToolLoopOutcome(finalText: "", finished: true)
+    }
+
+    /// User-facing status line shown when a tool starts running.
+    /// Minimal prompt used to re-invoke inference after a tool result has been appended
+    /// to the conversation trace. The model continues from the tool result in the trace;
+    /// this just hands it the turn. Short on purpose to respect small context windows.
+    private static let continuationPrompt = "Continue using the tool result above, then answer the user."
+
+    /// Bounds a tool's output text so it can't blow the context budget on small devices.
+    /// Compact devices (A14, 2K context) get a much smaller cap than Pro/Ultra tiers.
+    private static func boundToolOutputForContext(_ output: String, model: InstalledModel) -> String {
+        let tier = DeviceTier.current()
+        let cap: Int
+        switch tier {
+        case .compact:  cap = 400
+        case .standard: cap = 800
+        case .pro:      cap = 1_500
+        case .ultra:    cap = 2_500
+        }
+        if output.count <= cap { return output }
+        let end = output.index(output.startIndex, offsetBy: cap, limitedBy: output.endIndex) ?? output.endIndex
+        return String(output[output.startIndex..<end]) + "\n…[truncated to fit device context]"
+    }
+
+    /// Deterministic tools already have the final answer. Showing the tool result
+    /// directly prevents a second model pass from dropping or corrupting it.
+    private static func directToolAnswer(for result: ToolResult, model: InstalledModel) -> String? {
+        switch result.toolName {
+        case "calculate", "get_current_time", "get_device_info", "get_battery_level":
+            return boundToolOutputForContext(result.output, model: model)
+        default:
+            return nil
+        }
+    }
+
+    /// If a follow-up model pass produces only thinking or an empty answer, keep the
+    /// user-visible turn useful by surfacing the actual tool result.
+    private static func fallbackToolAnswer(from results: [ToolResult], model: InstalledModel) -> String {
+        let blocks = results.map { result in
+            let bounded = boundToolOutputForContext(result.output, model: model)
+            return "[\(result.toolName)]\n\(bounded)"
+        }
+        return blocks.joined(separator: "\n\n")
+    }
+
+    private static func toolActivity(from result: ToolResult, model: InstalledModel, duration: Double? = nil) -> ChatToolActivity {
+        toolActivity(
+            name: result.toolName,
+            output: result.output,
+            model: model,
+            status: result.output.localizedCaseInsensitiveContains("Error:") ? .failed : .completed,
+            duration: duration
+        )
+    }
+
+    private static func toolActivity(
+        name: String,
+        output: String,
+        model: InstalledModel,
+        status: ChatToolActivity.Status,
+        duration: Double? = nil
+    ) -> ChatToolActivity {
+        ChatToolActivity(
+            name: name,
+            displayName: toolDisplayName(for: name, status: status),
+            output: boundToolOutputForContext(output, model: model),
+            status: status,
+            duration: duration
+        )
+    }
+
+    private static func toolDisplayName(for name: String, status: ChatToolActivity.Status = .completed) -> String {
+        if status == .running {
+            switch name.lowercased() {
+            case "web_search": return "Searching web"
+            case "calculate": return "Calculating"
+            case "get_current_time": return "Reading time"
+            case "get_device_info": return "Reading device info"
+            case "get_battery_level": return "Reading battery"
+            case "search_chats": return "Searching chats"
+            case "read_document": return "Reading document"
+            default: return name.replacingOccurrences(of: "_", with: " ").capitalized
+            }
+        }
+
+        switch name.lowercased() {
+        case "web_search": return "Searched web"
+        case "calculate": return "Calculated"
+        case "get_current_time": return "Read time"
+        case "get_device_info": return "Read device info"
+        case "get_battery_level": return "Read battery"
+        case "search_chats": return "Searched chats"
+        case "read_document": return "Read document"
+        default: return name.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    private static func toolRunningOutput(for name: String, argsJSON: String) -> String {
+        switch name.lowercased() {
+        case "web_search":
+            if let query = WebSearchTool.extractQuery(argsJSON) {
+                return query
+            }
+            return "Searching the web"
+        case "calculate":
+            return CalculateTool.extractExpression(argsJSON) ?? "Evaluating expression"
+        case "get_current_time":
+            return "Reading current date, time, and timezone"
+        case "get_device_info":
+            return "Reading local hardware and runtime facts"
+        case "get_battery_level":
+            return "Reading battery state"
+        case "search_chats":
+            return "Searching local chat history"
+        case "read_document":
+            return "Reading attached document"
+        default:
+            return ""
+        }
+    }
+
+    private static func toolStatusMessage(for name: String, argsJSON: String) -> String {
+        switch name.lowercased() {
+        case "web_search":
+            if let q = WebSearchTool.extractQuery(argsJSON) { return "🔍 Searching: \(q)…" }
+            return "🔍 Searching the web…"
+        case "calculate":
+            if let e = CalculateTool.extractExpression(argsJSON) { return "🧮 Calculating: \(e)" }
+            return "🧮 Calculating…"
+        case "search_chats":
+            if let q = SearchHistoryTool.extractQuery(argsJSON) { return "📚 Searching chats: \(q)…" }
+            return "📚 Searching your chats…"
+        case "read_document":
+            return "📄 Reading document…"
+        case "get_current_time":
+            return "🕐 Getting the time…"
+        case "get_device_info":
+            return "📱 Reading device info…"
+        case "get_battery_level":
+            return "🔋 Checking battery…"
+        default:
+            return "🛠 Running \(name)…"
+        }
+    }
+
     private func cleanedDisplayedAssistantText(_ text: String) -> String {
         var cleaned = AssistantResponseSanitizer.clean(text)
         cleaned = cleaned.replacingOccurrences(of: AssistantResponseFallback.emptyOutput, with: "")
@@ -1433,8 +1832,11 @@ Rules:
                 let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
                 // OpenELM lane: keep fully local/minimal prompt path for stability.
                 let searchArmed = effectiveImageData == nil && !isOpenELM && (liveSearchEnabled || store.settings.useSearchByDefault)
+                let promptNeedsLocalTool = UpfrontToolDetector.canHandleLocally(prompt: trimmedPrompt)
+                let promptNeedsSearch = !promptNeedsLocalTool
+                    && SearchResultFallbackComposer.shouldRunUpfrontSearch(trimmedPrompt)
 
-                if searchArmed && !searchConfigured {
+                if searchArmed && !searchConfigured && (liveSearchEnabled || promptNeedsSearch) {
                     let warning = ChatMessage(
                         role: .system,
                         text: "⚠️ Web Search is active, but no search API key is configured. Please go to **Settings** to add your Tavily, Brave, or Serper API key to retrieve live results."
@@ -1449,7 +1851,7 @@ Rules:
                 let shouldUpfrontSearch = searchConfigured
                     && searchArmed
                     && !modelCanUseToolLoop
-                    && SearchResultFallbackComposer.shouldRunUpfrontSearch(trimmedPrompt)
+                    && promptNeedsSearch
                 if shouldUpfrontSearch,
                    let gateway = SearchGatewayFactory.make(settings: store.settings) {
                     do {
@@ -1466,20 +1868,55 @@ Rules:
                     searchContext = nil
                 }
 
-                // Inject tool definition ONLY when search is configured but
-                // no upfront search results are available. When upfront search
-                // already returned snippets, tool definitions waste context window
-                // and overwhelm small models — skip them to maximize generation room.
+                // Inject tool definitions when the model supports the tool loop and no
+                // upfront search results are available. The registry renders the `# Tools`
+                // section from whichever tools are available this turn (gated by config +
+                // attachments + history), generalizing the old web_search-only definition.
                 var systemPromptForInference = store.settings.systemPrompt
-                if searchConfigured && searchArmed && modelCanUseToolLoop && searchContext == nil {
-                    systemPromptForInference += Self.toolCallDefinition
-                    chatLogger.log("Tool definition injected (search configured, no upfront results)")
-                } else if searchConfigured && searchArmed && !modelCanUseToolLoop {
-                    chatLogger.log("Search armed, but tool definition skipped (model not tool-verified)")
+                let toolContext = ToolContext(
+                    settings: store.settings,
+                    conversation: conversation,
+                    chatSessions: store.chatSessions,
+                    attachedDocuments: attachments,
+                    installedModel: model
+                )
+                let availableTools = ToolRegistry.availableTools(context: toolContext)
+                if modelCanUseToolLoop && searchContext == nil && !availableTools.isEmpty {
+                    let section = ToolRegistry.renderPromptSection(for: availableTools)
+                    systemPromptForInference += section
+                    chatLogger.log("Tool definitions injected: \(availableTools.map { $0.name }.joined(separator: ", "), privacy: .public)")
                 } else if searchContext != nil {
                     chatLogger.log("Upfront search provided results — tool definition skipped to save context window")
+                } else if !modelCanUseToolLoop {
+                    // Non-tool models can't emit <tool_call> blocks, so the agentic loop
+                    // won't fire. Instead, detect local-tool intent UPFRONT (time, device,
+                    // battery, calculate) and inject the result into the system prompt.
+                    // The model just reads it and answers. Mirrors the upfront web_search path.
+                    let upfront = await UpfrontToolDetector.detectAndRun(
+                        prompt: trimmedPrompt,
+                        context: toolContext
+                    )
+                    if !upfront.isEmpty {
+                        if let directAnswer = UpfrontToolDetector.directAnswer(for: upfront) {
+                            let message = ChatMessage(
+                                role: .assistant,
+                                text: directAnswer,
+                                toolActivities: upfront.map { Self.toolActivity(from: $0, model: model) }
+                            )
+                            await MainActor.run {
+                                store.appendMessage(message, to: sessionID)
+                                finishGenerationIfCurrent(taskID)
+                            }
+                            return
+                        }
+                        let injection = UpfrontToolDetector.renderInjection(for: upfront)
+                        systemPromptForInference += injection
+                        chatLogger.log("Upfront local tools injected for non-tool model: \(upfront.map { $0.toolName }.joined(separator: ", "), privacy: .public)")
+                    } else {
+                        chatLogger.log("Non-tool model, no local-tool intent detected")
+                    }
                 } else {
-                    chatLogger.log("Search not armed or provider unavailable — tool definition NOT injected")
+                    chatLogger.log("No tools available this turn — tool definition NOT injected")
                 }
 
                 // Create a placeholder assistant message for streaming
@@ -1506,6 +1943,7 @@ Rules:
                 let clock = ContinuousClock()
                 var lastFlush = clock.now
 
+                let streamStartTime = Date()
                 for await event in stream {
                     if Task.isCancelled {
                         let interruptionNotice = await currentGenerationInterruptionNotice()
@@ -1553,117 +1991,38 @@ Rules:
                             chatLogger.log("Ignoring tool call: model is not tool-verified")
                             break
                         }
-                        guard name.lowercased() == "web_search" else {
-                            chatLogger.log("Tool call name '\(name, privacy: .public)' is not web_search — ignoring")
-                            break
-                        }
-                        // Parse query from multiple JSON formats:
-                        // 1) {"name":"web_search","arguments":{"query":"..."}}
-                        // 2) {"name":"web_search","query":"..."}
-                        // 3) {"name":"web_search","arguments":"{\"query\":\"...\"}"} (string args)
-                        guard let data = argsJSON.data(using: .utf8),
-                              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                            chatLogger.log("Failed to parse tool call JSON: \(argsJSON.prefix(200), privacy: .private)")
-                            break
-                        }
-                        // Try nested dict arguments, then flat query, then string-encoded arguments
-                        var query: String?
-                        if let args = raw["arguments"] as? [String: Any] {
-                            query = args["query"] as? String
-                        } else if let argsStr = raw["arguments"] as? String,
-                                  let argsData = argsStr.data(using: .utf8),
-                                  let argsDict = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] {
-                            query = argsDict["query"] as? String
-                        }
-                        if query == nil { query = raw["query"] as? String }
-                        guard let query, !query.isEmpty else {
-                            chatLogger.log("Could not extract query from tool call JSON: \(argsJSON.prefix(200), privacy: .private)")
-                            break
-                        }
-                        chatLogger.log("Tool call parsed — query: \(query, privacy: .private)")
-
-                        // Remove the first assistant placeholder entirely so the
-                        // "No visible answer" recovery card never appears in the chat.
-                        await MainActor.run { store.removeMessage(messageID, from: sessionID) }
-
-                        let refinedQuery = SearchQueryRefiner.refine(query, conversation: conversation)
-                        let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(refinedQuery)…")
-                        await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
-
-                        var agenticSearchContext: SearchContext? = nil
-                        if let gateway = SearchGatewayFactory.make(settings: store.settings) {
-                            chatLogger.log("Calling search gateway for query: \(refinedQuery, privacy: .private)")
-                            do {
-                                agenticSearchContext = try await gateway.search(query: refinedQuery)
-                                chatLogger.log("Search returned \(agenticSearchContext?.snippets.count ?? 0) snippets")
-                            } catch {
-                                chatLogger.log("Search gateway error: \(error.localizedDescription, privacy: .public)")
-                                let errorMsg = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
-                                await MainActor.run { store.appendMessage(errorMsg, to: sessionID) }
-                            }
-                        } else {
-                            chatLogger.log("No search gateway available — factory returned nil")
-                        }
-                        if agenticSearchContext == nil {
-                            let unavailableMsg = ChatMessage(role: .system, text: "⚠️ Search unavailable — answering from local knowledge.")
-                            await MainActor.run { store.appendMessage(unavailableMsg, to: sessionID) }
-                        }
-
-                        let newPendingCitations = agenticSearchContext?.citations ?? []
-                        chatLogger.log("Re-invoking inference with search context (nil=\(agenticSearchContext == nil))")
-                        let (newMessageID, newStream) = try await service.generateStream(
-                            prompt: inferencePrompt,
+                        // Multi-tool, multi-step dispatch via the registry. This loop
+                        // runs the tool, shows a status message, then re-invokes inference
+                        // with the tool result appended to the system prompt. Bounded by
+                        // ToolRegistry.maxIterations to cap latency. web_search keeps its
+                        // structured searchContext render path; other tools append plain text.
+                        let loopOutcome = await runToolLoop(
+                            toolName: name,
+                            argsJSON: argsJSON,
+                            startingMessageID: messageID,
+                            sessionID: sessionID,
                             model: model,
+                            service: service,
                             conversation: conversation,
-                            searchContext: agenticSearchContext,
-                            systemPrompt: store.settings.systemPrompt,
-                            imageData: effectiveImageData,
-                            settings: store.settings
+                            inferencePrompt: inferencePrompt,
+                            trimmedPrompt: trimmedPrompt,
+                            effectiveImageData: effectiveImageData,
+                            baseSystemPrompt: store.settings.systemPrompt,
+                            toolContext: toolContext,
+                            availableTools: availableTools,
+                            taskID: taskID,
+                            clock: clock,
+                            lastFlush: lastFlush
                         )
-                        let newPlaceholder = ChatMessage(id: newMessageID, role: .assistant, text: "", citations: newPendingCitations)
-                        await MainActor.run { store.appendMessage(newPlaceholder, to: sessionID) }
-
-                        accumulated = ""
-                        thinkingAccumulated = ""
-                        for await newEvent in newStream {
-                            if Task.isCancelled { break }
-                            switch newEvent {
-                            case .textDelta(let chunk):
-                                accumulated += chunk
-                                let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                                    || chunk.contains(where: \.isNewline)
-                                    || accumulated.count <= 48
-                                if shouldFlush {
-                                    lastFlush = clock.now
-                                    updateStreamingMessage(accumulated, messageID: newMessageID, sessionID: sessionID)
-                                }
-                            case .thinkingDelta(let chunk):
-                                thinkingAccumulated += chunk
-                                let snapshot = thinkingAccumulated
-                                await MainActor.run {
-                                    store.updateMessageThinking(newMessageID, in: sessionID, thinkingContent: snapshot)
-                                }
-                            case .thinkingDone(let dur):
-                                let snapshot = thinkingAccumulated
-                                await MainActor.run {
-                                    store.updateMessageThinking(newMessageID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
-                                }
-                            case .toolCall, .done:
-                                break
-                            }
+                        accumulated = loopOutcome.finalText
+                        if loopOutcome.finished {
+                            await MainActor.run { finishGenerationIfCurrent(taskID) }
+                            return
                         }
-                        let finalText2 = searchAwareAssistantText(
-                            from: accumulated,
-                            prompt: trimmedPrompt,
-                            thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                            searchContext: agenticSearchContext
-                        )
-                        updateStreamingMessage(
-                            finalText2,
-                            messageID: newMessageID, sessionID: sessionID, persist: true
-                        )
-                        await MainActor.run { finishGenerationIfCurrent(taskID) }
-                        return
+                        // Loop indicated "continue consuming" — but the for-await over the
+                        // original stream has already terminated (tool call ends the stream),
+                        // so we fall through to the post-stream path. The multi-step state is
+                        // carried via accumulated/toolResults appended below in runToolLoop.
 
                     case .done:
                         break
@@ -1682,11 +2041,18 @@ Rules:
                    let query = Self.extractToolCallQuery(from: accumulated),
                    SearchGatewayFactory.make(settings: store.settings) != nil {
                     chatLogger.log("Post-stream fallback FIRED — query: \(query, privacy: .private)")
-                    await MainActor.run { store.removeMessage(messageID, from: sessionID) }
 
                     let refinedQuery = SearchQueryRefiner.refine(query, conversation: conversation)
-                    let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(refinedQuery)…")
-                    await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
+                    let runningActivity = Self.toolActivity(
+                        name: "web_search",
+                        output: refinedQuery,
+                        model: model,
+                        status: .running
+                    )
+                    await MainActor.run {
+                        store.updateMessageText(messageID, in: sessionID, text: "", persist: false)
+                        store.updateMessageToolActivities(messageID, in: sessionID, toolActivities: [runningActivity])
+                    }
 
                     var agenticSearchContext: SearchContext? = nil
                     if let gateway = SearchGatewayFactory.make(settings: store.settings) {
@@ -1694,6 +2060,26 @@ Rules:
                         do {
                             agenticSearchContext = try await gateway.search(query: refinedQuery)
                             chatLogger.log("Post-stream: search returned \(agenticSearchContext?.snippets.count ?? 0) snippets")
+                            let completed = ToolResult(
+                                toolName: "web_search",
+                                output: agenticSearchContext?.answer ?? "Found \(agenticSearchContext?.citations.count ?? 0) sources.",
+                                citations: agenticSearchContext?.citations ?? [],
+                                searchContext: agenticSearchContext
+                            )
+                            await MainActor.run {
+                                store.updateMessageToolActivities(
+                                    messageID,
+                                    in: sessionID,
+                                    toolActivities: [Self.toolActivity(from: completed, model: model)],
+                                    persist: true
+                                )
+                                store.updateMessageCitations(
+                                    messageID,
+                                    in: sessionID,
+                                    citations: agenticSearchContext?.citations ?? [],
+                                    persist: true
+                                )
+                            }
                         } catch {
                             chatLogger.log("Post-stream: search error: \(error.localizedDescription, privacy: .public)")
                             let errorMsg = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
@@ -1708,7 +2094,10 @@ Rules:
                     }
 
                     let newPendingCitations = agenticSearchContext?.citations ?? []
-                    let (newMessageID, newStream) = try await service.generateStream(
+                    await MainActor.run {
+                        store.updateMessageCitations(messageID, in: sessionID, citations: newPendingCitations, persist: true)
+                    }
+                    let (_, newStream) = try await service.generateStream(
                         prompt: inferencePrompt,
                         model: model,
                         conversation: conversation,
@@ -1717,38 +2106,14 @@ Rules:
                         imageData: effectiveImageData,
                         settings: store.settings
                     )
-                    let newPlaceholder = ChatMessage(id: newMessageID, role: .assistant, text: "", citations: newPendingCitations)
-                    await MainActor.run { store.appendMessage(newPlaceholder, to: sessionID) }
 
-                    accumulated = ""
-                    thinkingAccumulated = ""
-                    for await newEvent in newStream {
-                        if Task.isCancelled { break }
-                        switch newEvent {
-                        case .textDelta(let chunk):
-                            accumulated += chunk
-                            let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                                || chunk.contains(where: \.isNewline)
-                                || accumulated.count <= 48
-                            if shouldFlush {
-                                lastFlush = clock.now
-                                updateStreamingMessage(accumulated, messageID: newMessageID, sessionID: sessionID)
-                            }
-                        case .thinkingDelta(let chunk):
-                            thinkingAccumulated += chunk
-                            let snapshot = thinkingAccumulated
-                            await MainActor.run {
-                                store.updateMessageThinking(newMessageID, in: sessionID, thinkingContent: snapshot)
-                            }
-                        case .thinkingDone(let dur):
-                            let snapshot = thinkingAccumulated
-                            await MainActor.run {
-                                store.updateMessageThinking(newMessageID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
-                            }
-                        case .toolCall, .done:
-                            break
-                        }
-                    }
+                    (accumulated, thinkingAccumulated) = await consumeFollowupStream(
+                        newStream,
+                        messageID: messageID,
+                        sessionID: sessionID,
+                        clock: clock,
+                        lastFlush: lastFlush
+                    )
                     let finalText2 = searchAwareAssistantText(
                         from: accumulated,
                         prompt: trimmedPrompt,
@@ -1757,7 +2122,7 @@ Rules:
                     )
                     updateStreamingMessage(
                         finalText2,
-                        messageID: newMessageID, sessionID: sessionID, persist: true
+                        messageID: messageID, sessionID: sessionID, persist: true
                     )
                     await MainActor.run { finishGenerationIfCurrent(taskID) }
                     return
@@ -1797,29 +2162,16 @@ Rules:
                     let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: [])
                     await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
 
-                    accumulated = ""
-                    thinkingAccumulated = ""
-                    for await retryEvent in retryStream {
-                        if Task.isCancelled { break }
-                        switch retryEvent {
-                        case .textDelta(let chunk):
-                            accumulated += chunk
-                            if model.catalogItem.family == .openELM {
-                                break
-                            }
-                            let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                                || chunk.contains(where: \.isNewline)
-                                || accumulated.count <= 48
-                            if shouldFlush {
-                                lastFlush = clock.now
-                                updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
-                            }
-                        case .thinkingDelta(let chunk):
-                            thinkingAccumulated += chunk
-                        case .thinkingDone, .toolCall, .done:
-                            break
-                        }
-                    }
+                    // OpenELM lane: no live UI flushes, no thinking-store updates.
+                    (accumulated, thinkingAccumulated) = await consumeFollowupStream(
+                        retryStream,
+                        messageID: retryMsgID,
+                        sessionID: sessionID,
+                        clock: clock,
+                        lastFlush: lastFlush,
+                        streamsToUI: model.catalogItem.family != .openELM,
+                        updatesThinking: false
+                    )
                     let retryFinalText = resolvedAssistantText(
                         from: accumulated,
                         prompt: trimmedPrompt,
@@ -1863,35 +2215,13 @@ Rules:
                     let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: retryCitations)
                     await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
 
-                    accumulated = ""
-                    thinkingAccumulated = ""
-                    for await retryEvent in retryStream {
-                        if Task.isCancelled { break }
-                        switch retryEvent {
-                        case .textDelta(let chunk):
-                            accumulated += chunk
-                            let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                                || chunk.contains(where: \.isNewline)
-                                || accumulated.count <= 48
-                            if shouldFlush {
-                                lastFlush = clock.now
-                                updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
-                            }
-                        case .thinkingDelta(let chunk):
-                            thinkingAccumulated += chunk
-                            let snapshot = thinkingAccumulated
-                            await MainActor.run {
-                                store.updateMessageThinking(retryMsgID, in: sessionID, thinkingContent: snapshot)
-                            }
-                        case .thinkingDone(let dur):
-                            let snapshot = thinkingAccumulated
-                            await MainActor.run {
-                                store.updateMessageThinking(retryMsgID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
-                            }
-                        case .toolCall, .done:
-                            break
-                        }
-                    }
+                    (accumulated, thinkingAccumulated) = await consumeFollowupStream(
+                        retryStream,
+                        messageID: retryMsgID,
+                        sessionID: sessionID,
+                        clock: clock,
+                        lastFlush: lastFlush
+                    )
                     let retryFinalText = searchAwareAssistantText(
                         from: accumulated,
                         prompt: trimmedPrompt,
@@ -1936,35 +2266,13 @@ Rules:
                         let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: retryCitations)
                         await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
 
-                        accumulated = ""
-                        thinkingAccumulated = ""
-                        for await retryEvent in retryStream {
-                            if Task.isCancelled { break }
-                            switch retryEvent {
-                            case .textDelta(let chunk):
-                                accumulated += chunk
-                                let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                                    || chunk.contains(where: \.isNewline)
-                                    || accumulated.count <= 48
-                                if shouldFlush {
-                                    lastFlush = clock.now
-                                    updateStreamingMessage(accumulated, messageID: retryMsgID, sessionID: sessionID)
-                                }
-                            case .thinkingDelta(let chunk):
-                                thinkingAccumulated += chunk
-                                let snapshot = thinkingAccumulated
-                                await MainActor.run {
-                                    store.updateMessageThinking(retryMsgID, in: sessionID, thinkingContent: snapshot)
-                                }
-                            case .thinkingDone(let dur):
-                                let snapshot = thinkingAccumulated
-                                await MainActor.run {
-                                    store.updateMessageThinking(retryMsgID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
-                                }
-                            case .toolCall, .done:
-                                break
-                            }
-                        }
+                        (accumulated, thinkingAccumulated) = await consumeFollowupStream(
+                            retryStream,
+                            messageID: retryMsgID,
+                            sessionID: sessionID,
+                            clock: clock,
+                            lastFlush: lastFlush
+                        )
                         let retryFinalText = searchAwareAssistantText(
                             from: accumulated,
                             prompt: trimmedPrompt,
@@ -2008,35 +2316,13 @@ Rules:
                             let fbPlaceholder = ChatMessage(id: fbMessageID, role: .assistant, text: "", citations: fallbackCitations)
                             await MainActor.run { store.appendMessage(fbPlaceholder, to: sessionID) }
 
-                            accumulated = ""
-                            thinkingAccumulated = ""
-                            for await fbEvent in fbStream {
-                                if Task.isCancelled { break }
-                                switch fbEvent {
-                                case .textDelta(let chunk):
-                                    accumulated += chunk
-                                    let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                                        || chunk.contains(where: \.isNewline)
-                                        || accumulated.count <= 48
-                                    if shouldFlush {
-                                        lastFlush = clock.now
-                                        updateStreamingMessage(accumulated, messageID: fbMessageID, sessionID: sessionID)
-                                    }
-                                case .thinkingDelta(let chunk):
-                                    thinkingAccumulated += chunk
-                                    let snapshot = thinkingAccumulated
-                                    await MainActor.run {
-                                        store.updateMessageThinking(fbMessageID, in: sessionID, thinkingContent: snapshot)
-                                    }
-                                case .thinkingDone(let dur):
-                                    let snapshot = thinkingAccumulated
-                                    await MainActor.run {
-                                        store.updateMessageThinking(fbMessageID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
-                                    }
-                                case .toolCall, .done:
-                                    break
-                                }
-                            }
+                            (accumulated, thinkingAccumulated) = await consumeFollowupStream(
+                                fbStream,
+                                messageID: fbMessageID,
+                                sessionID: sessionID,
+                                clock: clock,
+                                lastFlush: lastFlush
+                            )
                             let fbFinalText = searchAwareAssistantText(
                                 from: accumulated,
                                 prompt: trimmedPrompt,
@@ -2056,6 +2342,13 @@ Rules:
                     thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                     searchContext: searchContext
                 )
+
+                if !stoppedByUser {
+                    let streamDuration = Date().timeIntervalSince(streamStartTime)
+                    await MainActor.run {
+                        store.updateMessageGenerationDuration(messageID, in: sessionID, duration: streamDuration, persist: true)
+                    }
+                }
 
                 updateStreamingMessage(persistedFinalText, messageID: messageID, sessionID: sessionID, persist: true)
 

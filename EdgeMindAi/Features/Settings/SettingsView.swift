@@ -299,8 +299,7 @@ struct SettingsView: View {
                     guard !Task.isCancelled else { return }
                     await MainActor.run {
                         store.settings.huggingFaceToken = newValue
-                        HFTokenManager.token = newValue
-                        store.persistSettings()
+                        store.persistSettings() // writes the Keychain copy too
                     }
                 }
             }

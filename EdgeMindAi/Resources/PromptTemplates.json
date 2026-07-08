@@ -1,0 +1,100 @@
+[
+  {
+    "slug": "summarize",
+    "title": "Summarize",
+    "body": "Summarize the following in clear, concise bullet points. Capture the key ideas and any important numbers or names, and skip filler.\n\n",
+    "category": "Writing",
+    "icon": "text.alignleft"
+  },
+  {
+    "slug": "fix-grammar",
+    "title": "Fix grammar",
+    "body": "Fix the grammar, spelling, and punctuation of the following text. Keep the original meaning and tone. Output only the corrected text.\n\n",
+    "category": "Writing",
+    "icon": "checkmark.seal"
+  },
+  {
+    "slug": "make-concise",
+    "title": "Make concise",
+    "body": "Rewrite the following to be shorter and more direct. Remove repetition and filler. Keep all essential meaning.\n\n",
+    "category": "Writing",
+    "icon": "scissors"
+  },
+  {
+    "slug": "rewrite-tone",
+    "title": "Rewrite tone",
+    "body": "Rewrite the following in a warm, professional tone suitable for a colleague. Keep it concise.\n\n",
+    "category": "Writing",
+    "icon": "waveform"
+  },
+  {
+    "slug": "translate",
+    "title": "Translate",
+    "body": "Translate the following text. Reply with only the translation. If the source language is unclear, detect it automatically.\n\n",
+    "category": "Writing",
+    "icon": "globe"
+  },
+  {
+    "slug": "write-email",
+    "title": "Write email",
+    "body": "Write a short, professional email for the following request. Include a clear subject line and a polite sign-off.\n\n",
+    "category": "Writing",
+    "icon": "envelope"
+  },
+  {
+    "slug": "explain-code",
+    "title": "Explain code",
+    "body": "Explain what the following code does, step by step, in plain language. Mention any notable design choices or trade-offs.\n\n```",
+    "category": "Code",
+    "icon": "chevron.left.forwardslash.chevron.right"
+  },
+  {
+    "slug": "review-code",
+    "title": "Review code",
+    "body": "Review the following code. Point out bugs, edge cases, and readability issues, and suggest concrete improvements with short examples.\n\n```",
+    "category": "Code",
+    "icon": "magnifyingglass"
+  },
+  {
+    "slug": "explain-like-five",
+    "title": "Explain like I'm 5",
+    "body": "Explain the following as if to a curious five-year-old. Use a simple analogy and avoid jargon.\n\n",
+    "category": "Learning",
+    "icon": "lightbulb"
+  },
+  {
+    "slug": "key-points",
+    "title": "Key points",
+    "body": "List the key points of the following as a short numbered list. One idea per line, plain language.\n\n",
+    "category": "Learning",
+    "icon": "list.number"
+  },
+  {
+    "slug": "quiz-me",
+    "title": "Quiz me",
+    "body": "Create 5 short quiz questions (with answers at the end) to help me learn the following topic. Mix multiple-choice and short-answer.\n\n",
+    "category": "Learning",
+    "icon": "questionmark.bubble"
+  },
+  {
+    "slug": "brainstorm",
+    "title": "Brainstorm",
+    "body": "Brainstorm 10 distinct ideas for the following. Be specific and creative. Number each idea.\n\n",
+    "category": "Productivity",
+    "icon": "sparkles"
+  },
+  {
+    "slug": "pros-cons",
+    "title": "Pros & cons",
+    "body": "List the pros and cons of the following as two short columns. Be balanced and concrete.\n\n",
+    "category": "Productivity",
+    "icon": "scalemass"
+  },
+  {
+    "slug": "extract-action-items",
+    "title": "Extract action items",
+    "body": "Extract the action items from the following as a checklist. Start each with a verb. Skip anything that is not actionable.\n\n",
+    "category": "Productivity",
+    "icon": "checklist"
+  }
+]

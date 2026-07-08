@@ -223,6 +223,14 @@ actor StreamProcessor {
 
     fileprivate static func parseToolCall(_ raw: String) -> (name: String, argsJSON: String)? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Gemma 4 native payload: `call:NAME{key:<|"|>value<|"|>, n:30}` — typed
+        // arguments, NOT JSON. Must be checked before the JSON path because a
+        // no-argument call (`call:name`) has no `{` at all.
+        if let gemma = GemmaToolCallPayload.parse(trimmed) {
+            return gemma
+        }
+
         guard let jsonStart = trimmed.firstIndex(of: "{") else { return nil }
 
         let jsonText = String(trimmed[jsonStart...])
@@ -244,6 +252,140 @@ actor StreamProcessor {
         }
 
         return nil
+    }
+}
+
+/// Parses Gemma 4's native tool-call payload into the app's `(name, argsJSON)`
+/// shape so `ToolRegistry.dispatch` works unchanged.
+///
+/// Format (per https://ai.google.dev/gemma/docs/core/prompt-formatting-gemma4):
+///   call:FUNCTION_NAME{ARG_PAIRS}
+/// where argument values are typed:
+///   strings   key:<|"|>value<|"|>       (value may contain , } : etc.)
+///   ints      timeout:30
+///   floats    temperature:3.5
+///   booleans  flag:true / flag:false
+///   lists     key:[<|"|>a<|"|>,<|"|>b<|"|>]  (or scalar elements)
+/// The surrounding <|tool_call> / <tool_call|> tokens are stripped by the
+/// stream parser before this runs.
+enum GemmaToolCallPayload {
+
+    private static let stringDelimiter = "<|\"|>"
+
+    static func parse(_ raw: String) -> (name: String, argsJSON: String)? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.lowercased().hasPrefix("call:") else { return nil }
+        let afterCall = trimmed.dropFirst("call:".count)
+
+        guard let braceIndex = afterCall.firstIndex(of: "{") else {
+            let name = afterCall.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard isValidToolName(name) else { return nil }
+            return (name, "{}")
+        }
+
+        let name = String(afterCall[..<braceIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidToolName(name) else { return nil }
+
+        guard let closeIndex = afterCall.lastIndex(of: "}"), closeIndex > braceIndex else {
+            // Unterminated argument block — treat as unparseable rather than guessing.
+            return nil
+        }
+        let body = String(afterCall[afterCall.index(after: braceIndex)..<closeIndex])
+        let args = parseArguments(body)
+        guard let data = try? JSONSerialization.data(withJSONObject: args, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return (name, json)
+    }
+
+    private static func isValidToolName(_ name: String) -> Bool {
+        !name.isEmpty && name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" || $0 == "." }
+    }
+
+    private static func parseArguments(_ body: String) -> [String: Any] {
+        var args: [String: Any] = [:]
+        var scanner = Substring(body)
+
+        while true {
+            scanner = scanner.drop(while: { $0.isWhitespace || $0 == "," })
+            guard !scanner.isEmpty else { break }
+            guard let colonIndex = scanner.firstIndex(of: ":") else { break }
+            let key = String(scanner[..<colonIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+            scanner = scanner[scanner.index(after: colonIndex)...].drop(while: \.isWhitespace)
+            guard !key.isEmpty else { break }
+
+            let (value, rest) = parseValue(scanner)
+            args[key] = value
+            scanner = rest
+        }
+
+        return args
+    }
+
+    /// Parses one value starting at the head of `scanner`; returns the value and
+    /// the remainder after it.
+    private static func parseValue(_ scanner: Substring) -> (Any, Substring) {
+        if scanner.hasPrefix(stringDelimiter) {
+            return parseDelimitedString(scanner)
+        }
+        if scanner.hasPrefix("[") {
+            return parseList(scanner)
+        }
+        // Scalar: read up to the next top-level separator.
+        let end = scanner.firstIndex(where: { $0 == "," }) ?? scanner.endIndex
+        let token = String(scanner[..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (scalarValue(from: token), scanner[end...])
+    }
+
+    private static func parseDelimitedString(_ scanner: Substring) -> (Any, Substring) {
+        let afterOpen = scanner.dropFirst(stringDelimiter.count)
+        guard let closeRange = afterOpen.range(of: stringDelimiter) else {
+            // Unterminated string — take everything (defensive; model truncation).
+            return (String(afterOpen), Substring(""))
+        }
+        let value = String(afterOpen[..<closeRange.lowerBound])
+        return (value, afterOpen[closeRange.upperBound...])
+    }
+
+    private static func parseList(_ scanner: Substring) -> (Any, Substring) {
+        var rest = scanner.dropFirst() // consume "["
+        var elements: [Any] = []
+
+        while true {
+            rest = rest.drop(while: { $0.isWhitespace || $0 == "," })
+            guard !rest.isEmpty else { break }
+            if rest.hasPrefix("]") {
+                rest = rest.dropFirst()
+                break
+            }
+            if rest.hasPrefix(stringDelimiter) {
+                let (value, remainder) = parseDelimitedString(rest)
+                elements.append(value)
+                rest = remainder
+            } else {
+                let end = rest.firstIndex(where: { $0 == "," || $0 == "]" }) ?? rest.endIndex
+                let token = String(rest[..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !token.isEmpty {
+                    elements.append(scalarValue(from: token))
+                }
+                rest = rest[end...]
+            }
+        }
+
+        return (elements, rest)
+    }
+
+    private static func scalarValue(from token: String) -> Any {
+        switch token.lowercased() {
+        case "true": return true
+        case "false": return false
+        case "null": return NSNull()
+        default:
+            if let intValue = Int(token) { return intValue }
+            if let doubleValue = Double(token) { return doubleValue }
+            return token
+        }
     }
 }
 

@@ -99,14 +99,16 @@ struct ChatMessage: Identifiable, Hashable, Codable {
     let role: Role
     var text: String
     let createdAt: Date
-    let citations: [SearchCitation]
+    var citations: [SearchCitation]
     let attachments: [ChatAttachment]
+    var toolActivities: [ChatToolActivity]
     /// Raw content of the <think>…</think> block. Updated token-by-token during streaming.
     /// Nil for non-thinking models or when no thinking block is present.
     var thinkingContent: String?
     /// Seconds elapsed from <think> open to </think> close.
     /// Nil while thinking is still in progress; set once </think> is detected.
     var thinkingDurationSeconds: Int?
+    var generationDurationSeconds: Double?
 
     init(
         id: UUID = UUID(),
@@ -116,14 +118,17 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         citations: [SearchCitation] = [],
         imageData: Data? = nil,
         attachments: [ChatAttachment] = [],
+        toolActivities: [ChatToolActivity] = [],
         thinkingContent: String? = nil,
-        thinkingDurationSeconds: Int? = nil
+        thinkingDurationSeconds: Int? = nil,
+        generationDurationSeconds: Double? = nil
     ) {
         self.id = id
         self.role = role
         self.text = text
         self.createdAt = createdAt
         self.citations = citations
+        self.toolActivities = toolActivities
         if attachments.isEmpty, let imageData {
             self.attachments = [.image(imageData)]
         } else {
@@ -131,6 +136,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         }
         self.thinkingContent = thinkingContent
         self.thinkingDurationSeconds = thinkingDurationSeconds
+        self.generationDurationSeconds = generationDurationSeconds
     }
 
     var imageData: Data? {
@@ -145,8 +151,10 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         case citations
         case imageData
         case attachments
+        case toolActivities
         case thinkingContent
         case thinkingDurationSeconds
+        case generationDurationSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -156,6 +164,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         text = try container.decode(String.self, forKey: .text)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
         citations = try container.decodeIfPresent([SearchCitation].self, forKey: .citations) ?? []
+        toolActivities = try container.decodeIfPresent([ChatToolActivity].self, forKey: .toolActivities) ?? []
         let decodedAttachments = try container.decodeIfPresent([ChatAttachment].self, forKey: .attachments) ?? []
         if decodedAttachments.isEmpty, let legacyImageData = try container.decodeIfPresent(Data.self, forKey: .imageData) {
             attachments = [.image(legacyImageData)]
@@ -164,6 +173,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         }
         thinkingContent = try container.decodeIfPresent(String.self, forKey: .thinkingContent)
         thinkingDurationSeconds = try container.decodeIfPresent(Int.self, forKey: .thinkingDurationSeconds)
+        generationDurationSeconds = try container.decodeIfPresent(Double.self, forKey: .generationDurationSeconds)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -174,8 +184,76 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(citations, forKey: .citations)
         try container.encode(attachments, forKey: .attachments)
+        try container.encode(toolActivities, forKey: .toolActivities)
         try container.encodeIfPresent(thinkingContent, forKey: .thinkingContent)
         try container.encodeIfPresent(thinkingDurationSeconds, forKey: .thinkingDurationSeconds)
+        try container.encodeIfPresent(generationDurationSeconds, forKey: .generationDurationSeconds)
+    }
+}
+
+struct ChatToolActivity: Identifiable, Hashable, Codable {
+    enum Status: String, Hashable, Codable {
+        case running
+        case completed
+        case failed
+    }
+
+    let id: UUID
+    let name: String
+    let displayName: String
+    let output: String
+    let status: Status
+    let createdAt: Date
+    let duration: Double?
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        displayName: String,
+        output: String,
+        status: Status = .completed,
+        createdAt: Date = .now,
+        duration: Double? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.displayName = displayName
+        self.output = output
+        self.status = status
+        self.createdAt = createdAt
+        self.duration = duration
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case displayName
+        case output
+        case status
+        case createdAt
+        case duration
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        output = try container.decodeIfPresent(String.self, forKey: .output) ?? ""
+        status = try container.decodeIfPresent(Status.self, forKey: .status) ?? .completed
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
+        duration = try container.decodeIfPresent(Double.self, forKey: .duration)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(output, forKey: .output)
+        try container.encode(status, forKey: .status)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(duration, forKey: .duration)
     }
 }
 

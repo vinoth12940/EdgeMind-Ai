@@ -145,12 +145,11 @@
       "<|eot_id|>"
     ],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-21T11:45:00-05:00",
+    "auditedAt": "2026-07-05T22:00:00-05:00",
     "auditVerdict": {
-      "kind": "yellow",
-      "note": "built-in-provider-model-pending-full-device-audit"
+      "kind": "green"
     },
-    "lastAuditedDeviceTier": "standard"
+    "lastAuditedDeviceTier": "pro"
   },
   {
     "catalogID": "788BFE23-3736-5360-8FAA-B86717BC310C",
@@ -164,10 +163,9 @@
       "<|end|>"
     ],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-21T11:45:00-05:00",
+    "auditedAt": "2026-07-05T22:33:00-05:00",
     "auditVerdict": {
-      "kind": "yellow",
-      "note": "built-in-provider-model-pending-full-device-audit"
+      "kind": "green"
     },
     "lastAuditedDeviceTier": "pro"
   },
@@ -202,29 +200,9 @@
       "</s>"
     ],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-21T11:45:00-05:00",
+    "auditedAt": "2026-07-05T22:33:00-05:00",
     "auditVerdict": {
-      "kind": "yellow",
-      "note": "built-in-provider-model-pending-full-device-audit"
-    },
-    "lastAuditedDeviceTier": "pro"
-  },
-  {
-    "catalogID": "1FFF5B35-71C4-5048-AE3D-10410A7B96F3",
-    "verifiedThinking": null,
-    "verifiedToolCalling": null,
-    "verifiedVision": "none",
-    "knownLeakTokens": [
-      "<|im_end|>",
-      "<|endoftext|>",
-      "<|im_start|>",
-      "</s>"
-    ],
-    "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-21T11:45:00-05:00",
-    "auditVerdict": {
-      "kind": "yellow",
-      "note": "built-in-provider-model-pending-full-device-audit"
+      "kind": "green"
     },
     "lastAuditedDeviceTier": "pro"
   },
