@@ -25,7 +25,7 @@ Edge Mind Ai is a native SwiftUI interface for on-device AI inference. To verify
    - The Models tab contains a curated, device-audited catalog only. It does not expose arbitrary community repository discovery or unsupported audio/video model downloads.
    - Once downloaded, you can select it from the chat header dropdown and run text or document prompts completely offline. Verified vision models also expose camera/photo attachment for local image understanding.
 5. **Optional Tools & Web Search**:
-   - Version 0.2.0 adds local tool support for capable models, including calculator, device information, attached document reading, and local chat-history search.
+   - The app includes local tool support for capable models, including calculator, device information, attached document reading, and local chat-history search.
    - Live Web Search remains optional and is OFF by default. Users must configure their own search provider and explicitly enable search before a prompt is sent to a web search gateway.
 6. **Prompt Library**:
    - The chat composer includes a built-in prompt library for writing, coding, learning, and productivity prompts. These templates are bundled locally and do not require an account or network service.
@@ -35,7 +35,7 @@ Edge Mind Ai is a native SwiftUI interface for on-device AI inference. To verify
 ## 3. Technical Constraints & Simulator Limitations
 
 - **Physical Device Required for MLX Runtimes**: Apple’s MLX framework does not support compilation or execution on the iOS Simulator due to hardware acceleration architecture constraints. If you run this app on the Xcode Simulator, GGUF models and Apple Intelligence models will function, but MLX models in the catalog will appear grayed out or unavailable. **Please test MLX inference on a physical iPhone (iPhone 12 or newer running iOS 17+)**.
-- **Static Weights Compliance (Guideline 2.5.2)**: The downloaded GGUF/MLX weights are strictly model data files (matrices/tensors) parsed by native on-device libraries. They do not contain executable binaries, nor do they modify the app's compiled execution paths.
+- **Static Weights Compliance (Guideline 2.5.2)**: The downloaded GGUF/MLX/LiteRT weights are strictly model data files (matrices/tensors) parsed by native on-device libraries. They do not contain executable binaries, nor do they modify the app's compiled execution paths.
 
 ---
 

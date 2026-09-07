@@ -1,6 +1,6 @@
 # App Store Listing — Edge Mind Ai
 
-> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.2.0).
+> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.3.0).
 > Anything in `[brackets]` you must fill in (URLs, contact, demo account).
 
 ---
@@ -38,8 +38,8 @@ Your private AI runs entirely on-device. Stream local LLMs, attach photos for vi
 ```
 Edge Mind Ai is a privacy-first AI assistant that runs entirely on your iPhone and iPad. Your conversations, prompts, and photos never leave your device — all AI inference happens locally on Apple Silicon. There is no cloud server, no account required, and no data collection.
 
-RUN 20+ MODELS, LOCALLY
-Choose from a curated catalog of 21 open models from Apple Intelligence, Google Gemma, IBM Granite, Meta Llama, Microsoft Phi, DeepSeek, Mistral, Qwen, SmolLM, and Liquid AI. Switch between them mid-conversation. Download only the ones you want; delete them anytime to reclaim space.
+RUN 40+ MODELS, LOCALLY
+Choose from a curated catalog of 46 open models from Apple Intelligence, Google Gemma, IBM Granite, Meta Llama, Microsoft Phi, DeepSeek, Mistral, Qwen, SmolLM, SmolVLM, and Liquid AI. Switch between them mid-conversation. Download only the ones you want; delete them anytime to reclaim space.
 
 REAL CHAT, NOT A WRAPPER
 • Token-by-token streaming responses
@@ -89,14 +89,15 @@ on-device AI,offline AI,local LLM,private chat,AI assistant,MLX,llama,vision,voi
 ## 5. What's New in This Version
 
 ```
-• New agentic tool support for capable local models, including calculator, device info, document reading, chat-history search, and optional web search.
-• Added a built-in prompt library for writing, coding, learning, and productivity workflows.
-• Expanded and re-audited the local model catalog across Apple Foundation Models, GGUF, MLX, and LiteRT-LM runtimes.
-• Web search is now off by default. You can enable it only when you want current web results and citations.
-• Hugging Face and search-provider keys now use secure Keychain storage with legacy settings cleanup.
-• Improved streaming output cleanup, thinking/tool-call parsing, and runtime memory handoff between models.
-• Added App Shortcuts for opening chat, model diagnostics, installed models, and voice chat.
-• Bug fixes for search configuration, document attachment handling, model capability badges, and App Store symbol packaging.
+• Smarter device-tier classification prevents memory crashes on 4 GB–6 GB iPhones and iPads.
+• Automatic memory eviction on background — no more Jetsam terminations.
+• Pre-flight memory guard warns before inference on constrained devices.
+• Purged 5 obsolete 2023/2024 models; added Qwen 3 0.6B/1.7B and SmolVLM2 2.2B for 2026 edge.
+• New "Best for your iPhone" badge recommends optimal models for your device.
+• Quick Model Switcher in the chat top bar — switch models mid-conversation.
+• Vision & Camera Ready shelf in the Model Library highlights image-capable models.
+• Improved runtime memory coordination between GGUF, MLX, LiteRT, and Foundation Models.
+• Bug fixes and stability improvements across all supported devices.
 ```
 
 ---
@@ -166,7 +167,7 @@ VOICE
 Tap the microphone in the chat composer, allow Speech Recognition + Microphone, and speak a prompt. Responses can be played back via iOS text-to-speech.
 
 OPTIONAL MODEL DOWNLOADS (Models tab)
-The Models tab lists a curated catalog of ~21 local models. For quick testing we recommend "LFM2.5 350M (MLX)" (~0.4 GB) or "Granite 3.3 2B (MLX)" (~1.4 GB). Some gated models (Phi, LFM) require a free HuggingFace token entered in Settings. Vision models (Qwen 3.5 VL, LFM2.5 VL, Gemma LiteRT) expose camera/photo image attachment.
+The Models tab lists a curated catalog of 46 local models. For quick testing we recommend "LFM2.5 350M (MLX)" (~0.4 GB) or "Granite 3.3 2B (MLX)" (~1.4 GB). Some gated models (Phi, LFM) require a free HuggingFace token entered in Settings. Vision models (Qwen 3.5 VL, LFM2.5 VL, Gemma LiteRT) expose camera/photo image attachment.
 
 IMPORTANT — MLX REQUIRES A PHYSICAL DEVICE
 Apple's MLX framework does not run on the Xcode Simulator (hardware-acceleration constraint). On the Simulator, GGUF models and Apple Intelligence work; MLX models appear grayed out. PLEASE TEST MLX ON A PHYSICAL iPhone 12 or newer running iOS 17+.
@@ -246,7 +247,7 @@ Because there is **no Sign in with Apple** in this build (entitlement disabled),
 
 ## 12. Pre-submit checklist (App Store Connect will block submission until these are green)
 
-- [ ] Build 0.1.0 (1) shows a green checkmark in TestFlight (processing finished)
+- [ ] Build 0.3.0 (6) shows a green checkmark in TestFlight (processing finished)
 - [ ] Build selected on the App Store tab → "Build" section
 - [ ] All screenshots uploaded (iPhone 6.9" + iPad 13")
 - [ ] Description, subtitle, keywords, promo text filled
@@ -262,9 +263,9 @@ Once all green → **"Add for Review"** → **"Submit to Review"**.
 
 ---
 
-## 13. Submission command (for the NEXT version, e.g. 0.2.0)
+## 13. Submission command (for the NEXT version, e.g. 0.4.0)
 
-Once 0.1.0 is in review, future uploads are one command. Bump `MARKETING_VERSION` in `project.yml`, then:
+Once 0.3.0 is approved, future uploads are one command. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, then:
 
 ```bash
 cd "/Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge Mind Ai"
