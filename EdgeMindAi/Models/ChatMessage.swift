@@ -109,6 +109,9 @@ struct ChatMessage: Identifiable, Hashable, Codable {
     /// Nil while thinking is still in progress; set once </think> is detected.
     var thinkingDurationSeconds: Int?
     var generationDurationSeconds: Double?
+    /// Per-generation performance stats (tokens/sec, time-to-first-token).
+    /// Added in 0.3.0; nil on messages created by older builds.
+    var stats: GenerationStats?
 
     init(
         id: UUID = UUID(),
@@ -121,7 +124,8 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         toolActivities: [ChatToolActivity] = [],
         thinkingContent: String? = nil,
         thinkingDurationSeconds: Int? = nil,
-        generationDurationSeconds: Double? = nil
+        generationDurationSeconds: Double? = nil,
+        stats: GenerationStats? = nil
     ) {
         self.id = id
         self.role = role
@@ -137,6 +141,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         self.thinkingContent = thinkingContent
         self.thinkingDurationSeconds = thinkingDurationSeconds
         self.generationDurationSeconds = generationDurationSeconds
+        self.stats = stats
     }
 
     var imageData: Data? {
@@ -155,6 +160,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         case thinkingContent
         case thinkingDurationSeconds
         case generationDurationSeconds
+        case stats
     }
 
     init(from decoder: Decoder) throws {
@@ -174,6 +180,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         thinkingContent = try container.decodeIfPresent(String.self, forKey: .thinkingContent)
         thinkingDurationSeconds = try container.decodeIfPresent(Int.self, forKey: .thinkingDurationSeconds)
         generationDurationSeconds = try container.decodeIfPresent(Double.self, forKey: .generationDurationSeconds)
+        stats = try container.decodeIfPresent(GenerationStats.self, forKey: .stats)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -188,6 +195,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         try container.encodeIfPresent(thinkingContent, forKey: .thinkingContent)
         try container.encodeIfPresent(thinkingDurationSeconds, forKey: .thinkingDurationSeconds)
         try container.encodeIfPresent(generationDurationSeconds, forKey: .generationDurationSeconds)
+        try container.encodeIfPresent(stats, forKey: .stats)
     }
 }
 

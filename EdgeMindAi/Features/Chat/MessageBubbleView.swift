@@ -4,6 +4,7 @@ import ImageIO
 struct MessageBubbleView: View {
     let message: ChatMessage
     var isGenerating: Bool = false
+    var showGenerationStats: Bool = true
 
     @State private var thinkingExpanded = false
     @State private var searchExpanded = false
@@ -148,6 +149,11 @@ struct MessageBubbleView: View {
 
             messageTimestamp
                 .padding(.top, 1)
+
+            if let statsFooter {
+                statsFooter
+                    .padding(.top, 1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 24)
@@ -282,6 +288,30 @@ struct MessageBubbleView: View {
             .font(.appBody(10))
             .foregroundStyle(AppTheme.textTertiary.opacity(0.5))
             .padding(.horizontal, 4)
+    }
+
+    /// One-line generation stats footer ("12.4 tok/s · 0.8s to first token").
+    /// Only shown for completed assistant messages when the setting is on.
+    private var statsFooter: AnyView? {
+        guard showGenerationStats, !isGenerating else { return nil }
+        guard let stats = message.stats, stats.effectiveTokenCount > 0 else { return nil }
+
+        var parts: [String] = []
+        if let tps = stats.tokensPerSecond {
+            let qualifier = stats.isApproximate ? "≈" : ""
+            parts.append(String(format: "%@%.1f tok/s", qualifier, tps))
+        }
+        if let ttft = stats.timeToFirstToken {
+            parts.append(String(format: "%.1fs to first token", ttft))
+        }
+        guard !parts.isEmpty else { return nil }
+
+        return AnyView(
+            Text(parts.joined(separator: " · "))
+                .font(.appBody(10))
+                .foregroundStyle(AppTheme.textTertiary.opacity(0.6))
+                .padding(.horizontal, 4)
+        )
     }
 
     private func previewImage(from data: Data) -> UIImage? {

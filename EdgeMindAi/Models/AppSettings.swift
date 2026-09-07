@@ -21,6 +21,9 @@ struct AppSettings: Codable, Hashable {
     var huggingFaceToken: String
     var streamProcessorV2Enabled: Bool
     var inferenceV2Timeout: TimeInterval
+    /// Show the per-message generation stats footer (tokens/sec, TTFT).
+    /// Defaults on; toggleable in Settings. Added in 0.3.0.
+    var showGenerationStats: Bool
 
     enum VoiceModel: String, Codable, Hashable, CaseIterable {
         case kokoro82M = "Kokoro 82M"
@@ -129,7 +132,8 @@ struct AppSettings: Codable, Hashable {
         webSearchAPIKey: "",
         huggingFaceToken: "",
         streamProcessorV2Enabled: true,
-        inferenceV2Timeout: 15
+        inferenceV2Timeout: 15,
+        showGenerationStats: true
     )
 }
 
@@ -151,6 +155,7 @@ extension AppSettings {
         case huggingFaceToken
         case streamProcessorV2Enabled
         case inferenceV2Timeout
+        case showGenerationStats
     }
 
     init(from decoder: Decoder) throws {
@@ -171,6 +176,7 @@ extension AppSettings {
         huggingFaceToken = try container.decodeIfPresent(String.self, forKey: .huggingFaceToken) ?? Self.default.huggingFaceToken
         streamProcessorV2Enabled = try container.decodeIfPresent(Bool.self, forKey: .streamProcessorV2Enabled) ?? true
         inferenceV2Timeout = try container.decodeIfPresent(TimeInterval.self, forKey: .inferenceV2Timeout) ?? 15
+        showGenerationStats = try container.decodeIfPresent(Bool.self, forKey: .showGenerationStats) ?? Self.default.showGenerationStats
     }
 
     /// Secrets (`webSearchAPIKey`, `huggingFaceToken`) are deliberately NOT encoded:
@@ -194,5 +200,6 @@ extension AppSettings {
         try container.encode(webSearchProvider, forKey: .webSearchProvider)
         try container.encode(streamProcessorV2Enabled, forKey: .streamProcessorV2Enabled)
         try container.encode(inferenceV2Timeout, forKey: .inferenceV2Timeout)
+        try container.encode(showGenerationStats, forKey: .showGenerationStats)
     }
 }

@@ -698,6 +698,11 @@ actor MLXRuntime {
                             Self.auditLog("stream.firstChunk model=\"\(modelID)\" vision=\(isVision)")
                         }
                         continuation.yield(chunk)
+                    } else if case .info(let info) = generation {
+                        // Capture exact token count from MLX's completion info
+                        // so GenerationStats reports a precise tokens/sec rather
+                        // than the delta-count approximation.
+                        lastExactTokenCount = info.generationTokenCount
                     }
                 }
                 Self.auditLog("stream.done model=\"\(modelID)\" vision=\(isVision) yieldedFirstChunk=\(yieldedFirstChunk)")
@@ -711,10 +716,22 @@ actor MLXRuntime {
         }
     }
 
+    /// Exact output-token count reported by MLX's `GenerateCompletionInfo`
+    /// during the most recent stream. Read by the `StreamProcessor`
+    /// exact-token-count provider; nil when no `.info` event was observed.
+    private var lastExactTokenCount: Int?
+
+    /// Async accessor for the exact token count, used as the
+    /// `StreamProcessor` exact-token-count provider closure.
+    func lastGeneratedTokenCount() -> Int? {
+        lastExactTokenCount
+    }
+
     func unload() {
         activeContainer = nil
         activeModelID = nil
         activeIsVision = false
+        lastExactTokenCount = nil
     }
 
     func unloadAndClearCache() {
@@ -857,7 +874,7 @@ struct MLXInferenceService: InferenceService {
             let messageID = UUID()
             let stream = AsyncStream<StreamEvent> { continuation in
                 continuation.yield(.textDelta(AssistantResponseFallback.unreliableOpenELM))
-                continuation.yield(.done)
+                continuation.yield(.done(GenerationStats(totalDuration: 0, deltaCount: 1)))
                 continuation.finish()
             }
             return (messageID: messageID, stream: stream)
@@ -915,7 +932,8 @@ struct MLXInferenceService: InferenceService {
                 hangTimeout: timeout,
                 repetitionNgram: 6,
                 repetitionCount: 3,
-                activeThinkFormats: activeThinkFormats
+                activeThinkFormats: activeThinkFormats,
+                exactTokenCountProvider: { await MLXRuntime.shared.lastGeneratedTokenCount() }
             )
             return (messageID: messageID, stream: await processor.process())
         } catch {

@@ -116,7 +116,8 @@ struct LocalLlamaInferenceService: InferenceService {
             hangTimeout: timeout,
             repetitionNgram: 6,
             repetitionCount: 3,
-            activeThinkFormats: activeThinkFormats
+            activeThinkFormats: activeThinkFormats,
+            exactTokenCountProvider: { await LocalLlamaRuntime.shared.lastGeneratedTokenCount() }
         )
         return (messageID: messageID, stream: await processor.process())
     }

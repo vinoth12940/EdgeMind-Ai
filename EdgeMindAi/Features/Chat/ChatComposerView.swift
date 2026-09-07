@@ -139,6 +139,7 @@ struct ChatComposerView: View {
                         .background(Circle().fill(hasAttachment ? AppTheme.selectedFill : AppTheme.controlFill))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Attach, search, or prompts menu")
                 .padding(.leading, 4)
                 .padding(.bottom, 3)
 

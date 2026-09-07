@@ -266,6 +266,22 @@ final class AppStateStore {
         if persist { saveChatSessions() }
     }
 
+    /// Persists per-generation performance stats (tokens/sec, TTFT) on a message.
+    /// Added in 0.3.0.
+    func updateMessageStats(
+        _ messageID: UUID,
+        in sessionID: UUID,
+        stats: GenerationStats?,
+        persist: Bool = false
+    ) {
+        guard let stats else { return }
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        chatSessions[sessionIndex].messages[messageIndex].stats = stats
+        chatSessions[sessionIndex].updatedAt = .now
+        if persist { saveChatSessions() }
+    }
+
     func createSession(using modelID: UUID?) {
         let session = ChatSession(
             title: Self.placeholderSessionTitle,

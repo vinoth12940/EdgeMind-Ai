@@ -486,30 +486,6 @@
     "lastCrashSignal": null
   },
   {
-    "catalogID": "B17E57C5-A066-56F1-834B-C2241E47DDF0",
-    "verifiedThinking": null,
-    "verifiedToolCalling": null,
-    "verifiedVision": "none",
-    "verifiedInputModes": [
-      "text",
-      "document"
-    ],
-    "knownLeakTokens": [
-      "<|im_end|>",
-      "<|endoftext|>",
-      "<|im_start|>",
-      "<|channel>thought",
-      "<channel|>"
-    ],
-    "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-29T00:00:00Z",
-    "auditVerdict": {
-      "kind": "green"
-    },
-    "lastAuditedDeviceTier": "pro",
-    "lastCrashSignal": null
-  },
-  {
     "catalogID": "A9A9D0A8-C083-49F1-8B8D-28D8A0F2B0B0",
     "verifiedThinking": null,
     "verifiedToolCalling": "gemmaNativeToolCall",
@@ -975,12 +951,13 @@
     "lastCrashSignal": null
   },
   {
-    "catalogID": "1F337B46-809D-5714-A125-58B78AB9332C",
+    "catalogID": "8058D941-B3FB-5CC3-A60A-E74984406A47",
     "verifiedThinking": null,
     "verifiedToolCalling": null,
-    "verifiedVision": "none",
+    "verifiedVision": "imageAndText",
     "verifiedInputModes": [
       "text",
+      "image",
       "document"
     ],
     "knownLeakTokens": [
@@ -990,7 +967,7 @@
       "<end_of_turn>"
     ],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-29T00:00:00Z",
+    "auditedAt": "2026-09-07T00:00:00Z",
     "auditVerdict": {
       "kind": "green"
     },
@@ -998,8 +975,8 @@
     "lastCrashSignal": null
   },
   {
-    "catalogID": "C7F1DC4B-00E2-5ACD-B73A-4635168B582B",
-    "verifiedThinking": null,
+    "catalogID": "9F2A241E-B9A9-54D6-A61B-B66B7C7A2314",
+    "verifiedThinking": "qwenNative",
     "verifiedToolCalling": null,
     "verifiedVision": "none",
     "verifiedInputModes": [
@@ -1010,19 +987,19 @@
       "<|im_end|>",
       "<|endoftext|>",
       "<|im_start|>",
-      "<end_of_turn>"
+      "</think>"
     ],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-29T00:00:00Z",
+    "auditedAt": "2026-09-07T00:00:00Z",
     "auditVerdict": {
       "kind": "green"
     },
-    "lastAuditedDeviceTier": "pro",
+    "lastAuditedDeviceTier": "compact",
     "lastCrashSignal": null
   },
   {
-    "catalogID": "567E8C73-85A7-51EB-8295-0A0A5BB46608",
-    "verifiedThinking": null,
+    "catalogID": "0CA85D4B-B816-5B86-80BC-93FEB46BA531",
+    "verifiedThinking": "qwenNative",
     "verifiedToolCalling": null,
     "verifiedVision": "none",
     "verifiedInputModes": [
@@ -1033,37 +1010,14 @@
       "<|im_end|>",
       "<|endoftext|>",
       "<|im_start|>",
-      "<end_of_turn>"
+      "</think>"
     ],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-29T00:00:00Z",
+    "auditedAt": "2026-09-07T00:00:00Z",
     "auditVerdict": {
       "kind": "green"
     },
-    "lastAuditedDeviceTier": "pro",
-    "lastCrashSignal": null
-  },
-  {
-    "catalogID": "95D57447-5590-56B1-AD76-547BAD7666CB",
-    "verifiedThinking": null,
-    "verifiedToolCalling": null,
-    "verifiedVision": "none",
-    "verifiedInputModes": [
-      "text",
-      "document"
-    ],
-    "knownLeakTokens": [
-      "<|im_end|>",
-      "<|endoftext|>",
-      "<|im_start|>",
-      "<end_of_turn>"
-    ],
-    "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-06-29T00:00:00Z",
-    "auditVerdict": {
-      "kind": "green"
-    },
-    "lastAuditedDeviceTier": "pro",
+    "lastAuditedDeviceTier": "standard",
     "lastCrashSignal": null
   }
 ]

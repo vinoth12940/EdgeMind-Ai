@@ -3,11 +3,7 @@
 ## Post-V1 (after App Store submission)
 
 ### Flash Attention Per-Model Benchmark
-**What:** After enabling flash attention on A15+ (already in V1 scope), benchmark Qwen/Gemma specifically. Confirm 20-30% speedup claim and verify no output quality regression.
+**What:** Benchmark Qwen/Gemma specifically with flash attention on vs. off. Confirm 20-30% speedup claim and verify no output quality regression.
 **Why:** Flash attention performance varies by model architecture. The claim is from LLaMA-family benchmarks. Our catalog uses different architectures.
-**Where to start:** Add token/sec measurement to the OSLog output in `LocalLlamaContext`, compare before/after on each catalog model.
+**Where to start:** The 0.3.0 OSLog instrumentation is already in place — `LocalLlamaContext.generateStream` logs a `perf model=gguf tokens=N elapsed=X tok/s=Y` line at the end of every generation. Compare before/after on each catalog model on a physical device using Console.app or `log stream` (no debugger needed). Tune `DeviceCapabilityService.supportsFlashAttention()` gating if warranted.
 
-### Citation Data Model Refactor
-**What:** Remove the `.search` message type from `ChatMessage.Role`. Citations are already attached to `ChatMessage.citations: [SearchCitation]`. Instead of prepending a sibling `.search` message in `ChatView.sendMessage()`, show a "Sources" footer in the assistant bubble only.
-**Why:** The current model creates an orphaned `.search` message if inference fails or is cancelled. The assistant message already holds citations — just render them there.
-**Where to start:** `ChatMessage.Role` enum, message rendering in `MessageBubbleView`. The citation ordering fix (no longer prepending `.search` before the assistant placeholder) has already shipped.

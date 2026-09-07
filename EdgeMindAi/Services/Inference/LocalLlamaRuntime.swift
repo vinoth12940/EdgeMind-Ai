@@ -87,14 +87,16 @@ actor LocalLlamaContext {
     private var isDone = false
     private var currentTokenCount: Int32 = 0
     private var generatedTokenCount: Int32 = 0
-    private let maxGeneratedTokens: Int32
+    /// Per-call generation cap. Passed into `generate`/`generateStream` so the
+    /// context can be reused across search (2048) and chat (1024) modes without
+    /// a full model reload.
+    private var maxGeneratedTokens: Int32 = 1024
 
     private init(
         model: OpaquePointer,
         context: OpaquePointer,
         vocab: OpaquePointer,
         sampling: UnsafeMutablePointer<llama_sampler>,
-        maxGeneratedTokens: Int32,
         batchCapacity: Int32,
         contextSize: Int32
     ) {
@@ -105,7 +107,6 @@ actor LocalLlamaContext {
         self.batchCapacity = batchCapacity
         self.contextSize = contextSize
         self.batch = llama_batch_init(batchCapacity, 0, 1)
-        self.maxGeneratedTokens = maxGeneratedTokens
     }
 
     deinit {
@@ -116,7 +117,7 @@ actor LocalLlamaContext {
         llama_backend_free()
     }
 
-    static func create(modelPath: String, maxGeneratedTokens: Int32 = 1024, nCtx: Int32 = 4096) throws -> LocalLlamaContext {
+    static func create(modelPath: String, nCtx: Int32 = 4096) throws -> LocalLlamaContext {
         let normalizedPath = normalizedModelPath(from: modelPath)
         guard FileManager.default.fileExists(atPath: normalizedPath) else {
             runtimeLogger.error("Model file missing. raw=\(modelPath, privacy: .public) normalized=\(normalizedPath, privacy: .public)")
@@ -198,14 +199,14 @@ actor LocalLlamaContext {
             context: context,
             vocab: vocab,
             sampling: sampling,
-            maxGeneratedTokens: maxGeneratedTokens,
             batchCapacity: actualBatchCapacity,
             contextSize: actualContextSize
         )
     }
 
-    func generate(prompt: String, addBOS: Bool = true, parseSpecial: Bool = false) throws -> String {
+    func generate(prompt: String, addBOS: Bool = true, parseSpecial: Bool = false, maxGeneratedTokens maxTokens: Int32 = 1024) throws -> String {
         clear()
+        maxGeneratedTokens = maxTokens
         promptTokens = tokenize(text: prompt, addBOS: addBOS, parseSpecial: parseSpecial)
         guard !promptTokens.isEmpty else {
             throw LocalLlamaRuntimeError.tokenizationFailed
@@ -231,8 +232,9 @@ actor LocalLlamaContext {
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func generateStream(prompt: String, addBOS: Bool = true, parseSpecial: Bool = false) throws -> AsyncStream<String> {
+    func generateStream(prompt: String, addBOS: Bool = true, parseSpecial: Bool = false, maxGeneratedTokens maxTokens: Int32 = 1024) throws -> AsyncStream<String> {
         clear()
+        maxGeneratedTokens = maxTokens
         runtimeLogger.log("generateStream: addBOS=\(addBOS) parseSpecial=\(parseSpecial) promptLen=\(prompt.count)")
         runtimeLogger.log("Prompt first 300 chars: \(String(prompt.prefix(300)), privacy: .private)")
         promptTokens = tokenize(text: prompt, addBOS: addBOS, parseSpecial: parseSpecial)
@@ -253,6 +255,7 @@ actor LocalLlamaContext {
 
         runtimeLogger.log("Streaming generation with prompt tokens=\(self.promptTokens.count) maxGenerated=\(self.maxGeneratedTokens) ctx=\(self.contextSize)")
         try prefillPrompt()
+        let generationStartTime = Date()
 
         return AsyncStream { continuation in
             let producer = Task { [weak self] in
@@ -274,6 +277,15 @@ actor LocalLlamaContext {
                         runtimeLogger.error("Stream generation error: \(error.localizedDescription)")
                         break
                     }
+                }
+                // OSLog instrumentation (0.3.0): log per-generation tokens/sec so
+                // the 0.3.1 flash-attention on/off benchmark can compare runs
+                // without a debugger attached. Format matches the audit harness.
+                let elapsed = Date().timeIntervalSince(generationStartTime)
+                let tokenCount = await self.currentGeneratedTokenCount()
+                if elapsed > 0.05, tokenCount > 0 {
+                    let tps = Double(tokenCount) / elapsed
+                    runtimeLogger.log("perf model=gguf tokens=\(tokenCount) elapsed=\(String(format: "%.3f", elapsed)) tok/s=\(String(format: "%.1f", tps))")
                 }
                 continuation.finish()
             }
@@ -371,6 +383,13 @@ actor LocalLlamaContext {
         llama_memory_clear(llama_get_memory(context), true)
     }
 
+    /// Exact count of tokens produced in the current/last generation. Read by
+    /// `StreamProcessor`'s exact-token-count provider after a stream completes
+    /// so `tokensPerSecond` is precise rather than delta-count-approximated.
+    func currentGeneratedTokenCount() -> Int {
+        Int(generatedTokenCount)
+    }
+
     private func tokenize(text: String, addBOS: Bool, parseSpecial: Bool = false) -> [llama_token] {
         let utf8Count = text.utf8.count
         let capacity = utf8Count + (addBOS ? 1 : 0) + 1
@@ -454,18 +473,18 @@ actor LocalLlamaRuntime {
     static let shared = LocalLlamaRuntime()
 
     private var activeModelPath: String?
-    private var activeMaxGeneratedTokens: Int32?
     private var activeContext: LocalLlamaContext?
     private var isLoading = false
 
-    /// Ensures a context is loaded for the given model path and token limits.
-    /// Reloads if the model path or maxGeneratedTokens changes.
-    /// Guards against concurrent loads with `isLoading`.
-    private func ensureContext(for modelPath: String, maxGeneratedTokens: Int32) throws -> LocalLlamaContext {
+    /// Ensures a context is loaded for the given model path.
+    ///
+    /// The generation cap (`maxGeneratedTokens`) is NOT part of the cache key —
+    /// it is passed per-call into `generate`/`generateStream` so toggling
+    /// search mode (2048) vs chat mode (1024) no longer triggers a full model
+    /// reload. Only a model-path change (or first load) reloads the context.
+    private func ensureContext(for modelPath: String) throws -> LocalLlamaContext {
         guard !isLoading else { throw LocalLlamaRuntimeError.couldNotInitializeContext }
-        let needsReload = activeModelPath != modelPath
-            || activeContext == nil
-            || activeMaxGeneratedTokens != maxGeneratedTokens
+        let needsReload = activeModelPath != modelPath || activeContext == nil
         if needsReload {
             isLoading = true
             defer { isLoading = false }
@@ -473,41 +492,45 @@ actor LocalLlamaRuntime {
             let nCtx = DeviceCapabilityService.contextSize()
             activeContext = try LocalLlamaContext.create(
                 modelPath: modelPath,
-                maxGeneratedTokens: maxGeneratedTokens,
                 nCtx: nCtx
             )
             activeModelPath = modelPath
-            activeMaxGeneratedTokens = maxGeneratedTokens
         }
         guard let ctx = activeContext else { throw LocalLlamaRuntimeError.couldNotInitializeContext }
         return ctx
     }
 
     func generate(prompt: String, using modelPath: String, maxGeneratedTokens: Int32 = 1024) async throws -> String {
-        let ctx = try ensureContext(for: modelPath, maxGeneratedTokens: maxGeneratedTokens)
-        return try await ctx.generate(prompt: prompt)
+        let ctx = try ensureContext(for: modelPath)
+        return try await ctx.generate(prompt: prompt, maxGeneratedTokens: maxGeneratedTokens)
     }
 
     func generate(chat: [LocalLlamaChatTurn], fallbackPrompt: String, using modelPath: String, maxGeneratedTokens: Int32 = 1024) async throws -> String {
-        let ctx = try ensureContext(for: modelPath, maxGeneratedTokens: maxGeneratedTokens)
+        let ctx = try ensureContext(for: modelPath)
         let preparedPrompt = await ctx.preparePrompt(chat: chat, fallback: fallbackPrompt)
-        return try await ctx.generate(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
+        return try await ctx.generate(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial, maxGeneratedTokens: maxGeneratedTokens)
     }
 
     func generateStream(prompt: String, using modelPath: String, maxGeneratedTokens: Int32 = 1024) async throws -> AsyncStream<String> {
-        let ctx = try ensureContext(for: modelPath, maxGeneratedTokens: maxGeneratedTokens)
-        return try await ctx.generateStream(prompt: prompt)
+        let ctx = try ensureContext(for: modelPath)
+        return try await ctx.generateStream(prompt: prompt, maxGeneratedTokens: maxGeneratedTokens)
     }
 
     func generateStream(chat: [LocalLlamaChatTurn], fallbackPrompt: String, using modelPath: String, maxGeneratedTokens: Int32 = 1024) async throws -> AsyncStream<String> {
-        let ctx = try ensureContext(for: modelPath, maxGeneratedTokens: maxGeneratedTokens)
+        let ctx = try ensureContext(for: modelPath)
         let preparedPrompt = await ctx.preparePrompt(chat: chat, fallback: fallbackPrompt)
-        return try await ctx.generateStream(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial)
+        return try await ctx.generateStream(prompt: preparedPrompt.text, addBOS: preparedPrompt.addBOS, parseSpecial: preparedPrompt.parseSpecial, maxGeneratedTokens: maxGeneratedTokens)
+    }
+
+    /// Exact token count from the active context's last generation, for the
+    /// `StreamProcessor` exact-token-count provider.
+    func lastGeneratedTokenCount() async -> Int? {
+        guard activeContext != nil else { return nil }
+        return await activeContext?.currentGeneratedTokenCount()
     }
 
     func unload() {
         activeContext = nil
         activeModelPath = nil
-        activeMaxGeneratedTokens = nil
     }
 }

@@ -43,8 +43,12 @@ struct ModelLibraryView: View {
                     if hasActiveQuery {
                         searchResultsSection
                     } else {
+                        visionReadySection
+
                         if !installedModels.isEmpty {
                             installedSection
+                        } else {
+                            noInstalledModelsHint
                         }
 
                         familyDirectorySection
@@ -142,7 +146,7 @@ struct ModelLibraryView: View {
                 if !matches { return false }
             }
 
-            if filterVision && !item.supportsVision { return false }
+            if filterVision && !(item.supportsVision || item.inputModes.contains(.image)) { return false }
             if filterThinking && !item.isThinkingModel { return false }
             if filterTools && !item.supportsToolCalling { return false }
             if filterPhoneOnly && !item.recommendedForIPhone { return false }
@@ -245,6 +249,124 @@ struct ModelLibraryView: View {
         .background(Color.clear)
     }
 
+    private var visionReadyModels: [ModelCatalogItem] {
+        tierFilteredCatalog
+            .filter { $0.supportsVision || $0.inputModes.contains(.image) }
+            .sorted(by: sortModels)
+    }
+
+    private var visionCameraReadyModels: [ModelCatalogItem] {
+        visionReadyModels
+    }
+
+    private var visionReadySection: some View {
+        Group {
+            if !visionReadyModels.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        sectionHeader(
+                            title: "Vision & Camera Ready",
+                            subtitle: "Multimodal edge models capable of understanding photos, diagrams, and visual prompts locally."
+                        )
+                        Spacer()
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                filterVision = true
+                            }
+                        } label: {
+                            Text("See all")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(AppTheme.capVision)
+                        }
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(visionReadyModels) { item in
+                                visionShelfCard(item)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+    }
+
+    private var visionCameraReadySection: some View {
+        visionReadySection
+    }
+
+    private func visionShelfCard(_ item: ModelCatalogItem) -> some View {
+        let color = AppTheme.capVision
+        let installed = installedModel(for: item)
+        let isBest = item.isBestMatch(for: DeviceTier.current())
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.system(size: 10, weight: .black))
+                        Text("Vision & Camera")
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .textCase(.uppercase)
+                    }
+                    .foregroundStyle(color)
+
+                    Text(item.displayName)
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: item.runtimeType.icon)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(AppTheme.labColor(for: item.family))
+                    .padding(10)
+                    .background(AppTheme.labColor(for: item.family).opacity(0.12))
+                    .clipShape(Circle())
+            }
+
+            Text(item.summary)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineLimit(3)
+
+            FlowLayout(spacing: 6) {
+                if isBest {
+                    Label("Best for your iPhone", systemImage: "sparkles")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.20, green: 0.78, blue: 0.95))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color(red: 0.20, green: 0.78, blue: 0.95).opacity(0.14))
+                        .clipShape(Capsule())
+                }
+                compactMeta(text: item.parameterSize, color: AppTheme.textSecondary)
+                compactMeta(text: item.contextWindow, color: AppTheme.warning)
+                compactMeta(text: item.runtimeType.label, color: AppTheme.labColor(for: item.family))
+            }
+
+            HStack(spacing: 8) {
+                latestReleaseInstallControl(for: item, installed: installed)
+                Spacer()
+            }
+        }
+        .frame(width: 270, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(AppTheme.panel)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(isBest ? Color(red: 0.20, green: 0.78, blue: 0.95).opacity(0.35) : color.opacity(0.15), lineWidth: 0.8)
+        )
+    }
+
     private var latestReleaseSection: some View {
         Group {
             if !latestReleaseModels.isEmpty {
@@ -298,6 +420,15 @@ struct ModelLibraryView: View {
                 .lineLimit(3)
 
             FlowLayout(spacing: 6) {
+                if item.isBestMatch(for: DeviceTier.current()) {
+                    Label("Best for your iPhone", systemImage: "sparkles")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.20, green: 0.78, blue: 0.95))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color(red: 0.20, green: 0.78, blue: 0.95).opacity(0.14))
+                        .clipShape(Capsule())
+                }
                 compactMeta(text: item.parameterSize, color: AppTheme.textSecondary)
                 compactMeta(text: item.contextWindow, color: AppTheme.warning)
                 compactMeta(text: item.runtimeType.label, color: color)
@@ -553,6 +684,32 @@ struct ModelLibraryView: View {
         }
     }
 
+    /// First-run guidance shown when no models are installed yet.
+    private var noInstalledModelsHint: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(AppTheme.accent)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("No models installed yet")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                Text("Browse a family below to download your first on-device model.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppTheme.textTertiary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(AppTheme.panelRaised.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(AppTheme.cardStroke.opacity(0.5), lineWidth: 0.6)
+        )
+    }
+
     private func installedModelCard(_ model: InstalledModel) -> some View {
         let color = AppTheme.labColor(for: model.catalogItem.family)
         let isVoiceAsset = model.catalogItem.primaryUse == .voice
@@ -589,6 +746,20 @@ struct ModelLibraryView: View {
                     if let message = model.statusMessage, !message.isEmpty {
                         Text(message)
                             .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AppTheme.textTertiary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 140, alignment: .trailing)
+                    }
+                }
+            } else if model.installState == .failed {
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Failed")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.destructive)
+                    if let message = model.statusMessage, !message.isEmpty {
+                        Text(message)
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
                             .foregroundStyle(AppTheme.textTertiary)
                             .lineLimit(2)
                             .multilineTextAlignment(.trailing)
@@ -804,7 +975,7 @@ struct ModelLibraryView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 capToggle(label: "Thinking", icon: "brain", isOn: $filterThinking, color: AppTheme.capThinking)
-                capToggle(label: "Vision", icon: "eye.fill", isOn: $filterVision, color: AppTheme.capVision)
+                capToggle(label: "Vision & Camera", icon: "camera.viewfinder", isOn: $filterVision, color: AppTheme.capVision)
                 capToggle(label: "Tools", icon: "wrench.and.screwdriver.fill", isOn: $filterTools, color: AppTheme.capTools)
                 capToggle(label: "MLX", icon: "apple.logo", isOn: $filterMLX, color: .orange)
                 capToggle(label: "iPhone", icon: "iphone", isOn: $filterPhoneOnly, color: AppTheme.success)
@@ -1641,7 +1812,10 @@ private struct ModelTile: View {
     }
 
     private var statusBadge: some View {
-        Group {
+        HStack(spacing: 6) {
+            if item.isBestMatch(for: currentTier) {
+                smallStatus(text: "Best for iPhone", color: AppTheme.accent)
+            }
             if installed?.installState == .installed {
                 smallStatus(text: installed?.isDefault == true ? "Default" : "Installed", color: installed?.isDefault == true ? AppTheme.success : labColor)
             } else if isActiveDownload {
@@ -1697,6 +1871,16 @@ private struct ModelTile: View {
 
     private var capabilityRow: some View {
         FlowLayout(spacing: 6) {
+            if item.isBestMatch(for: currentTier) {
+                Label("Best for your iPhone", systemImage: "sparkles")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color(red: 0.20, green: 0.78, blue: 0.95))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color(red: 0.20, green: 0.78, blue: 0.95).opacity(0.14))
+                    .clipShape(Capsule())
+            }
+
             statusPill
 
             ForEach(item.capabilities, id: \.self) { capability in

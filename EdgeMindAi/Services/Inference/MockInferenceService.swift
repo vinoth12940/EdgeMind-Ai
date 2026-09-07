@@ -36,7 +36,7 @@ struct MockInferenceService: InferenceService {
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
         let messageID = UUID()
         let eventsToEmit: [StreamEvent] = events.isEmpty
-            ? [.textDelta("Mock response for: \(prompt)"), .done]
+            ? [.textDelta("Mock response for: \(prompt)"), .done(GenerationStats(totalDuration: 0))]
             : events
         let stream = AsyncStream<StreamEvent> { continuation in
             for event in eventsToEmit { continuation.yield(event) }

@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct EdgeMindAiApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var store = AppStateStore()
     @State private var authStore = AuthStateStore()
 
@@ -15,6 +16,13 @@ struct EdgeMindAiApp: App {
             .environment(store)
             .environment(authStore)
             .preferredColorScheme(store.settings.appearanceMode.preferredColorScheme)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                Task {
+                    await RuntimeMemoryCoordinator.releaseAll()
+                }
+            }
         }
     }
 }

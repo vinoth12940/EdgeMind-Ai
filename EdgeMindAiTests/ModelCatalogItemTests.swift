@@ -328,6 +328,44 @@ final class ModelCatalogItemTests: XCTestCase {
         XCTAssertTrue(ggufVisionFamilyItems.allSatisfy { !$0.runtimeInputCategories.contains(.image) })
     }
 
+    func test_catalogExcludesPurgedLegacyModels() {
+        let legacyNames: Set<String> = [
+            "TinyLlama 1.1B Chat (MLX)",
+            "TinyLlama 1.1B Chat (GGUF)",
+            "StableLM 2 Zephyr 1.6B (MLX)",
+            "StableLM 2 Zephyr 1.6B (GGUF)",
+            "Gemma 3 270M Instruct (MLX)"
+        ]
+
+        for item in MockCatalogData.items {
+            XCTAssertFalse(
+                legacyNames.contains(item.displayName),
+                "Legacy model \(item.displayName) must be purged from catalog"
+            )
+        }
+    }
+
+    func test_catalogIncludes2026ModernizedModels() {
+        let smolVLM = MockCatalogData.items.first { $0.displayName == "SmolVLM2 2.2B Instruct (MLX)" }
+        XCTAssertNotNil(smolVLM, "SmolVLM2 2.2B Instruct (MLX) must be present in catalog")
+        XCTAssertEqual(smolVLM?.runtimeType, .mlx)
+        XCTAssertEqual(smolVLM?.contextWindow, "8K")
+        XCTAssertEqual(smolVLM?.supportsVision, true)
+        XCTAssertEqual(smolVLM?.inputModes, [.text, .image, .document])
+
+        let qwen06GGUF = MockCatalogData.items.first { $0.displayName == "Qwen 3 0.6B (GGUF)" }
+        XCTAssertNotNil(qwen06GGUF, "Qwen 3 0.6B (GGUF) must be present in catalog")
+        XCTAssertEqual(qwen06GGUF?.runtimeType, .gguf)
+        XCTAssertEqual(qwen06GGUF?.contextWindow, "40K")
+        XCTAssertEqual(qwen06GGUF?.isThinkingModel, true)
+
+        let qwen17GGUF = MockCatalogData.items.first { $0.displayName == "Qwen 3 1.7B (GGUF)" }
+        XCTAssertNotNil(qwen17GGUF, "Qwen 3 1.7B (GGUF) must be present in catalog")
+        XCTAssertEqual(qwen17GGUF?.runtimeType, .gguf)
+        XCTAssertEqual(qwen17GGUF?.contextWindow, "40K")
+        XCTAssertEqual(qwen17GGUF?.isThinkingModel, true)
+    }
+
 #if canImport(MLXLLM) && !targetEnvironment(simulator)
     func test_mlxRuntimeUsesTextFactoryForBundledVLMFamiliesWithoutImageInput() async {
         let vlmModelIDs = [
@@ -345,6 +383,7 @@ final class ModelCatalogItemTests: XCTestCase {
             "mlx-community/gemma-4-e2b-it-4bit",
             "mlx-community/SmolVLM2-500M-Video-Instruct-mlx",
             "HuggingFaceTB/SmolVLM2-500M-Video-Instruct-mlx",
+            "mlx-community/SmolVLM2-2.2B-Instruct-mlx",
             "mlx-community/FastVLM-0.5B-4bit",
             "mlx-community/llava-qwen2-7b-4bit",
             "mlx-community/pixtral-12b-4bit",
@@ -402,4 +441,155 @@ final class ModelCatalogItemTests: XCTestCase {
         }
     }
 #endif
+
+    func test_isBestMatch_compactTier() {
+        let compactModel = ModelCatalogItem(
+            displayName: "Qwen 3 0.6B",
+            family: .qwen,
+            variant: "Q4_K_M GGUF",
+            summary: "Lightweight",
+            parameterSize: "0.6B",
+            diskSize: "~450 MB",
+            contextWindow: "40K",
+            runtimeType: .gguf,
+            recommendedForIPhone: true,
+            minimumTier: .compact
+        )
+        XCTAssertTrue(compactModel.isBestMatch(for: .compact))
+        XCTAssertTrue(compactModel.isBestMatch(for: .standard))
+        XCTAssertTrue(compactModel.isBestMatch(for: .pro))
+        XCTAssertTrue(compactModel.isBestMatch(for: .ultra))
+
+        let proOnlyModel = ModelCatalogItem(
+            displayName: "Llama 3.1 8B",
+            family: .llama,
+            variant: "Q4_K_M GGUF",
+            summary: "Heavy",
+            parameterSize: "8B",
+            diskSize: "4.9 GB",
+            contextWindow: "128K",
+            runtimeType: .gguf,
+            minimumTier: .pro
+        )
+        XCTAssertFalse(proOnlyModel.isBestMatch(for: .compact))
+        XCTAssertFalse(proOnlyModel.isBestMatch(for: .standard))
+    }
+
+    func test_isBestMatch_standardTier() {
+        let standardModel = ModelCatalogItem(
+            displayName: "Granite 3.3 2B (GGUF)",
+            family: .granite,
+            variant: "Q4_K_M GGUF",
+            summary: "Efficient 2B instruction model",
+            parameterSize: "2B",
+            diskSize: "~1.5 GB",
+            contextWindow: "32K",
+            runtimeType: .gguf,
+            recommendedForIPhone: true,
+            minimumTier: .standard
+        )
+        XCTAssertFalse(standardModel.isBestMatch(for: .compact), "Standard minimumTier must not match compact tier")
+        XCTAssertTrue(standardModel.isBestMatch(for: .standard), "Standard 2B model must match standard tier")
+        XCTAssertTrue(standardModel.isBestMatch(for: .pro), "Standard 2B model must match pro tier")
+        XCTAssertTrue(standardModel.isBestMatch(for: .ultra), "Standard 2B model must match ultra tier")
+    }
+
+    func test_isBestMatch_proTier() {
+        let proVLM = ModelCatalogItem(
+            displayName: "Qwen 3.5 VL 4B (MLX)",
+            family: .qwen,
+            variant: "4-bit MLX",
+            summary: "Multimodal edge model",
+            parameterSize: "4B",
+            diskSize: "~2.8 GB",
+            contextWindow: "32K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/Qwen3.5-VL-4B-4bit",
+            supportsVision: true,
+            recommendedForIPhone: false,
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            minimumTier: .pro,
+            inputModes: [.text, .image, .document]
+        )
+        XCTAssertFalse(proVLM.isBestMatch(for: .compact))
+        XCTAssertFalse(proVLM.isBestMatch(for: .standard))
+        XCTAssertTrue(proVLM.isBestMatch(for: .pro))
+        XCTAssertTrue(proVLM.isBestMatch(for: .ultra))
+    }
+
+    func test_isBestMatch_ultraTier() {
+        let ultraModel = ModelCatalogItem(
+            displayName: "Ultra Specialist 14B",
+            family: .qwen,
+            variant: "4-bit MLX",
+            summary: "Large edge model",
+            parameterSize: "14B",
+            diskSize: "~5.5 GB",
+            contextWindow: "64K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/ultra-14b",
+            recommendedForIPhone: false,
+            runtimeStatus: .recommended,
+            auditVerdict: .green,
+            minimumTier: .ultra
+        )
+        XCTAssertFalse(ultraModel.isBestMatch(for: .compact))
+        XCTAssertFalse(ultraModel.isBestMatch(for: .standard))
+        XCTAssertFalse(ultraModel.isBestMatch(for: .pro))
+        XCTAssertTrue(ultraModel.isBestMatch(for: .ultra))
+    }
+
+    func test_isBestMatch_redVerdictRejected() {
+        let redModel = ModelCatalogItem(
+            displayName: "Failing Model",
+            family: .qwen,
+            variant: "Q4_K_M GGUF",
+            summary: "",
+            parameterSize: "0.6B",
+            diskSize: "~450 MB",
+            contextWindow: "40K",
+            runtimeType: .gguf,
+            recommendedForIPhone: false,
+            auditVerdict: .red("jetsam crash"),
+            minimumTier: .compact
+        )
+        XCTAssertFalse(redModel.isBestMatch(for: .compact))
+        XCTAssertFalse(redModel.isBestMatch(for: .standard))
+        XCTAssertFalse(redModel.isBestMatch(for: .pro))
+        XCTAssertFalse(redModel.isBestMatch(for: .ultra))
+    }
+
+    func test_isBestMatch_unsupportedRuntimeStatusRejected() {
+        let unsupportedModel = ModelCatalogItem(
+            displayName: "Unsupported Model",
+            family: .qwen,
+            variant: "Q4_K_M GGUF",
+            summary: "",
+            parameterSize: "0.6B",
+            diskSize: "~450 MB",
+            contextWindow: "40K",
+            runtimeType: .gguf,
+            recommendedForIPhone: false,
+            runtimeStatus: .unsupported,
+            minimumTier: .compact
+        )
+        XCTAssertFalse(unsupportedModel.isBestMatch(for: .compact))
+    }
+
+    func test_isBestMatch_voiceModelRejected() {
+        let voiceModel = ModelCatalogItem(
+            displayName: "Kokoro Voice",
+            family: .kokoro,
+            variant: "TTS",
+            summary: "Voice model",
+            parameterSize: "82M",
+            diskSize: "~300 MB",
+            contextWindow: "512",
+            runtimeType: .mlx,
+            primaryUse: .voice,
+            minimumTier: .compact
+        )
+        XCTAssertFalse(voiceModel.isBestMatch(for: .compact))
+    }
 }

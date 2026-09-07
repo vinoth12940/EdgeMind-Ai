@@ -383,4 +383,24 @@ final class AppStateStoreMigrationTests: XCTestCase {
         defaults.removeObject(forKey: "persistedChatSessions")
         defaults.removeObject(forKey: "persistedSelectedSessionID")
     }
+
+    @MainActor
+    func test_availableChatModels_onlyReturnsReadyChatModels() {
+        let store = AppStateStore(chatSessions: [], settings: .default)
+        let models = store.availableChatModels
+        for model in models {
+            XCTAssertEqual(model.catalogItem.primaryUse, .chat)
+            XCTAssertEqual(model.installState, .installed)
+        }
+    }
+
+    @MainActor
+    func test_setDefaultModel_updatesAndPersists() {
+        let store = AppStateStore(chatSessions: [], settings: .default)
+        guard let systemModel = store.availableChatModels.first else { return }
+        store.setDefaultModel(id: systemModel.catalogItem.id)
+        XCTAssertEqual(store.defaultModel?.catalogItem.id, systemModel.catalogItem.id)
+        XCTAssertEqual(store.settings.defaultModelID, systemModel.catalogItem.id)
+    }
 }
+

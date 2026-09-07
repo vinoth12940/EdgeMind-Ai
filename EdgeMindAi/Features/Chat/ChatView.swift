@@ -73,6 +73,7 @@ enum ChatVisionContext {
 struct ChatView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(\.selectedTab) private var selectedTab
+    @Environment(\.scenePhase) private var scenePhase
     @State private var prompt = ""
     @State private var liveSearchEnabled = false
     @State private var searchAutoInitialized = false
@@ -91,6 +92,9 @@ struct ChatView: View {
     @State private var attachedImage: UIImage?
     @State private var attachedDocuments: [ChatAttachment] = []
     @State private var idleRuntimeReleaseTask: Task<Void, Never>?
+    /// Background pre-warm of the selected model so the first send is fast.
+    /// Cancelled if the user picks a different model before load completes.
+    @State private var prewarmTask: Task<Void, Never>?
     @StateObject private var voiceController = VoiceInteractionController()
 
     private let profileStore = RuntimeProfileStore()
@@ -183,6 +187,10 @@ struct ChatView: View {
     }
 
     private func memoryGuardMessage(for model: InstalledModel) -> String? {
+        if let headroomAlert = AvailableMemoryGuard.checkMemoryHeadroom(for: model.catalogItem, isVision: attachedImage != nil) {
+            return headroomAlert
+        }
+
         let tier = DeviceTier.current()
         // If the current device tier meets or exceeds the model's minimum tier requirement,
         // do not block execution with the memory guard.
@@ -211,6 +219,37 @@ struct ChatView: View {
             return liteRTInferenceService
         case .foundationModels:
             return appleFoundationInferenceService
+        }
+    }
+
+    /// Eagerly loads the selected model's weights when the user picks it from
+    /// the model picker, so the first message send doesn't pay the load cost.
+    /// Routed through `RuntimeMemoryCoordinator.prepareForRuntime(...)` so
+    /// competing runtimes are evicted (memory invariant preserved). The task
+    /// is cancelled if the user picks another model before load completes.
+    private func prewarmSelectedModel() {
+        prewarmTask?.cancel()
+        guard let model = store.defaultModel, model.catalogItem.runtimeType == .gguf else {
+            // Only GGUF pre-warms here — MLX/LiteRT load lazily inside their
+            // services and FoundationModels has no weights to load. GGUF is
+            // also the only path testable in the simulator.
+            return
+        }
+        guard let modelPath = model.localPath else { return }
+
+        prewarmTask = Task {
+            await RuntimeMemoryCoordinator.prepareForRuntime(model.catalogItem.runtimeType)
+            if Task.isCancelled { return }
+            // `generate(prompt:using:maxGeneratedTokens:)` with an empty prompt
+            // triggers `ensureContext` (the actual weight load) without running
+            // a full generation. A subsequent real send reuses the loaded
+            // context because the cap is now a per-call parameter (0.3.0).
+            do {
+                _ = try await LocalLlamaRuntime.shared.generate(prompt: " ", using: modelPath, maxGeneratedTokens: 1)
+                chatLogger.log("Pre-warmed GGUF model: \(model.catalogItem.displayName, privacy: .public)")
+            } catch {
+                chatLogger.log("Pre-warm skipped: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
@@ -245,7 +284,8 @@ struct ChatView: View {
                                 ForEach(activeMessages) { message in
                                     MessageBubbleView(
                                         message: message,
-                                        isGenerating: message.id == activeMessages.last?.id && isSending
+                                        isGenerating: message.id == activeMessages.last?.id && isSending,
+                                        showGenerationStats: store.settings.showGenerationStats
                                     )
                                         .id(message.id)
                                         .transition(.asymmetric(
@@ -337,6 +377,15 @@ struct ChatView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
             handleMemoryWarning()
         }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                if !isSending && generationTask == nil {
+                    Task {
+                        await RuntimeMemoryCoordinator.releaseAll()
+                    }
+                }
+            }
+        }
         .onChange(of: store.settings.voiceModeEnabled) {
             if !store.settings.voiceModeEnabled {
                 voiceController.stopListening()
@@ -411,11 +460,39 @@ struct ChatView: View {
             
             Spacer()
             
-            // Model Picker (Centered)
-            Button {
-                showModelPicker = true
+            // Model Picker (Centered Quick-Switcher)
+            let switchableModels = store.availableChatModels
+            Menu {
+                if !switchableModels.isEmpty {
+                    Section("Switch Model") {
+                        ForEach(switchableModels) { model in
+                            Button {
+                                store.setDefaultModel(id: model.catalogItem.id)
+                                Task {
+                                    await RuntimeMemoryCoordinator.prepareForRuntime(model.catalogItem.runtimeType)
+                                }
+                                prewarmSelectedModel()
+                            } label: {
+                                Label(
+                                    model.catalogItem.displayName,
+                                    systemImage: activeModel?.catalogItem.id == model.catalogItem.id ? "checkmark" : model.catalogItem.runtimeType.icon
+                                )
+                            }
+                        }
+                    }
+                }
+                Button {
+                    showModelPicker = true
+                } label: {
+                    Label("All Models & Downloads…", systemImage: "square.stack.3d.up")
+                }
             } label: {
                 HStack(spacing: 5) {
+                    if let activeModel {
+                        Image(systemName: activeModel.catalogItem.runtimeType.icon)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(AppTheme.labColor(for: activeModel.catalogItem.family))
+                    }
                     Text(activeModel?.catalogItem.displayName ?? "Select Model")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
@@ -434,6 +511,10 @@ struct ChatView: View {
                 )
             }
             .buttonStyle(.plain)
+            .disabled(isSending)
+            .opacity(isSending ? 0.6 : 1.0)
+            .accessibilityLabel("Active model: \(activeModel?.catalogItem.displayName ?? "No model selected"). Quick model switcher")
+            .accessibilityHint("Double-tap to switch between installed models or open model library")
             
             Spacer()
             
@@ -963,10 +1044,15 @@ struct ChatView: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.displayName), \(item.parameterSize), \(item.runtimeType.label)")
+        .accessibilityAddTraits(isInstalled ? .isButton : [])
+        .accessibilityHint(isInstalled ? "Select this model for chat" : "Go to model library to download")
         .onTapGesture {
             if isInstalled {
                 store.setDefaultModel(id: item.id)
                 showModelPicker = false
+                prewarmSelectedModel()
             } else {
                 showModelPicker = false
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
@@ -1279,6 +1365,8 @@ struct ChatView: View {
                     )
                 }
             case .toolCall, .done:
+                // Follow-up streams don't carry stats to persist (the primary
+                // loop owns the final GenerationStats write).
                 break
             }
         }
@@ -1433,6 +1521,7 @@ struct ChatView: View {
             var nextToolName = ""
             var nextArgsJSON = ""
             var lastFlush = initialLastFlush
+            var capturedStats: GenerationStats?
 
             let genStartTime = Date()
             for await newEvent in newStream {
@@ -1463,7 +1552,10 @@ struct ChatView: View {
                     sawToolCall = true
                     nextToolName = name
                     nextArgsJSON = args
-                case .done:
+                case .done(let stats):
+                    // Stats from tool-loop re-invocation are captured but the
+                    // outer runToolLoop writes the final duration below.
+                    capturedStats = stats
                     break
                 }
             }
@@ -1484,6 +1576,7 @@ struct ChatView: View {
                 updateStreamingMessage(visibleText, messageID: startingMessageID, sessionID: sessionID, persist: true)
                 await MainActor.run {
                     store.updateMessageGenerationDuration(startingMessageID, in: sessionID, duration: genDuration, persist: true)
+                    store.updateMessageStats(startingMessageID, in: sessionID, stats: capturedStats, persist: true)
                 }
                 return ToolLoopOutcome(finalText: visibleText, finished: true)
             }
@@ -1548,6 +1641,23 @@ struct ChatView: View {
             return "[\(result.toolName)]\n\(bounded)"
         }
         return blocks.joined(separator: "\n\n")
+    }
+
+    /// Translates a raw inference error into a concise, user-facing message.
+    /// Maps known failure modes (missing model file, context init, MLX
+    /// unavailable) to actionable copy instead of leaking framework strings.
+    private static func friendlyInferenceError(_ error: Error, modelName: String) -> String {
+        if let inferenceError = error as? InferenceServiceError {
+            switch inferenceError {
+            case .missingLocalModelFile:
+                return "⚠️ The model file for \(modelName) is missing. Try re-downloading it from the Models tab."
+            case .runtimeUnavailable(let detail):
+                return "⚠️ \(modelName) couldn't start: \(detail)"
+            case .noModelInstalled:
+                return "⚠️ No model is installed yet. Download one from the Models tab to start chatting."
+            }
+        }
+        return "⚠️ \(modelName) ran into a problem: \(error.localizedDescription)"
     }
 
     private static func toolActivity(from result: ToolResult, model: InstalledModel, duration: Double? = nil) -> ChatToolActivity {
@@ -1940,6 +2050,7 @@ struct ChatView: View {
                 var accumulated = ""
                 var thinkingAccumulated = ""
                 var stoppedByUser = false
+                var capturedStats: GenerationStats?
                 let clock = ContinuousClock()
                 var lastFlush = clock.now
 
@@ -2024,7 +2135,8 @@ struct ChatView: View {
                         // so we fall through to the post-stream path. The multi-step state is
                         // carried via accumulated/toolResults appended below in runToolLoop.
 
-                    case .done:
+                    case .done(let stats):
+                        capturedStats = stats
                         break
                     }
                 }
@@ -2347,6 +2459,7 @@ struct ChatView: View {
                     let streamDuration = Date().timeIntervalSince(streamStartTime)
                     await MainActor.run {
                         store.updateMessageGenerationDuration(messageID, in: sessionID, duration: streamDuration, persist: true)
+                        store.updateMessageStats(messageID, in: sessionID, stats: capturedStats, persist: true)
                     }
                 }
 
@@ -2366,7 +2479,8 @@ struct ChatView: View {
                 }
             } catch {
                 if !Task.isCancelled {
-                    let errorMessage = ChatMessage(role: .assistant, text: error.localizedDescription)
+                    let friendlyError = Self.friendlyInferenceError(error, modelName: model.catalogItem.displayName)
+                    let errorMessage = ChatMessage(role: .system, text: friendlyError)
                     await MainActor.run {
                         store.appendMessage(errorMessage, to: sessionID)
                     }

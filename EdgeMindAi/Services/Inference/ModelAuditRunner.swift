@@ -370,6 +370,7 @@ Rules:
                 case .toolCall(let name, _):
                     toolCallName = name
                 case .done:
+                    // Stats not needed by the audit harness.
                     break
                 }
             }

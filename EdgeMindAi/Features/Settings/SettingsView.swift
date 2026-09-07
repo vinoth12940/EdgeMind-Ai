@@ -523,6 +523,19 @@ struct SettingsView: View {
                     .foregroundStyle(AppTheme.textTertiary)
             }
         }
+
+        Divider().foregroundStyle(AppTheme.divider)
+
+        settingsToggle(
+            "Show generation stats",
+            isOn: Binding(
+                get: { store.settings.showGenerationStats },
+                set: {
+                    store.settings.showGenerationStats = $0
+                    store.persistSettings()
+                }
+            )
+        )
     }
 
     @ViewBuilder

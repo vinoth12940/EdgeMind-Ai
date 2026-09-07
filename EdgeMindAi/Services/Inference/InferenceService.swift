@@ -437,8 +437,8 @@ enum InferenceBudget {
         return min(preferred, hardCeiling)
     }
 
-    static func mlxHistoryBudget(for model: InstalledModel, searchContext: SearchContext?, maxGeneratedTokens: Int) -> Int {
-        let contextWindow = safeContextWindow(for: model)
+    static func mlxHistoryBudget(for model: InstalledModel, searchContext: SearchContext?, maxGeneratedTokens: Int, tier: DeviceTier = .current()) -> Int {
+        let contextWindow = safeContextWindow(for: model, tier: tier)
         let reservedPromptSpace = searchContext == nil
             ? min(2_048, max(768, contextWindow / 3))
             : min(4_096, max(1_024, contextWindow / 2))

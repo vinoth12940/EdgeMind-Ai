@@ -5,7 +5,7 @@ import XCTest
 final class ModelAuditRunnerTests: XCTestCase {
 
     func test_shortFactualCase_passesOnNonEmptyOutput() async {
-        let runner = makeRunner(events: [.textDelta("Paris."), .done])
+        let runner = makeRunner(events: [.textDelta("Paris."), .done(GenerationStats(totalDuration: 0))])
         let model = makeInstalledModel()
         let resolved = makeResolvedModel()
         let auditCase = requireCase("shortFactual")
@@ -17,7 +17,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_toolProbe_failsWhenModelDoesNotEmitToolCall() async {
-        let runner = makeRunner(events: [.textDelta("It is sunny."), .done])
+        let runner = makeRunner(events: [.textDelta("It is sunny."), .done(GenerationStats(totalDuration: 0))])
         let model = makeInstalledModel()
         let resolved = makeResolvedModel(tools: .xmlToolCall)
         let auditCase = requireCase("toolProbe")
@@ -29,7 +29,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_visionProbe_passesWhenAcceptListMatches() async {
-        let runner = makeRunner(events: [.textDelta("Apple"), .done])
+        let runner = makeRunner(events: [.textDelta("Apple"), .done(GenerationStats(totalDuration: 0))])
         let model = makeInstalledModel(supportsVision: true)
         let resolved = makeResolvedModel(vision: .imageAndText)
         let auditCase = requireCase("visionProbe")
@@ -40,7 +40,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_leakScan_failsWhenImEndLeaksToFinalText() async {
-        let runner = makeRunner(events: [.textDelta("Hello<|im_end|>"), .done])
+        let runner = makeRunner(events: [.textDelta("Hello<|im_end|>"), .done(GenerationStats(totalDuration: 0))])
         let model = makeInstalledModel()
         let resolved = makeResolvedModel()
         let auditCase = requireCase("leakStressor")
@@ -52,7 +52,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_raiSafety_failsWhenUnsafeRequestIsAnswered() async {
-        let runner = makeRunner(events: [.textDelta("Here are the steps..."), .done])
+        let runner = makeRunner(events: [.textDelta("Here are the steps..."), .done(GenerationStats(totalDuration: 0))])
         let model = makeInstalledModel()
         let resolved = makeResolvedModel()
         let auditCase = requireCase("raiSafety")
@@ -64,7 +64,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_raiSafety_passesWhenModelRefusesAndRedirects() async {
-        let runner = makeRunner(events: [.textDelta("I cannot help with that. I can provide safety and legal alternatives."), .done])
+        let runner = makeRunner(events: [.textDelta("I cannot help with that. I can provide safety and legal alternatives."), .done(GenerationStats(totalDuration: 0))])
         let model = makeInstalledModel()
         let resolved = makeResolvedModel()
         let auditCase = requireCase("raiSafety")
@@ -76,7 +76,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_longConversationCaseReceivesHistory() async {
-        let service = CapturingInferenceService(events: [.textDelta("Summary"), .done])
+        let service = CapturingInferenceService(events: [.textDelta("Summary"), .done(GenerationStats(totalDuration: 0))])
         let runner = makeRunner(service: service)
         let model = makeInstalledModel()
         let resolved = makeResolvedModel()
@@ -90,7 +90,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_documentContextProbeRequiresExpectedText() async {
-        let runner = makeRunner(events: [.textDelta("Cedar"), .done])
+        let runner = makeRunner(events: [.textDelta("Cedar"), .done(GenerationStats(totalDuration: 0))])
         let model = makeInstalledModel()
         let resolved = makeResolvedModel()
         let auditCase = requireCase("documentContextProbe")
@@ -101,7 +101,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_documentContextProbeFailsWhenAnswerMissesContext() async {
-        let runner = makeRunner(events: [.textDelta("I do not know."), .done])
+        let runner = makeRunner(events: [.textDelta("I do not know."), .done(GenerationStats(totalDuration: 0))])
         let model = makeInstalledModel()
         let resolved = makeResolvedModel()
         let auditCase = requireCase("documentContextProbe")
@@ -115,7 +115,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     func test_auditCatalogSkipsRemainingCasesAfterFirstFailure() async {
         let item = makeCatalogItem()
         let runner = ModelAuditRunner(
-            inferenceFactory: { _ in ScriptedInferenceService(events: [.done]) },
+            inferenceFactory: { _ in ScriptedInferenceService(events: [.done(GenerationStats(totalDuration: 0))]) },
             downloader: MockAuditDownloader(),
             store: AppStateStore(),
             profileStore: RuntimeProfileStore(bundleLoader: { [] }, overrideLoader: { [] })
@@ -140,7 +140,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     func test_sourceVisionProbeCanAuditDisabledSourceVisionModel() async {
-        let service = CapturingInferenceService(events: [.textDelta("Apple"), .done])
+        let service = CapturingInferenceService(events: [.textDelta("Apple"), .done(GenerationStats(totalDuration: 0))])
         let item = makeCatalogItem(supportsVision: false, sourceSupportsVision: true)
         let runner = ModelAuditRunner(
             inferenceFactory: { _ in service },

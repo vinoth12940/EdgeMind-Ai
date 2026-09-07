@@ -5,7 +5,47 @@ enum StreamEvent: Sendable {
     case thinkingDelta(String)
     case thinkingDone(durationSeconds: Int)
     case toolCall(name: String, argsJSON: String)
-    case done
+    /// Terminal event carrying per-generation performance stats. `outputTokens`
+    /// is nil unless the producing backend reports an exact count (e.g. MLX's
+    /// `GenerateCompletionInfo`); consumers fall back to `deltaCount`.
+    case done(GenerationStats)
+}
+
+/// Accumulates wall-clock timing and delta counts for the terminal `.done`
+/// payload. Reset at the start of each `process*` pass.
+private final class StatsAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let streamStart: Date
+    private var firstTokenDate: Date?
+    private var deltaCount = 0
+    private var exactOutputTokens: Int?
+
+    init() {
+        streamStart = Date()
+    }
+
+    func recordDelta() {
+        lock.withLock {
+            if firstTokenDate == nil { firstTokenDate = Date() }
+            deltaCount += 1
+        }
+    }
+
+    func setExactOutputTokens(_ count: Int) {
+        lock.withLock { exactOutputTokens = count }
+    }
+
+    func finalize() -> GenerationStats {
+        lock.withLock {
+            let total = Date().timeIntervalSince(streamStart)
+            return GenerationStats(
+                timeToFirstToken: firstTokenDate.map { _ in Date().timeIntervalSince(streamStart) },
+                totalDuration: total,
+                outputTokens: exactOutputTokens,
+                deltaCount: deltaCount
+            )
+        }
+    }
 }
 
 actor StreamProcessor {
@@ -16,6 +56,12 @@ actor StreamProcessor {
     private let repetitionNgram: Int
     private let repetitionCount: Int
     private let activeThinkFormats: Set<ThinkFormat>
+    /// Optional provider of an exact output-token count, invoked once when the
+    /// raw stream completes (just before `.done` is emitted). Backends that
+    /// track exact counts (llama.cpp's `generatedTokenCount`, MLX's
+    /// `GenerateCompletionInfo`) supply this so `tokensPerSecond` is precise;
+    /// others leave it nil and the delta-count fallback is used.
+    private let exactTokenCountProvider: @Sendable () async -> Int?
 
     // Tag pairings: opening tag (lowercased) -> closing tag (lowercased)
     fileprivate static let thinkTagPairs: [String: String] = [
@@ -35,7 +81,8 @@ actor StreamProcessor {
         hangTimeout: TimeInterval = 15,
         repetitionNgram: Int = 6,
         repetitionCount: Int = 3,
-        activeThinkFormats: Set<ThinkFormat> = []
+        activeThinkFormats: Set<ThinkFormat> = [],
+        exactTokenCountProvider: @escaping @Sendable () async -> Int? = { nil }
     ) {
         self.rawStream = rawStream
         self.v2Enabled = v2Enabled
@@ -44,32 +91,60 @@ actor StreamProcessor {
         self.repetitionCount = repetitionCount
         self.activeThinkFormats = activeThinkFormats
         self.leakTokens = Self.filteredLeakTokens(leakTokens, activeThinkFormats: activeThinkFormats)
+        self.exactTokenCountProvider = exactTokenCountProvider
     }
 
     func process() -> AsyncStream<StreamEvent> {
         v2Enabled ? processV2() : processV1()
     }
 
+    private static func recordDeltaIfNeeded(_ event: StreamEvent, stats: StatsAccumulator) {
+        switch event {
+        case .textDelta, .thinkingDelta:
+            stats.recordDelta()
+        default:
+            break
+        }
+    }
+
+    /// Queries the backend's exact-token-count provider (if supplied) and writes
+    /// the result into the accumulator. Called at natural completion before the
+    /// terminal `.done`. Aborted streams (timeout, repetition) skip this and
+    /// rely on the delta-count fallback.
+    private func captureExactTokenCount(_ stats: StatsAccumulator) async {
+        if let exact = await exactTokenCountProvider() {
+            stats.setExactOutputTokens(exact)
+        }
+    }
+
     private func processV1() -> AsyncStream<StreamEvent> {
         AsyncStream { continuation in
+            let stats = StatsAccumulator()
             Task {
                 var parser = ParserState(activeThinkFormats: activeThinkFormats)
                 for await token in rawStream {
                     let outcome = parser.consume(token) { event in
+                        Self.recordDeltaIfNeeded(event, stats: stats)
                         continuation.yield(event)
                         return true
                     }
                     if outcome == .terminateStream {
+                        // Tool-call termination: the model is requesting a tool.
+                        // ChatView re-invokes inference, so no terminal `.done`
+                        // (and thus no stats) is emitted here — consistent with
+                        // the pre-stats behavior.
                         continuation.finish()
                         return
                     }
                 }
 
                 parser.finish { event in
+                    Self.recordDeltaIfNeeded(event, stats: stats)
                     continuation.yield(event)
                     return true
                 }
-                continuation.yield(.done)
+                await captureExactTokenCount(stats)
+                continuation.yield(.done(stats.finalize()))
                 continuation.finish()
             }
         }
@@ -80,6 +155,7 @@ actor StreamProcessor {
             let scrubber = TokenLeakScrubber(leakTokens: leakTokens)
             let repetitionGuard = RepetitionGuard(ngram: repetitionNgram, threshold: repetitionCount)
             let finishState = StreamFinishState()
+            let stats = StatsAccumulator()
             let taskBox = TaskBox()
 
             func emit(_ event: StreamEvent) {
@@ -88,6 +164,7 @@ actor StreamProcessor {
                     continuation.yield(event)
                     return
                 }
+                Self.recordDeltaIfNeeded(event, stats: stats)
                 finishState.markEmitted()
                 continuation.yield(event)
             }
@@ -96,12 +173,14 @@ actor StreamProcessor {
                 taskBox.watchdog?.cancel()
                 guard finishState.finishIfNeeded() else { return }
                 if let fallbackMessage, !finishState.hasEmitted {
+                    stats.recordDelta()
                     continuation.yield(.textDelta(fallbackMessage))
                 } else if includeDone, !finishState.hasEmitted {
+                    stats.recordDelta()
                     continuation.yield(.textDelta(AssistantResponseFallback.streamEmptyOutput))
                 }
                 if includeDone {
-                    continuation.yield(.done)
+                    continuation.yield(.done(stats.finalize()))
                 }
                 continuation.finish()
                 taskBox.producer?.cancel()
@@ -176,6 +255,7 @@ actor StreamProcessor {
                 }
 
                 parser.finish(emit: handleEvent)
+                await captureExactTokenCount(stats)
                 finish(includeDone: true)
             }
 

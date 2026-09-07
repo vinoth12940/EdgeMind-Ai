@@ -62,13 +62,19 @@ struct AppleFoundationInferenceService: InferenceService {
         let messageID = UUID()
         let stream = AsyncStream<StreamEvent> { continuation in
             Task {
+                let streamStart = Date()
                 do {
                     let text = try await generateText(prompt: prompt, conversation: conversation, searchContext: searchContext, systemPrompt: systemPrompt)
+                    let firstTokenTime = Date().timeIntervalSince(streamStart)
                     continuation.yield(.textDelta(text))
-                    continuation.yield(.done)
+                    continuation.yield(.done(GenerationStats(
+                        timeToFirstToken: firstTokenTime,
+                        totalDuration: Date().timeIntervalSince(streamStart),
+                        deltaCount: 1
+                    )))
                 } catch {
                     continuation.yield(.textDelta(error.localizedDescription))
-                    continuation.yield(.done)
+                    continuation.yield(.done(GenerationStats(totalDuration: Date().timeIntervalSince(streamStart))))
                 }
                 continuation.finish()
             }

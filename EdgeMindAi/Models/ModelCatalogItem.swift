@@ -437,6 +437,54 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
         return weightsGB + kvCacheGB + visionGB + heapGB
     }
 
+    /// Evaluates whether this model is an optimal match for the given hardware tier.
+    func isBestMatch(for tier: DeviceTier) -> Bool {
+        guard primaryUse == .chat else { return false }
+        guard minimumTier <= tier else { return false }
+        guard !auditVerdict.isRed else { return false }
+        guard runtimeStatus != .unsupported else { return false }
+        let estimatedGB = estimatedResidentGB(contextTokens: tier.safeContextTokens)
+        guard estimatedGB <= tier.usableWeightGB else { return false }
+
+        let isVLM = supportsVision || inputModes.contains(.image)
+        let paramB = parsedParameterSizeB
+
+        switch tier {
+        case .compact:
+            // Compact (4 GB): models with parameter size <= 2B, or estimated resident <= 1.2 GB
+            guard minimumTier == .compact else { return false }
+            let paramMatch = paramB.map { $0 <= 2.0 } ?? true
+            let residentMatch = estimatedGB <= 1.2
+            return (paramMatch || residentMatch) && (recommendedForIPhone || runtimeStatus == .recommended)
+
+        case .standard:
+            // Standard (6 GB): models with parameter size 1B–2B, or estimated resident <= 2.2 GB
+            let paramMatch = paramB.map { $0 >= 0.8 && $0 <= 2.5 } ?? false
+            let residentMatch = estimatedGB <= 2.2
+            return (paramMatch || residentMatch || recommendedForIPhone) && (recommendedForIPhone || runtimeStatus == .recommended || minimumTier == .standard)
+
+        case .pro:
+            // Pro (8 GB): models with parameter size 2B–4B, or VLMs, fitting within 4.5 GB
+            let paramMatch = paramB.map { $0 >= 1.5 && $0 <= 4.5 } ?? false
+            return (paramMatch || isVLM || recommendedForIPhone || runtimeStatus == .recommended) && estimatedGB <= 4.5
+
+        case .ultra:
+            // Ultra (12 GB+): premier 4B+ models or VLMs
+            let paramMatch = paramB.map { $0 >= 3.5 } ?? false
+            return (paramMatch || isVLM || recommendedForIPhone || runtimeStatus == .recommended) && estimatedGB <= tier.usableWeightGB
+        }
+    }
+
+    var parsedParameterSizeB: Double? {
+        let upper = parameterSize.uppercased()
+        let numericPortion = upper.filter { $0.isNumber || $0 == "." }
+        guard let val = Double(numericPortion), val > 0 else { return nil }
+        if upper.contains("M") {
+            return val / 1000.0
+        }
+        return val
+    }
+
     var parsedDiskSizeGBForEstimator: Double {
         // diskSize is a string like "~1.7 GB" / "2.5 GB" / "~600 MB".
         let upper = diskSize.uppercased()
