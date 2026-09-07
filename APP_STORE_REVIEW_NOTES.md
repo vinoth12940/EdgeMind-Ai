@@ -22,7 +22,7 @@ Edge Mind Ai is a native SwiftUI interface for on-device AI inference. To verify
 4. **Third-Party Model Downloads (Optional)**:
    - Go to the **Models** tab.
    - You can download a lightweight on-device model from the curated list. For fast testing, we recommend **LFM2.5 350M (MLX)** (~0.4 GB) or **Granite 3.3 2B (MLX)** (~1.4 GB).
-   - The Models tab contains a curated, device-audited catalog only. It does not expose arbitrary community repository discovery or unsupported audio/video model downloads.
+   - The Models tab contains a curated, device-audited catalog of 46 models only. It does not expose arbitrary community repository discovery or unsupported audio/video model downloads.
    - Once downloaded, you can select it from the chat header dropdown and run text or document prompts completely offline. Verified vision models also expose camera/photo attachment for local image understanding.
 5. **Optional Tools & Web Search**:
    - The app includes local tool support for capable models, including calculator, device information, attached document reading, and local chat-history search.

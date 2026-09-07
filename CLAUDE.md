@@ -18,17 +18,23 @@ xcodegen generate
 
 # Build for simulator (GGUF only — MLX/LiteRT/FoundationModels do NOT run in simulator)
 xcodebuild -project EdgeMindAi.xcodeproj -scheme EdgeMindAi \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max' \
   CODE_SIGNING_ALLOWED=NO build
 
 # Run all unit tests (simulator)
 xcodebuild test -project EdgeMindAi.xcodeproj -scheme EdgeMindAi \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+  -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max'
 
 # Run a single test class
 xcodebuild test -project EdgeMindAi.xcodeproj -scheme EdgeMindAi \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max' \
   -only-testing EdgeMindAiTests/DeviceCapabilityTests
+
+# Verify documentation freshness against codebase state
+python3 scripts/verify_docs_freshness.py
+xcodebuild test -project EdgeMindAi.xcodeproj -scheme EdgeMindAi \
+  -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max' \
+  -only-testing EdgeMindAiTests/DocumentationFreshnessTests
 
 # Build for a connected device (MLX/LiteRT require real Apple Silicon hardware)
 xcodebuild -project EdgeMindAi.xcodeproj -scheme EdgeMindAi \
@@ -56,5 +62,6 @@ Layout: `EdgeMindAi/{App, Models, State, Services, Features, DesignSystem, Resou
 ## When editing common things
 
 - **Adding a catalog model**: add the entry in `MockCatalogData.swift` with the correct `runtimeType`, **and** a matching `RuntimeProfile` in `RuntimeProfiles.json` (same `catalogID`) — without it, every claimed capability shows as an unverified mismatch. Full checklist in `AGENTS.md` → "Adding a New Model to the Catalog".
+- **Updating catalog, project versions, or runtime profiles**: whenever `MockCatalogData.swift`, `project.yml`, or `RuntimeProfiles.json` change, developers/agents must update documentation and run `python3 scripts/verify_docs_freshness.py` and `xcodebuild test -only-testing EdgeMindAiTests/DocumentationFreshnessTests` before committing.
 - **Design system**: `AppTheme` defines light + dark variants for every color; appearance is set once at the window root via `.preferredColorScheme`. Don't add per-view `colorScheme` conditionals — extend `AppTheme`.
 - **Store / privacy / networking**: this app ships **no telemetry, analytics, or cloud sync**, and requires no remote account (guest must always reach chat). New networking must be opt-in and user-facing. Read `AGENTS.md` → "Release & App Store submission" and `APP_STORE_REVIEW_NOTES.md` before store-facing changes.

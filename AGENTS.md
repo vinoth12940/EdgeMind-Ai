@@ -24,7 +24,7 @@ xcodebuild -project EdgeMindAi.xcodeproj \
 ```bash
 xcodebuild -project EdgeMindAi.xcodeproj \
   -scheme EdgeMindAi \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max' \
   CODE_SIGNING_ALLOWED=NO \
   build
 ```
@@ -34,7 +34,7 @@ xcodebuild -project EdgeMindAi.xcodeproj \
 xcodebuild test \
   -project EdgeMindAi.xcodeproj \
   -scheme EdgeMindAi \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+  -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max'
 ```
 
 ### Run a single test class
@@ -42,8 +42,22 @@ xcodebuild test \
 xcodebuild test \
   -project EdgeMindAi.xcodeproj \
   -scheme EdgeMindAi \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max' \
   -only-testing EdgeMindAiTests/DeviceCapabilityTests
+```
+
+### Documentation freshness verification
+Whenever `MockCatalogData.swift`, `project.yml`, or runtime profiles change, developers and agents must run the freshness verification script before committing:
+```bash
+python3 scripts/verify_docs_freshness.py
+```
+Or run the dedicated unit test suite:
+```bash
+xcodebuild test \
+  -project EdgeMindAi.xcodeproj \
+  -scheme EdgeMindAi \
+  -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max' \
+  -only-testing EdgeMindAiTests/DocumentationFreshnessTests
 ```
 
 Note: the simulator excludes `x86_64` (`EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64` in `project.yml`) — Apple Silicon hosts only.
@@ -155,7 +169,7 @@ Per-model runtime reality lives in **`EdgeMindAi/Resources/RuntimeProfiles.json`
 - **On-device audit harness is flaky for heavy/reasoning models**: Phi 3.5 Mini (3.8B) reproducibly gets jetsam-killed mid-`longNarrative` generation (real memory limit → honest yellow, not a checker bug); reasoning models (DeepSeek R1) and HF downloads can hang the `devicectl --console` launch. Use `--localai-audit-case-timeout-sec` to bound each case; macOS has no GNU `timeout` for an outer wrapper. Run heavy models one at a time and watch for download stalls at 0%. Scripts live in `scratch/run-device-audit*.sh`.
 
 ### Model catalog (`State/MockCatalogData.swift`)
-Static array of `ModelCatalogItem` structs — currently ~46 entries spanning Apple Intelligence, Granite, Gemma (2/4), Llama, Phi, DeepSeek, Mistral, SmolLM/SmolVLM, Qwen (3 / 3.5 / 3.5 VL), and LFM 2.5 families across GGUF, MLX, LiteRT-LM, and FoundationModels runtimes. Each entry carries both *advertised* and *runtime* fields:
+Static array of `ModelCatalogItem` structs — currently 46 entries spanning Apple Intelligence, Granite, Gemma (2/4), Llama, Phi, DeepSeek, Mistral, SmolLM/SmolVLM, Qwen (3 / 3.5 / 3.5 VL), and LFM 2.5 families across GGUF, MLX, LiteRT-LM, and FoundationModels runtimes. Each entry carries both *advertised* and *runtime* fields:
 
 - **Advertised capability**: `supportsVision`, `supportsToolCalling`, `isThinkingModel`, `supportsReasoning`, `sourceSupportsVision`, `recommendedForIPhone`.
 - **Runtime/audit fields**: `runtimeStatus: ModelRuntimeStatus` (`.recommended`/`.worksWithWarnings`/`.experimental`), `auditVerdict: Verdict` (`.green` / `.yellow(reason)` / `.red(reason)`), `testedDeviceTier: DeviceTier?`, `inputModes: [InputCategory]` (what this app actually accepts: text/image/document).
@@ -219,6 +233,11 @@ Tool-calling models (catalog `supportsToolCalling` **and** a `verifiedToolCallin
 4. Qwen 3 models get `isThinkingModel: true` (native `/think`/`/no_think` switches) — **except the 2507-refresh `Instruct` variants** (e.g. Qwen 3 4B 2507 Instruct), where Qwen split thinking into a separate `Thinking` model; the 2507 Instruct variants are non-thinking.
 5. Set `minimumTier` honestly — models over ~4 GB should be `.pro`/`.ultra` and should not set `recommendedForIPhone: true` for compact devices.
 6. **Add a matching `RuntimeProfile` entry to `EdgeMindAi/Resources/RuntimeProfiles.json`** with the same `catalogID` (UUID v5). Without it, `ModelRuntimeResolver` falls back to `RuntimeProfile.safeMinimum(...)` and the UI will show every claimed capability as an unverified mismatch. Set `verifiedThinking`/`verifiedToolCalling`/`verifiedVision` only after probing the model in this app.
+7. **Verify documentation freshness**: Whenever `MockCatalogData.swift`, `project.yml`, or runtime profiles change, developers and agents must update all documentation with accurate counts/versions and run the freshness verification script before committing:
+   ```bash
+   python3 scripts/verify_docs_freshness.py
+   xcodebuild test -project EdgeMindAi.xcodeproj -scheme EdgeMindAi -destination 'platform=iOS Simulator,name=EdgeMindAi iPhone 17 Pro Max' -only-testing EdgeMindAiTests/DocumentationFreshnessTests
+   ```
 
 ## llama.cpp xcframework
 

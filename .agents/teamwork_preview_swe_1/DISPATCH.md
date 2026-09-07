@@ -1,16 +1,17 @@
-# Original User Request
+## 2026-09-07T16:26:02Z
 
-## Initial Request — 2026-09-07T16:25:29Z
+You are the SWE Orchestrator (teamwork_preview_swe).
+Your working directory is: /Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge Mind Ai/.agents/teamwork_preview_swe_1
+The authoritative user request is located at: /Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge Mind Ai/.agents/ORIGINAL_REQUEST.md
+The project root directory is: /Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge Mind Ai
 
-This is a single self-contained fix; keep it small and focused.
-
+Your task is to execute the SWE Light loop on the following requirements:
 Build an automated documentation synchronization and freshness validation engine for Edge Mind Ai so that any future code, catalog, or version change must update documentation with zero stale details.
 
 Working directory: /Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge Mind Ai
 Integrity mode: development
 
-## Requirements
-
+Requirements:
 ### R1. Automated Documentation Freshness Checker & Unit Test
 Create an objective verification mechanism that validates documentation freshness against ground-truth codebase state:
 - A python verification script (`scripts/verify_docs_freshness.py`) and an XCTest unit test (`EdgeMindAiTests/DocumentationFreshnessTests.swift`):
@@ -27,11 +28,11 @@ Create an objective verification mechanism that validates documentation freshnes
 ### R3. Repository Cleanliness & Doc Parity
 - Ensure all current documentation files (`AGENTS.md`, `README.md`, `CLAUDE.md`, `APP_STORE_LISTING.md`, `APP_STORE_REVIEW_NOTES.md`, `docs/product.md`, `docs/runtime-evaluation.md`) pass the freshness check with 0 warnings and 0 errors.
 
-## Acceptance Criteria
+Acceptance Criteria:
+- `python3 scripts/verify_docs_freshness.py` executes successfully with exit code 0.
+- `EdgeMindAiTests/DocumentationFreshnessTests` passes in the test suite (`xcodebuild test`). Note: if modifying project.yml to add new test files, regenerate project with `xcodegen generate`.
+- Mismatched numbers or versions intentionally introduced cause the verification script and unit test to fail with descriptive error messages.
+- Developer rules in `AGENTS.md` and `CLAUDE.md` clearly document the freshness protocol.
+- All documentation files are 100% in sync with the codebase.
 
-### Verification & Automated Testing
-- [ ] `python3 scripts/verify_docs_freshness.py` executes successfully with exit code 0.
-- [ ] `EdgeMindAiTests/DocumentationFreshnessTests` passes in the test suite (`xcodebuild test`).
-- [ ] Mismatched numbers or versions intentionally introduced cause the verification script and unit test to fail with descriptive error messages.
-- [ ] Developer rules in `AGENTS.md` and `CLAUDE.md` clearly document the freshness protocol.
-- [ ] All documentation files are 100% in sync with the codebase.
+Maintain your progress.md and BRIEFING.md in your working directory. When finished, write your handoff.md and send a message reporting completion.
