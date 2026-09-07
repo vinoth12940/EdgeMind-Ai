@@ -1,27 +1,31 @@
-# Runtime Evaluation
+# Runtime Evaluation & Architecture — Edge Mind Ai
 
-## Goal
-Choose an iPhone-deployable local inference runtime before claiming broad model compatibility.
+## Status: Validated & In Production (v0.3.0)
 
-## Candidate Tracks
-1. GGUF-compatible runtime
-   - Good fit for curated downloadable models
-   - Broad ecosystem support
-   - Practical for small-model catalog workflows
-2. MLX-backed runtime
-   - Strong Apple-silicon story
-   - Good alignment with the reference product positioning
-   - Must be validated specifically for iPhone deployment constraints and packaging
+Four on-device inference runtimes have been evaluated, integrated, and verified on Apple Silicon hardware:
 
-## Recommendation
-Run a short technical spike before deepening runtime integration:
-- Load one small chat model on target device
-- Measure cold start and first token latency
-- Measure memory pressure and thermal behavior
-- Confirm packaging/distribution strategy for downloadable models
+### 1. llama.cpp (`.gguf`)
+- **Runtime Backend**: `LocalLlamaInferenceService` via vendored `llama.xcframework` (build b8354).
+- **Strengths**: Broad quantized model ecosystem (`Q4_K_M`), predictable RAM footprint, runs on both iOS Simulator and physical hardware.
+- **Hardware Integration**: Metal flash-attention enabled on A15+, disabled on A10–A14 to prevent Metal shader issues.
 
-## Exit Criteria
-- One supported runtime can load at least one curated model on iPhone
-- Generation latency is acceptable for chat
-- Model install flow is feasible within app storage constraints
-- No hidden dependency forces a cloud fallback
+### 2. Apple MLX (`.mlx`)
+- **Runtime Backend**: `MLXInferenceService` via `mlx-swift-lm` (MLXLLM, MLXVLM).
+- **Strengths**: Maximum throughput on Apple Silicon Neural Engine & GPU; supports multimodal VLMs (SigLIP vision tower).
+- **Constraints**: Requires physical device with Apple Silicon (compiled out of simulator); vision prefill constrained to 192px / 4-bit KV cache on memory-constrained devices.
+
+### 3. LiteRT-LM (`.litertlm`)
+- **Runtime Backend**: `LiteRTInferenceService` via local package `Vendor/LiteRT-LM`.
+- **Strengths**: Optimized Google Gemma 4 E2B/E4B task bundles; supports vision on E2B.
+- **Constraints**: Clamped to 2,048 safe context tokens.
+
+### 4. Apple Foundation Models (`.foundationModels`)
+- **Runtime Backend**: `AppleFoundationModelService`.
+- **Strengths**: Zero weight download, system-level efficiency, instant cold start.
+- **Constraints**: Available only on compatible Apple Intelligence devices running supported OS versions.
+
+### Cross-Runtime Memory Coordination
+- `RuntimeMemoryCoordinator` enforces mutual exclusion across all four runtimes to prevent concurrent memory pressure.
+- `AvailableMemoryGuard` verifies `os_proc_available_memory()` headroom before prefill/inference.
+- Background eviction frees idle weights when `scenePhase == .background`.
+

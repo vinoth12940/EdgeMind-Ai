@@ -1,22 +1,18 @@
-# Product Scope
+# Product Scope — Edge Mind Ai
 
 ## Summary
-Private Edge Chat is an iPhone-first SwiftUI app for private, on-device AI chat. Users install a curated set of small open-source models, choose the model they prefer, and chat in a dark native interface. Live web search is optional and explicit per prompt.
+Edge Mind Ai is an iPhone & iPad native SwiftUI app for private, on-device AI chat and multimodal inference. Users run curated open-source LLMs and VLMs locally across four runtimes (llama.cpp GGUF, Apple MLX, LiteRT-LM, and Apple Foundation Models). Live web search is optional and explicit per prompt.
 
-## V1 Screens
-- Chat
-- Models
-- History
-- Settings
+## Screens
+- **Chat**: Streaming token output, thinking lane, quick model switcher, image attachments, voice dictation/playback, and agentic tool loop.
+- **Models**: Device-audited catalog with "Best for your iPhone" tier badges, "Vision & Camera Ready" shelf, and download management.
+- **History**: Local session management with session search.
+- **Settings**: Web search provider keys, Hugging Face tokens in Keychain, performance stats toggle, and appearance controls.
 
-## V1 Principles
-- Local-first by default
-- Web search only when explicitly enabled
-- Curated model support over inflated compatibility claims
-- Privacy messaging must be accurate
-- Architecture should leave room for iPad, Mac, vision, and voice later
+## Core Principles
+- Local-first by default: 100% on-device inference without cloud dependencies.
+- Web search only when explicitly enabled by the user with their own API keys.
+- Curated, device-audited models over unchecked compatibility claims.
+- Memory protection: Headroom pre-flight checks and background weight eviction to prevent Jetsam crashes.
+- Accurate privacy disclosures: Zero telemetry, zero analytics, zero cloud sync.
 
-## Key UX Contract
-- First run should feel simple: choose model, chat immediately.
-- Users should always know whether a response came from local-only context or included live web context.
-- Default model choice should be persistent and easy to change.
