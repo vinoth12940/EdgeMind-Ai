@@ -4,7 +4,7 @@ A **privacy-first, on-device AI assistant** for iOS and iPadOS. All inference ru
 
 Now includes a first-run authentication landing flow with local credentials, device authentication (Face ID / Touch ID / passcode), and guest access. Sign in with Apple code is present but hidden in the App Store-ready build until the App ID entitlement is enabled.
 
-Built with **SwiftUI**, powered by **llama.cpp** (GGUF models), **Apple MLX** (MLX models), **LiteRT-LM**, and Apple Foundation Models, with a curated chat catalog of 21 runtime-backed models.
+Built with **SwiftUI**, powered by **llama.cpp** (GGUF models), **Apple MLX** (MLX models), **LiteRT-LM**, and Apple Foundation Models, with a curated chat catalog of 46 runtime-backed models.
 
 ---
 
@@ -19,8 +19,8 @@ Built with **SwiftUI**, powered by **llama.cpp** (GGUF models), **Apple MLX** (M
 - **Stop generation**: Cancel in-progress responses at any time
 
 ### Model Library
-- **21 chat models** across Apple Intelligence, Gemma, Granite, Llama, Phi, DeepSeek, Mistral, SmolLM, Qwen, and LFM families
-- **2 GGUF models** (llama.cpp runtime), **16 MLX models** (Apple MLX runtime), **2 LiteRT-LM models**, and **1 Apple Foundation Models entry**
+- **46 chat models** across Apple Intelligence, Gemma, Granite, Llama, Phi, DeepSeek, Mistral, SmolLM/SmolVLM, Qwen, and LFM families
+- **18 GGUF models** (llama.cpp runtime), **25 MLX models** (Apple MLX runtime), **2 LiteRT-LM models**, and **1 Apple Foundation Models entry**
 - Filter by lab, capability (Thinking, Vision, Tool Calling), runtime type, iPhone compatibility
 - Capability badges are grounded in verified app runtime behavior, not just upstream model-card claims
 - LFM text models run through the documented ChatML-style template; verified VLM/LiteRT entries expose image input
@@ -155,15 +155,15 @@ EdgeMindAiTests/
 | Lab | Family | Models | Runtimes |
 |-----|--------|--------|----------|
 | Apple | Apple Intelligence | 1 | Foundation Models |
-| Google DeepMind | Gemma | 4 | MLX, LiteRT-LM |
-| IBM | Granite | 1 | MLX |
-| Meta | Llama | 1 | MLX |
-| Microsoft | Phi | 1 | MLX |
-| DeepSeek | DeepSeek | 1 | MLX |
-| Mistral AI | Mistral | 1 | MLX |
-| Hugging Face | SmolLM | 1 | MLX |
-| Alibaba Cloud | Qwen | 6 | GGUF, MLX |
-| Liquid AI | LFM | 4 | MLX |
+| Google DeepMind | Gemma | 6 | GGUF, MLX, LiteRT-LM |
+| IBM | Granite | 2 | GGUF, MLX |
+| Meta | Llama | 4 | GGUF, MLX |
+| Microsoft | Phi | 4 | GGUF, MLX |
+| DeepSeek | DeepSeek | 2 | GGUF, MLX |
+| Mistral AI | Mistral | 2 | GGUF, MLX |
+| Hugging Face | SmolLM / SmolVLM | 4 | GGUF, MLX |
+| Alibaba Cloud | Qwen | 14 | GGUF, MLX |
+| Liquid AI | LFM | 7 | GGUF, MLX |
 
 ### Capabilities
 - **Thinking**: Native Qwen thinking blocks plus Gemma channel-style thinking output are parsed into the chat thinking lane.
@@ -330,17 +330,19 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 
 | Metric | Value |
 |--------|-------|
-| Swift files | ~36 |
-| Lines of code | ~6,000 |
-| Model catalog entries | 15 |
-| GGUF models | 4 |
-| MLX models | 11 |
-| AI Labs | 4 |
+| Swift files | ~101 |
+| Lines of code | ~27,000 |
+| Model catalog entries | 46 |
+| GGUF models | 18 |
+| MLX models | 25 |
+| LiteRT-LM models | 2 |
+| Apple Foundation Models | 1 |
+| AI Labs | 10 |
 | Search providers | 4 |
-| Unit tests | 40+ XCTest coverage across device capability, prompting, streaming, runtime profiles, and catalog migration |
+| Unit tests | 297 XCTest test cases covering hardware tiering, device capabilities, catalog consistency, runtime profiles, streaming, memory guards, and agentic tools |
 | Bundle ID | `com.vinothrajalingam.EdgeMindAi` |
 | Min deployment target | iOS 17.0 |
-| Color scheme | Dark mode only |
+| Color scheme | Adaptive Light / Dark via AppTheme |
 
 ---
 
