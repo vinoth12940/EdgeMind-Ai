@@ -47,6 +47,9 @@ REAL CHAT, NOT A WRAPPER
 • Multiple conversations — create, rename, and resume sessions from History
 • Attach a photo from your camera or library and ask a vision model about it
 • Voice dictation — speak your prompt; responses read back via on-device speech
+• Regenerate any answer, or edit an earlier message and resend it
+• Save short facts to Memory so replies fit you
+• Import your own documents (PDF, text, Markdown, CSV) and ask questions about them, with page-level citations
 
 PRIVACY IS THE DEFAULT
 • Fully offline out of the box. Nothing is uploaded unless you turn on Live Search.
@@ -54,6 +57,13 @@ PRIVACY IS THE DEFAULT
 • A guest profile gets you chatting in one tap.
 • Optional Face ID / Touch ID / local credentials to protect your space.
 • Your HuggingFace token (for gated model downloads) is stored in the iOS Keychain.
+• Memories, imported documents, and their on-device embeddings never leave the device.
+
+WORKS WITH THE REST OF iOS
+• Share Extension — summarize, explain, or ask about anything you can share (no inference runs inside the extension)
+• Shortcuts — "Ask Edge Mind Ai" returns an answer inline with Apple Intelligence or a small model
+• Home-screen and lock-screen widgets for Ask, Voice, and Camera
+• Export a chat as Markdown or PDF
 
 OPTIMIZED FOR YOUR DEVICE
 Edge Mind Ai detects your chip and tunes itself automatically — context windows of 2K–8K tokens and flash-attention acceleration on supported devices, so large models run within your iPhone's memory without crashing.
@@ -89,10 +99,15 @@ on-device AI,offline AI,local LLM,private chat,AI assistant,MLX,llama,vision,voi
 ## 5. What's New in This Version
 
 ```
+• Regenerate any answer (optionally with a different model) and swipe between versions; edit an earlier message and resend it.
+• Save short facts to Memory so replies fit you, with a "Using N memories" chip on answers that used them.
+• Import your own documents (PDF, text, Markdown, CSV) and ask questions about them — answers cite the file and page. Everything is indexed on device.
+• Share Extension: summarize, explain, or ask about anything you can share from another app.
+• Shortcuts can return an answer inline with Apple Intelligence or a small model.
+• Home-screen and lock-screen widgets for Ask, Voice, and Camera.
+• Export a chat as Markdown or PDF.
 • Fixed an issue where the app could freeze and close on launch after updating to iOS 26.6.
 • Tapping Stop now fully stops a response — no follow-up searches or voice playback afterward.
-• Response speed stats and tool activity now stay on earlier messages and are saved with your chats.
-• Tool steps that fail no longer leave a spinning indicator or an empty reply.
 • Bug fixes and stability improvements.
 ```
 

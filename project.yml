@@ -52,6 +52,8 @@ targets:
     dependencies:
       - target: EdgeMindShare
         embed: true
+      - target: EdgeMindWidget
+        embed: true
       - framework: Vendor/build-apple/llama.xcframework
         embed: true
         codeSign: true
@@ -154,5 +156,23 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.vinothrajalingam.EdgeMindAi.Share
         CODE_SIGN_ENTITLEMENTS: EdgeMindShare/EdgeMindShare.entitlements
         INFOPLIST_KEY_CFBundleName: Edge Mind AI Share
+        TARGETED_DEVICE_FAMILY: 1,2
+        SKIP_INSTALL: YES
+
+  EdgeMindWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: EdgeMindWidget
+    info:
+      path: EdgeMindWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Edge Mind AI
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vinothrajalingam.EdgeMindAi.Widget
+        INFOPLIST_KEY_CFBundleName: Edge Mind AI Widget
         TARGETED_DEVICE_FAMILY: 1,2
         SKIP_INSTALL: YES

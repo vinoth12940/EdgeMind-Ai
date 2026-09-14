@@ -132,6 +132,7 @@
 		C49DB0C08D426ABA48F140B2 /* RuntimeProfiles.json in Resources */ = {isa = PBXBuildFile; fileRef = 7C91A12BB1CC42C288EF0D21 /* RuntimeProfiles.json */; };
 		C59D67AB1B0D03E02AC89EDD /* ReadDocumentToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A4F4716A3BE45B778846657 /* ReadDocumentToolTests.swift */; };
 		C8271A40A08BF279D522460B /* DocumentVectors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DAA2FFC9C7A6586BB071D3B /* DocumentVectors.swift */; };
+		C96FF014297BDAB32BCCCAA0 /* EdgeMindWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 884C9CC02ABA87EC3E6F43A1 /* EdgeMindWidget.swift */; };
 		CAE4E3CC63A1EC164B939FE2 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = BB43F97D461582E751424096 /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CB8E2CF0F2687EBAC36A5DD6 /* ReadDocumentTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = B361EC61A89DF0F0123F322C /* ReadDocumentTool.swift */; };
 		CE866E4558BD26B6B08470DA /* AppStateStoreMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E645C8AA16B13BF8C8A501B /* AppStateStoreMigrationTests.swift */; };
@@ -149,6 +150,7 @@
 		E33E53B3FCCC78D84BD1AC2C /* MockInferenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 134141CA18ADB4786F2ACB97 /* MockInferenceService.swift */; };
 		E3932A9682FAD2AA843971DF /* ChatSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16E2D999E0126266097420A0 /* ChatSession.swift */; };
 		E4AA67FCE93516C04EDB6F27 /* AnswerVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED4402E9B505FC93B67EDAA9 /* AnswerVersionTests.swift */; };
+		E5AD18CEB47B7B8DE079835E /* EdgeMindWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6CDEDF84206B47A2E142AB94 /* EdgeMindWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E64634205A0644E89DBB199F /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7615F8FD541F0AC2B35C25B /* FlowLayout.swift */; };
 		E94E4BBAB44D42C58C0F1E6D /* ModelAuditRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CC9D9EB62BB4FCFA53A1809 /* ModelAuditRunnerTests.swift */; };
 		EC39A9744BB38531EC3F1F9B /* MockCatalogData.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DEBF8EE5BC2344D90C709F /* MockCatalogData.swift */; };
@@ -177,6 +179,13 @@
 			remoteGlobalIDString = 8AED2C7E5A41B75A17399A4E;
 			remoteInfo = EdgeMindShare;
 		};
+		891B6CCE3BA9613A5F06D771 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FCF7C3B5324AFE4DC40F48B6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 144DC630ABBEFB2EC2838958;
+			remoteInfo = EdgeMindWidget;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -187,6 +196,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				217875159008143801654EEF /* EdgeMindShare.appex in Embed Foundation Extensions */,
+				E5AD18CEB47B7B8DE079835E /* EdgeMindWidget.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -269,11 +279,13 @@
 		6B6B68BEDC12082582F08F90 /* MemoryCoordinatorAndGuardStressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCoordinatorAndGuardStressTests.swift; sourceTree = "<group>"; };
 		6B72651E530FA37A9F23615A /* LiteRTInferenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiteRTInferenceService.swift; sourceTree = "<group>"; };
 		6B8E69ED17EBBF40D718791B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6CDEDF84206B47A2E142AB94 /* EdgeMindWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = EdgeMindWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		6D3ED673F55F8CF52D43595D /* LocalLlamaRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLlamaRuntime.swift; sourceTree = "<group>"; };
 		6F2842DB3B4402AFD26EBF08 /* ModelSuggestionAdvisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSuggestionAdvisor.swift; sourceTree = "<group>"; };
 		70E97800DF5E7DF1DFF1F610 /* SearchContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchContext.swift; sourceTree = "<group>"; };
 		718D9D79650CF5FED4B77BC9 /* AppleFoundationModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationModelService.swift; sourceTree = "<group>"; };
 		71B5D3C8B227AC8A633BE47C /* EdgeMindAi.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EdgeMindAi.entitlements; sourceTree = "<group>"; };
+		74C03CDFF191E36FA23EBA56 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		75DB3F542501D130141C715A /* RuntimeMemoryCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeMemoryCoordinator.swift; sourceTree = "<group>"; };
 		7BF2B34CA694B59520969BE9 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
 		7C36F031CE57DB4431E0C25F /* PromptTemplateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptTemplateTests.swift; sourceTree = "<group>"; };
@@ -287,6 +299,7 @@
 		85B79F04A2812B3C2550ABDF /* EdgeMindAiTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = EdgeMindAiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		87B6CE4A471E1D66261D8AD4 /* StreamProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamProcessor.swift; sourceTree = "<group>"; };
 		8822DE76431C58923039E78F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		884C9CC02ABA87EC3E6F43A1 /* EdgeMindWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeMindWidget.swift; sourceTree = "<group>"; };
 		8B1DD5B63D20219AAEF5E7EC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8C1F26BF9850547F87CB7E25 /* PromptRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptRendererTests.swift; sourceTree = "<group>"; };
 		8CC9D9EB62BB4FCFA53A1809 /* ModelAuditRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelAuditRunnerTests.swift; sourceTree = "<group>"; };
@@ -523,6 +536,15 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		65B1F3D4ABA12E32698E6F87 /* EdgeMindWidget */ = {
+			isa = PBXGroup;
+			children = (
+				884C9CC02ABA87EC3E6F43A1 /* EdgeMindWidget.swift */,
+				74C03CDFF191E36FA23EBA56 /* Info.plist */,
+			);
+			path = EdgeMindWidget;
+			sourceTree = "<group>";
+		};
 		6B4DEEB31CB0455147E761AA /* Share */ = {
 			isa = PBXGroup;
 			children = (
@@ -622,6 +644,7 @@
 				8525EB03CB54A9CFDAA0EA2C /* EdgeMindAi.app */,
 				85B79F04A2812B3C2550ABDF /* EdgeMindAiTests.xctest */,
 				68C4E5496657FCAD43DC6CDD /* EdgeMindShare.appex */,
+				6CDEDF84206B47A2E142AB94 /* EdgeMindWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -652,6 +675,7 @@
 				9DF7377E9EA06BD85D6627D0 /* EdgeMindAi */,
 				D1E95107BCA09DB50CC59231 /* EdgeMindAiTests */,
 				6D5C7E71190E09C145501B94 /* EdgeMindShare */,
+				65B1F3D4ABA12E32698E6F87 /* EdgeMindWidget */,
 				2E18F4CEC7442A762813B563 /* Packages */,
 				4978579404DB3D4E984FCA70 /* Frameworks */,
 				A266ABB7D37A280A9EFFFF81 /* Products */,
@@ -768,6 +792,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		144DC630ABBEFB2EC2838958 /* EdgeMindWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 19570466E46F0E005D0FB998 /* Build configuration list for PBXNativeTarget "EdgeMindWidget" */;
+			buildPhases = (
+				FEB8F36160586C6C051FF431 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = EdgeMindWidget;
+			packageProductDependencies = (
+			);
+			productName = EdgeMindWidget;
+			productReference = 6CDEDF84206B47A2E142AB94 /* EdgeMindWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		44BFE5696E4538E64431F390 /* EdgeMindAiTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FF29D8409B93AB08B395A496 /* Build configuration list for PBXNativeTarget "EdgeMindAiTests" */;
@@ -818,6 +859,7 @@
 			);
 			dependencies = (
 				5CFAB37A80FA1BAF0D4A6835 /* PBXTargetDependency */,
+				C571CB7BC4925AC70C1117A5 /* PBXTargetDependency */,
 			);
 			name = EdgeMindAi;
 			packageProductDependencies = (
@@ -841,6 +883,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					144DC630ABBEFB2EC2838958 = {
+						DevelopmentTeam = 43NV5DTHKG;
+						ProvisioningStyle = Automatic;
+					};
 					44BFE5696E4538E64431F390 = {
 						DevelopmentTeam = 43NV5DTHKG;
 						ProvisioningStyle = Automatic;
@@ -878,6 +924,7 @@
 				B8086952D7DA8383D696A0BB /* EdgeMindAi */,
 				44BFE5696E4538E64431F390 /* EdgeMindAiTests */,
 				8AED2C7E5A41B75A17399A4E /* EdgeMindShare */,
+				144DC630ABBEFB2EC2838958 /* EdgeMindWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -1079,6 +1126,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FEB8F36160586C6C051FF431 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C96FF014297BDAB32BCCCAA0 /* EdgeMindWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -1091,6 +1146,11 @@
 			isa = PBXTargetDependency;
 			target = B8086952D7DA8383D696A0BB /* EdgeMindAi */;
 			targetProxy = 75B488B9510E94E1A07A9188 /* PBXContainerItemProxy */;
+		};
+		C571CB7BC4925AC70C1117A5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 144DC630ABBEFB2EC2838958 /* EdgeMindWidget */;
+			targetProxy = 891B6CCE3BA9613A5F06D771 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1153,6 +1213,23 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		52443738236E65A1494B5DCD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = EdgeMindWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleName = "Edge Mind AI Widget";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.vinothrajalingam.EdgeMindAi.Widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
 		};
 		A30A9A1B5E09913D50D0E1A5 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -1222,6 +1299,23 @@
 				SWIFT_VERSION = 5.1;
 			};
 			name = Release;
+		};
+		B514537E027384D5B1D2FBFE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = EdgeMindWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleName = "Edge Mind AI Widget";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.vinothrajalingam.EdgeMindAi.Widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 		BC2FD30C88589E16EED706A4 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -1395,6 +1489,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		19570466E46F0E005D0FB998 /* Build configuration list for PBXNativeTarget "EdgeMindWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B514537E027384D5B1D2FBFE /* Debug */,
+				52443738236E65A1494B5DCD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		5ADC6954A744CC14EDC2B25E /* Build configuration list for PBXProject "EdgeMindAi" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

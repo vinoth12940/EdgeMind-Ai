@@ -54,3 +54,19 @@ Edge Mind Ai is a native SwiftUI interface for on-device AI inference. To verify
 China mainland has been removed from app availability for this version. The app is not distributed in China mainland.
 
 Metadata wording that referenced third-party AI branding has been removed. Edge Mind Ai is not affiliated with any third-party AI service provider.
+
+---
+
+## 6. New in 0.3.2 — how to review the added features
+
+All of these run entirely on device. No account, network service, or new data collection is involved.
+
+1. **Share Extension** — In Photos/Safari/Files, tap **Share**, choose **Edge Mind AI**, pick **Summarize / Explain / Ask** (Ask requires a question), and confirm. The app opens with the shared item attached. Files (PDF/TXT/MD/CSV) are imported into the on-device document library; images and text are attached to a new chat. The extension itself performs no inference.
+2. **Widgets** — Long-press the Home Screen → **Add Widget** → **Edge Mind AI**. The small widget offers **Ask**; the medium widget offers **Ask / Voice / Camera**; the lock screen offers a circular **Ask**. Each button only opens the app to that input mode — no chat content is shown.
+3. **Document search** — Settings → AI Configuration → **Documents** → import a PDF (a 100+ page file is a good test). Ask *"What does my document say about …"*. Answers cite the file and page (e.g. `[report.pdf p.12]`). Indexing is local; deleting a document while it indexes cancels that import.
+4. **Memory** — Settings → AI Configuration → **Memory**. Add a memory, or type *"remember that I live in Austin"* in chat and tap **Save** on the confirmation card. Ask a question that uses it; the answer shows a **Using N memories** chip.
+5. **Shortcuts** — In the Shortcuts app, use **Ask Edge Mind Ai**. With the default **Apple Intelligence** model the answer returns inline. With a large downloaded model (over ~2 GB) the shortcut opens the app instead, because that model cannot run inside a background Shortcuts process.
+6. **Regenerate & edit** — Long-press an answer for **Regenerate** or **Regenerate with…** (another installed model); swipe the `‹ n/m ›` control to compare answers. Long-press your own message and choose **Edit** to resend it (later replies are removed after confirmation).
+7. **Export** — In the chat header, tap the **…** menu → **Share chat…**, choose Markdown or PDF, optionally include thinking, then share the file. Files are written to a temporary folder and removed on the next export.
+
+**Documents, embeddings, and memories never leave the device.** Apple's NaturalLanguage embedding assets are downloaded and managed by iOS itself; no user content is sent anywhere.

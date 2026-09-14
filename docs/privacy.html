@@ -97,7 +97,7 @@
     <span class="badge">Privacy Policy</span>
     <h1>Edge Mind Ai</h1>
     <p class="subtitle">A privacy-first, on-device AI assistant for iPhone &amp; iPad.</p>
-    <p class="updated">Last updated: September 7, 2026</p>
+    <p class="updated">Last updated: September 14, 2026</p>
   </header>
 
   <p>Edge Mind Ai (&ldquo;the app&rdquo;) is built on a simple principle: <strong>your data stays on your device.</strong> This policy describes what the app does and does not do with your information.</p>
@@ -116,6 +116,9 @@
     <li>Any AI models you choose to download</li>
     <li>Your optional HuggingFace access token (stored in the iOS Keychain)</li>
     <li>Optional local sign-in profile (display name, optional email)</li>
+    <li>Saved memories you create (short facts you ask the app to remember)</li>
+    <li>Documents you import into the document library, plus their extracted text, chunks, and on-device embeddings</li>
+    <li>Files and text you send through the iOS Share Extension, which are handed to the app through a private App Group container</li>
   </ul>
   <p>All of the above are stored locally in the app&rsquo;s sandbox on your device and are never sent anywhere by the app.</p>
 
@@ -124,6 +127,9 @@
     <li><strong>Photos</strong> you attach to a chat prompt are read from your library, downsampled, and passed to an on-device vision model, then processed locally. They are not uploaded.</li>
     <li><strong>Audio</strong> from voice dictation is handled by Apple&rsquo;s on-device speech recognition and is not sent to any server by this app.</li>
     <li><strong>Face ID / Touch ID</strong> checks are performed by iOS LocalAuthentication; the app never receives or stores biometric data.</li>
+    <li><strong>Documents</strong> you import are indexed entirely on device. Text extraction, chunking, keyword scoring, and embeddings all run locally. Embeddings use Apple&rsquo;s NaturalLanguage framework; if iOS needs to download language assets, that download is managed by the system and <strong>no user content is sent</strong>.</li>
+    <li><strong>Memories</strong> you save are stored locally and are only added to a model prompt on your device when the memory switch is on.</li>
+    <li><strong>Shared items</strong> are copied into a private App Group container so the app can import them. They are removed after import, and items older than 24 hours are discarded.</li>
   </ul>
 
   <h2>4. The only thing that leaves your device &mdash; and only when you ask</h2>
@@ -139,7 +145,7 @@
   <p>The app may display citations or links returned by an optional web search you explicitly enabled. Following a link opens it in your browser and is subject to that site&rsquo;s policy.</p>
 
   <h2>8. Your choices</h2>
-  <p>You can delete any chat, model, or your local profile at any time from within the app. Uninstalling the app removes all locally stored data.</p>
+  <p>You can delete any chat, model, memory, imported document, or your local profile at any time from within the app. Document search and memory each have their own on/off switch in Settings. Uninstalling the app removes all locally stored data.</p>
 
   <h2>9. Changes to this policy</h2>
   <p>Material changes will be reflected by updating this page with a new date.</p>
