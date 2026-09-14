@@ -67,6 +67,25 @@ struct ToolContext {
     let chatSessions: [ChatSession]
     let attachedDocuments: [ChatAttachment]
     let installedModel: InstalledModel?
+    /// Snapshot of the on-device document library, or nil when unavailable.
+    /// Searchable only when `settings.documentSearchEnabled` is on.
+    let documentSearchIndex: DocumentSearchIndex?
+
+    init(
+        settings: AppSettings,
+        conversation: [ChatMessage],
+        chatSessions: [ChatSession],
+        attachedDocuments: [ChatAttachment],
+        installedModel: InstalledModel?,
+        documentSearchIndex: DocumentSearchIndex? = nil
+    ) {
+        self.settings = settings
+        self.conversation = conversation
+        self.chatSessions = chatSessions
+        self.attachedDocuments = attachedDocuments
+        self.installedModel = installedModel
+        self.documentSearchIndex = documentSearchIndex
+    }
 
     /// Convenience: only attachments that carry extractable document text.
     var readableDocuments: [ChatAttachment] {

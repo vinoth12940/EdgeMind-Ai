@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(AuthStateStore.self) private var authStore
     @Environment(MemoryStore.self) private var memoryStore
+    @Environment(DocumentLibraryStore.self) private var documentLibrary
     @Environment(\.selectedTab) private var selectedTab
     @State private var isReauthenticating = false
     @State private var hfTokenDraft = ""
@@ -38,6 +39,8 @@ struct SettingsView: View {
                         behaviorSectionContent
                         Divider().foregroundStyle(AppTheme.divider)
                         memorySectionContent
+                        Divider().foregroundStyle(AppTheme.divider)
+                        documentsSectionContent
                     }
                     
                     settingsGroupCard(icon: "globe.americas.fill", title: "Search & Integration", iconColor: AppTheme.warning) {
@@ -269,6 +272,38 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
+    private var documentsSectionContent: some View {
+        NavigationLink {
+            DocumentLibraryView()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "folder.badge.gearshape")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.accentSoft)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Documents")
+                        .font(.appBody(14))
+                        .foregroundStyle(AppTheme.textPrimary)
+                    Text(documentLibrary.documents.isEmpty
+                         ? "Import files to search them in chat"
+                         : "\(documentLibrary.documents.count) imported · \(store.settings.documentSearchEnabled ? "on" : "off")")
+                        .font(.appBody(11))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(AppTheme.textTertiary)
+            }
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+    }
+
     private var memorySectionContent: some View {
         NavigationLink {
             MemorySettingsView()

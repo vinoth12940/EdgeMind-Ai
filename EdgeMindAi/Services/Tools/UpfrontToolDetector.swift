@@ -19,6 +19,7 @@ enum UpfrontToolDetector {
         return matchesTimeIntent(lowered)
             || matchesDeviceIntent(lowered)
             || matchesBatteryIntent(lowered)
+            || matchesDocumentIntent(lowered)
             || extractCalculationExpression(from: lowered, original: prompt) != nil
     }
 
@@ -45,6 +46,22 @@ enum UpfrontToolDetector {
         if matchesBatteryIntent(lowered) {
             let r = await GetBatteryLevelTool().run(argsJSON: "{}", context: context)
             results.append(r)
+        }
+
+        // search_documents — when the prompt clearly refers to the user's own library.
+        if matchesDocumentIntent(lowered),
+           context.settings.documentSearchEnabled,
+           let index = context.documentSearchIndex,
+           !index.isEmpty {
+            let hits = DocumentSearchService.search(query: prompt, index: index)
+            if !hits.isEmpty {
+                let budget = context.installedModel.map { InferenceBudget.documentContextBudget(for: $0) } ?? 4_000
+                results.append(ToolResult(
+                    toolName: "search_documents",
+                    output: DocumentSearchService.renderHits(hits, budgetCharacters: budget),
+                    citations: hits.map(SearchDocumentsTool.citation(from:))
+                ))
+            }
         }
 
         // calculate — only when an explicit arithmetic expression is present.
@@ -108,6 +125,15 @@ enum UpfrontToolDetector {
                         "how much ram", "device info", "device information",
                         "my iphone", "my device", "what ios", "what version",
                         "capability tier", "what tier"]
+        return keywords.contains { s.contains($0) }
+    }
+
+    private static func matchesDocumentIntent(_ s: String) -> Bool {
+        let keywords = ["my document", "the document", "this document", "my documents",
+                        "the pdf", "my pdf", "the attached file", "attached file",
+                        "in the document", "in the pdf", "according to the document",
+                        "in my notes", "from my notes", "in my files", "my library",
+                        "the file i", "uploaded file"]
         return keywords.contains { s.contains($0) }
     }
 

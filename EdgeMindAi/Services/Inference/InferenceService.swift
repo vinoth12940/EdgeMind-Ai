@@ -437,6 +437,14 @@ enum InferenceBudget {
         return min(preferred, hardCeiling)
     }
 
+    /// Character budget for document-library passages injected into a prompt.
+    /// Grows with the device-safe context window (~4 characters per token).
+    static func documentContextBudget(for model: InstalledModel, tier: DeviceTier = .current()) -> Int {
+        let contextWindow = safeContextWindow(for: model, tier: tier)
+        let tokens = max(256, min(2_000, contextWindow / 5))
+        return tokens * 4
+    }
+
     /// Prompt allowance for the saved-memory section (spec §1). Grows with the
     /// device-safe context window so compact devices keep most of the window.
     static func memoryTokenBudget(for model: InstalledModel, tier: DeviceTier = .current()) -> Int {

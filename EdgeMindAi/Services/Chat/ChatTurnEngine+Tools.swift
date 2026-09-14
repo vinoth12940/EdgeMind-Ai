@@ -380,6 +380,7 @@ extension ChatTurnEngine {
             case "get_battery_level": return "Reading battery"
             case "search_chats": return "Searching chats"
             case "read_document": return "Reading document"
+            case "search_documents": return "Searching documents"
             default: return name.replacingOccurrences(of: "_", with: " ").capitalized
             }
         }
@@ -392,6 +393,7 @@ extension ChatTurnEngine {
         case "get_battery_level": return "Read battery"
         case "search_chats": return "Searched chats"
         case "read_document": return "Read document"
+        case "search_documents": return "Searched documents"
         default: return name.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
@@ -415,6 +417,8 @@ extension ChatTurnEngine {
             return "Searching local chat history"
         case "read_document":
             return "Reading attached document"
+        case "search_documents":
+            return "Searching the document library"
         default:
             return ""
         }
@@ -433,6 +437,8 @@ extension ChatTurnEngine {
             return "📚 Searching your chats…"
         case "read_document":
             return "📄 Reading document…"
+        case "search_documents":
+            return "📚 Searching documents…"
         case "get_current_time":
             return "🕐 Getting the time…"
         case "get_device_info":

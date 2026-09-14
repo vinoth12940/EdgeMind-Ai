@@ -317,7 +317,7 @@ struct MessageBubbleView: View {
 
     private static func isStructuredLocalTool(_ name: String) -> Bool {
         switch name.lowercased() {
-        case "calculate", "get_current_time", "get_device_info", "get_battery_level", "search_chats", "read_document":
+        case "calculate", "get_current_time", "get_device_info", "get_battery_level", "search_chats", "read_document", "search_documents":
             return true
         default:
             return false

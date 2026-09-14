@@ -169,4 +169,63 @@ final class ToolRegistryTests: XCTestCase {
         XCTAssertFalse(UpfrontToolDetector.canHandleLocally(prompt: prompt))
         XCTAssertTrue(SearchResultFallbackComposer.shouldRunUpfrontSearch(prompt))
     }
+
+    // MARK: - search_documents gating
+
+    private func documentIndex() -> DocumentSearchIndex {
+        let document = LibraryDocument(fileName: "notes.txt", kind: .text, indexState: .ready)
+        return DocumentSearchIndex(entries: [
+            DocumentSearchIndex.Entry(
+                document: document,
+                chunks: [DocumentChunk(index: 0, text: "vacation policy")],
+                vectors: nil
+            )
+        ])
+    }
+
+    func test_searchDocumentsPresentWhenEnabledAndLibraryHasDocuments() {
+        let ctx = ToolContext(
+            settings: .default,
+            conversation: [],
+            chatSessions: [],
+            attachedDocuments: [],
+            installedModel: nil,
+            documentSearchIndex: documentIndex()
+        )
+
+        XCTAssertNotNil(ToolRegistry.availableTools(context: ctx).first { $0.name == "search_documents" })
+    }
+
+    func test_searchDocumentsAbsentWhenFeatureDisabled() {
+        var settings = AppSettings.default
+        settings.documentSearchEnabled = false
+        let ctx = ToolContext(
+            settings: settings,
+            conversation: [],
+            chatSessions: [],
+            attachedDocuments: [],
+            installedModel: nil,
+            documentSearchIndex: documentIndex()
+        )
+
+        XCTAssertNil(ToolRegistry.availableTools(context: ctx).first { $0.name == "search_documents" })
+    }
+
+    func test_searchDocumentsAbsentWhenLibraryEmpty() {
+        let ctx = ToolContext(
+            settings: .default,
+            conversation: [],
+            chatSessions: [],
+            attachedDocuments: [],
+            installedModel: nil,
+            documentSearchIndex: .empty
+        )
+
+        XCTAssertNil(ToolRegistry.availableTools(context: ctx).first { $0.name == "search_documents" })
+    }
+
+    func test_documentIntentIsHandledLocally() {
+        XCTAssertTrue(UpfrontToolDetector.canHandleLocally(prompt: "What does my document say about vacation?"))
+        XCTAssertTrue(UpfrontToolDetector.canHandleLocally(prompt: "Summarize the PDF I attached"))
+    }
 }

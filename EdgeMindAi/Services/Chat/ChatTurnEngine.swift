@@ -53,6 +53,8 @@ final class ChatTurnEngine {
         var idleReleaseDelay: Duration
         /// Saved personal memories. Nil in tests and headless contexts without one.
         var memoryStore: MemoryStore?
+        /// On-device document library. Nil when document search is unavailable.
+        var documentLibrary: DocumentLibraryStore?
     }
 
     private(set) var isGenerating = false
@@ -121,7 +123,7 @@ extension ChatTurnEngine {
 extension ChatTurnEngine.Dependencies {
     /// Production dependencies: the real runtimes, the real memory coordinator,
     /// and the 90-second idle release.
-    static func live(memoryStore: MemoryStore? = nil) -> Self {
+    static func live(memoryStore: MemoryStore? = nil, documentLibrary: DocumentLibraryStore? = nil) -> Self {
         let services = ChatTurnEngine.LiveServices()
         return Self(
             resolveModel: { $0.defaultModel },
@@ -155,7 +157,8 @@ extension ChatTurnEngine.Dependencies {
                 return "\(model.catalogItem.displayName) is above the safe memory budget for this device tier (\(String(format: "%.1f", estimatedGB)) GB estimated vs \(String(format: "%.1f", tier.jetsamSoftLimitGB)) GB safe). Pick a smaller model to avoid an iOS memory kill."
             },
             idleReleaseDelay: .seconds(90),
-            memoryStore: memoryStore
+            memoryStore: memoryStore,
+            documentLibrary: documentLibrary
         )
     }
 }
@@ -520,7 +523,10 @@ extension ChatTurnEngine {
                     conversation: conversation,
                     chatSessions: store.chatSessions,
                     attachedDocuments: attachments,
-                    installedModel: model
+                    installedModel: model,
+                    documentSearchIndex: store.settings.documentSearchEnabled
+                        ? dependencies.documentLibrary?.searchIndex()
+                        : nil
                 )
                 let availableTools = ToolRegistry.availableTools(context: toolContext)
                 if modelCanUseToolLoop && searchContext == nil && !availableTools.isEmpty {

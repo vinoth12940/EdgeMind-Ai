@@ -20,6 +20,7 @@ enum ToolRegistry {
         CalculateTool(),
         SearchHistoryTool(),
         ReadDocumentTool(),
+        SearchDocumentsTool(),
         GetCurrentTimeTool(),
         GetDeviceInfoTool(),
         GetBatteryLevelTool()
@@ -49,6 +50,14 @@ enum ToolRegistry {
         // read_document — only if a readable document is attached.
         if !context.readableDocuments.isEmpty {
             available.append(ReadDocumentTool())
+        }
+
+        // search_documents — only when the library has indexed documents and the
+        // user has the feature enabled.
+        if context.settings.documentSearchEnabled,
+           let index = context.documentSearchIndex,
+           !index.isEmpty {
+            available.append(SearchDocumentsTool())
         }
 
         return available

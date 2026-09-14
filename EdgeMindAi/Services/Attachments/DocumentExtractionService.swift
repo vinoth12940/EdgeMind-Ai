@@ -73,6 +73,49 @@ enum DocumentExtractionService {
         throw DocumentExtractionError.unsupportedType
     }
 
+    /// Library imports cap extracted text at 2 MB per document (spec §3); the
+    /// 20,000-character cap above still applies to prompt-inlined chat attachments.
+    static let libraryMaxCharacters = 2_000_000
+
+    /// Page-addressable extraction for the document library. PDFs keep one entry
+    /// per page so chunks can carry their page number; everything else is a
+    /// single "page".
+    static func libraryPages(from url: URL) throws -> (fileName: String, kind: ChatAttachment.Kind, pages: [String]) {
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing { url.stopAccessingSecurityScopedResource() }
+        }
+
+        let values = try? url.resourceValues(forKeys: [.contentTypeKey, .nameKey])
+        let type = values?.contentType ?? UTType(filenameExtension: url.pathExtension)
+        let fileName = values?.name ?? url.lastPathComponent
+        var remaining = libraryMaxCharacters
+
+        func capped(_ text: String) -> String {
+            guard remaining > 0 else { return "" }
+            let slice = String(text.prefix(remaining))
+            remaining -= slice.count
+            return slice
+        }
+
+        if type?.conforms(to: .pdf) == true {
+            guard let document = PDFDocument(url: url) else { throw DocumentExtractionError.unreadableFile }
+            let pages = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.map(capped)
+            return (fileName, .pdf, pages)
+        }
+
+        if type?.conforms(to: .commaSeparatedText) == true || url.pathExtension.lowercased() == "csv" {
+            return (fileName, .csv, [capped(try readText(url))])
+        }
+
+        if type?.conforms(to: .text) == true || ["txt", "md", "markdown"].contains(url.pathExtension.lowercased()) {
+            let isMarkdown = ["md", "markdown"].contains(url.pathExtension.lowercased())
+            return (fileName, isMarkdown ? .markdown : .text, [capped(try readText(url))])
+        }
+
+        throw DocumentExtractionError.unsupportedType
+    }
+
     static func promptContext(from attachments: [ChatAttachment]) -> String {
         let documentBlocks = attachments.compactMap { attachment -> String? in
             guard let text = attachment.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
