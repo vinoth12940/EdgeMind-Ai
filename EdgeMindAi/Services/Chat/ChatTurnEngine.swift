@@ -6,12 +6,38 @@ import UIKit
 let chatEngineLogger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "ChatTurnEngine")
 
 struct TurnRequest {
+    enum Target {
+        /// Append the user message and a new assistant answer (default).
+        case newMessage
+        /// Replace the answer of `assistantMessageID` with a new version. The
+        /// prompt is re-derived from the preceding user message; `model`
+        /// overrides the default model for this turn only.
+        case regenerate(assistantMessageID: UUID, model: InstalledModel?)
+    }
+
     let sessionID: UUID
     let prompt: String
     let attachments: [ChatAttachment]
     /// Raw attached image; the engine encodes it with `encodedAttachmentData(from:model:)`.
     let image: UIImage?
     let liveSearchEnabled: Bool
+    let target: Target
+
+    init(
+        sessionID: UUID,
+        prompt: String,
+        attachments: [ChatAttachment],
+        image: UIImage?,
+        liveSearchEnabled: Bool,
+        target: Target = .newMessage
+    ) {
+        self.sessionID = sessionID
+        self.prompt = prompt
+        self.attachments = attachments
+        self.image = image
+        self.liveSearchEnabled = liveSearchEnabled
+        self.target = target
+    }
 }
 
 @MainActor
@@ -344,14 +370,42 @@ extension ChatTurnEngine {
     func send(_ request: TurnRequest) {
         guard !isGenerating else { return }
 
-        let trimmedPrompt = request.prompt
-        let currentImage = request.image
-        let currentDocuments = request.attachments
-        guard !trimmedPrompt.isEmpty || currentImage != nil || !currentDocuments.isEmpty else { return }
         let sessionID = request.sessionID
-        let output = StoreTurnOutput(store: store, sessionID: sessionID)
+        guard let session = store.chatSessions.first(where: { $0.id == sessionID }) else { return }
 
-        guard let model = dependencies.resolveModel(store) else {
+        var trimmedPrompt = request.prompt
+        var currentImage = request.image
+        var currentDocuments = request.attachments
+        var conversation = session.messages
+        var overrideModel: InstalledModel?
+        var outputMode: StoreTurnOutput.Mode = .newMessage
+
+        switch request.target {
+        case .newMessage:
+            break
+        case .regenerate(let assistantMessageID, let model):
+            // History is everything before the answer being replaced. The prompt
+            // and image come from the user message that triggered that answer.
+            guard let assistantIndex = session.messages.firstIndex(where: { $0.id == assistantMessageID }),
+                  session.messages[assistantIndex].role == .assistant,
+                  let userMessage = session.messages[..<assistantIndex].last(where: { $0.role == .user }) else {
+                return
+            }
+            overrideModel = model
+            trimmedPrompt = userMessage.text
+            currentImage = userMessage.imageData.flatMap(UIImage.init(data:))
+            currentDocuments = userMessage.attachments.filter { $0.kind != .image }
+            conversation = Array(session.messages[..<assistantIndex])
+            outputMode = .regenerate(
+                assistantMessageID: assistantMessageID,
+                modelName: (model ?? dependencies.resolveModel(store))?.catalogItem.displayName ?? ""
+            )
+        }
+
+        guard !trimmedPrompt.isEmpty || currentImage != nil || !currentDocuments.isEmpty else { return }
+        let output = StoreTurnOutput(store: store, sessionID: sessionID, mode: outputMode)
+
+        guard let model = overrideModel ?? dependencies.resolveModel(store) else {
             output.finish(text: InferenceServiceError.noModelInstalled.localizedDescription, toolActivities: nil, stats: nil, duration: nil)
             return
         }
@@ -367,9 +421,6 @@ extension ChatTurnEngine {
         let documentContext = DocumentExtractionService.promptContext(from: attachments)
         let inferencePrompt = documentContext.isEmpty ? trimmedPrompt : "\(trimmedPrompt)\n\n\(documentContext)"
 
-        // Capture history BEFORE appending the current user message so inference
-        // services receive clean prior context without needing to deduplicate.
-        let conversation = store.chatSessions.first(where: { $0.id == sessionID })?.messages ?? []
         let effectiveImageData = ChatVisionContext.inheritedImageData(
             explicitImageData: jpegData,
             prompt: trimmedPrompt,
@@ -377,8 +428,13 @@ extension ChatTurnEngine {
             model: model,
             profileStore: profileStore
         )
-        let userMessage = ChatMessage(role: .user, text: trimmedPrompt, attachments: attachments)
-        store.appendMessage(userMessage, to: sessionID)
+
+        // A fresh turn appends its user message; a regenerate keeps the existing
+        // one and only replaces the answer.
+        if !outputMode.isRegenerate {
+            let userMessage = ChatMessage(role: .user, text: trimmedPrompt, attachments: attachments)
+            store.appendMessage(userMessage, to: sessionID)
+        }
 
         let raiDecision = ResponsibleAIGuard.evaluate(prompt: trimmedPrompt)
         if raiDecision.isBlocked, let response = raiDecision.response {

@@ -238,6 +238,62 @@ final class ChatTurnEngineTests: XCTestCase {
         XCTAssertTrue(answer?.text.contains("144") ?? false)
         XCTAssertTrue(service.calls.isEmpty)
     }
+
+    // MARK: regenerate
+
+    func test_regenerate_writesNewVersionWithoutAppendingMessages() async {
+        store.appendMessage(ChatMessage(role: .user, text: "Original question"), to: session.id)
+        store.appendMessage(ChatMessage(role: .assistant, text: "Old answer"), to: session.id)
+        let assistantID = messages[1].id
+
+        let service = ScriptedInferenceService(scripts: [[.textDelta("New answer")]])
+        let engine = makeEngine(model: appleModel, service: service)
+
+        engine.send(TurnRequest(
+            sessionID: session.id,
+            prompt: "",
+            attachments: [],
+            image: nil,
+            liveSearchEnabled: false,
+            target: .regenerate(assistantMessageID: assistantID, model: nil)
+        ))
+        await engine.waitUntilIdle()
+
+        XCTAssertEqual(messages.count, 2)
+        let answer = messages[1]
+        XCTAssertEqual(answer.versions.count, 2)
+        XCTAssertEqual(answer.versions[0].text, "Old answer")
+        XCTAssertEqual(answer.selectedVersion, 1)
+        XCTAssertEqual(answer.text, "New answer")
+        XCTAssertEqual(answer.versions[1].modelName, appleModel.catalogItem.displayName)
+        // The re-derived prompt is the original question and history stops before the answer.
+        XCTAssertEqual(service.calls.first?.prompt, "Original question")
+        XCTAssertEqual(service.calls.first?.conversation.map(\.text), ["Original question"])
+    }
+
+    func test_regenerate_usesModelOverrideForThisTurnOnly() async {
+        store.appendMessage(ChatMessage(role: .user, text: "Question"), to: session.id)
+        store.appendMessage(ChatMessage(role: .assistant, text: "Old"), to: session.id)
+        let assistantID = messages[1].id
+
+        let service = ScriptedInferenceService(scripts: [[.textDelta("Override answer")]])
+        let engine = makeEngine(model: appleModel, service: service)
+
+        engine.send(TurnRequest(
+            sessionID: session.id,
+            prompt: "",
+            attachments: [],
+            image: nil,
+            liveSearchEnabled: false,
+            target: .regenerate(assistantMessageID: assistantID, model: toolModel)
+        ))
+        await engine.waitUntilIdle()
+
+        XCTAssertEqual(service.calls.first?.model.catalogItem.id, toolModel.catalogItem.id)
+        XCTAssertEqual(messages[1].versions.last?.modelName, toolModel.catalogItem.displayName)
+        // The default model is untouched.
+        XCTAssertEqual(appleModel.catalogItem.id, store.installedModels.first { $0.catalogItem.runtimeType == .foundationModels }?.catalogItem.id)
+    }
 }
 
 private final class ThrowingInferenceService: InferenceService, @unchecked Sendable {

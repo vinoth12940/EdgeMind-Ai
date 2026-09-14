@@ -6,6 +6,13 @@ struct MessageBubbleView: View {
     var isGenerating: Bool = false
     var showGenerationStats: Bool = true
 
+    /// Alternate-answer support (0.3.1). Empty/nil closures disable the actions.
+    var regenerateModels: [InstalledModel] = []
+    var currentModelName: String?
+    var onRegenerate: ((InstalledModel?) -> Void)?
+    var onSelectVersion: ((Int) -> Void)?
+    var onEdit: (() -> Void)?
+
     @State private var thinkingExpanded = false
     @State private var searchExpanded = false
     @State private var previewItem: AttachmentPreviewItem?
@@ -13,6 +20,13 @@ struct MessageBubbleView: View {
     private var isUser: Bool { message.role == .user }
     private var isAssistant: Bool { message.role == .assistant }
     private var isRecoveryMessage: Bool { AssistantResponseFallback.isEmptyOutputMessage(message.text) }
+    private var hasMultipleVersions: Bool { message.versions.count > 1 }
+
+    private var selectedVersionModelName: String? {
+        guard message.versions.indices.contains(message.selectedVersion) else { return nil }
+        let name = message.versions[message.selectedVersion].modelName
+        return name.isEmpty ? nil : name
+    }
 
     @ViewBuilder
     var body: some View {
@@ -64,12 +78,65 @@ struct MessageBubbleView: View {
             )
 
             messageTimestamp
+
+            if hasMultipleVersions {
+                versionControls
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 42)
+        .contextMenu {
+            if let onEdit {
+                Button {
+                    onEdit()
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .disabled(isGenerating)
+            }
+        }
         .sheet(item: $previewItem) { item in
             AttachmentPreviewSheet(item: item)
         }
+    }
+
+    /// `‹ 2/3 ›` version switch shown under an answer with alternates.
+    private var versionControls: some View {
+        HStack(spacing: 8) {
+            Button {
+                onSelectVersion?(message.selectedVersion - 1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .disabled(isGenerating || message.selectedVersion <= 0)
+
+            Text("\(message.selectedVersion + 1)/\(message.versions.count)")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+
+            Button {
+                onSelectVersion?(message.selectedVersion + 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .disabled(isGenerating || message.selectedVersion >= message.versions.count - 1)
+
+            if let selectedVersionModelName, selectedVersionModelName != currentModelName {
+                Text(selectedVersionModelName)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppTheme.textTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(AppTheme.textSecondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(AppTheme.subtleFill))
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Answer \(message.selectedVersion + 1) of \(message.versions.count)")
     }
 
     private var assistantRow: some View {
@@ -154,10 +221,37 @@ struct MessageBubbleView: View {
                 statsFooter
                     .padding(.top, 1)
             }
+
+            if hasMultipleVersions {
+                versionControls
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 24)
         .padding(.vertical, 4)
+        .contextMenu {
+            if let onRegenerate {
+                Button {
+                    onRegenerate(nil)
+                } label: {
+                    Label("Regenerate", systemImage: "arrow.clockwise")
+                }
+                .disabled(isGenerating)
+
+                Menu {
+                    ForEach(regenerateModels) { model in
+                        Button {
+                            onRegenerate(model)
+                        } label: {
+                            Label(model.catalogItem.displayName, systemImage: model.catalogItem.runtimeType.icon)
+                        }
+                    }
+                } label: {
+                    Label("Regenerate with…", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(isGenerating || regenerateModels.isEmpty)
+            }
+        }
         .sheet(item: $previewItem) { item in
             AttachmentPreviewSheet(item: item)
         }

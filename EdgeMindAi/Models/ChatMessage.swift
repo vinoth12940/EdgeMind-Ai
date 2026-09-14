@@ -65,6 +65,82 @@ struct ChatAttachment: Identifiable, Hashable, Codable {
     }
 }
 
+/// One generated answer for a message. A message with an empty `versions`
+/// array has exactly one implicit version (its top-level fields); the first
+/// regenerate snapshots those fields into version 0.
+struct AnswerVersion: Identifiable, Hashable, Codable {
+    let id: UUID
+    var text: String
+    var thinkingContent: String?
+    var thinkingDurationSeconds: Int?
+    var generationDurationSeconds: Double?
+    var stats: GenerationStats?
+    var toolActivities: [ChatToolActivity]
+    var citations: [SearchCitation]
+    /// Display name of the model that produced this version. Empty for the
+    /// version 0 snapshot of a message created before this field existed.
+    var modelName: String
+    let createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        text: String,
+        thinkingContent: String? = nil,
+        thinkingDurationSeconds: Int? = nil,
+        generationDurationSeconds: Double? = nil,
+        stats: GenerationStats? = nil,
+        toolActivities: [ChatToolActivity] = [],
+        citations: [SearchCitation] = [],
+        modelName: String = "",
+        createdAt: Date = .now
+    ) {
+        self.id = id
+        self.text = text
+        self.thinkingContent = thinkingContent
+        self.thinkingDurationSeconds = thinkingDurationSeconds
+        self.generationDurationSeconds = generationDurationSeconds
+        self.stats = stats
+        self.toolActivities = toolActivities
+        self.citations = citations
+        self.modelName = modelName
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, text, thinkingContent, thinkingDurationSeconds
+        case generationDurationSeconds, stats, toolActivities, citations
+        case modelName, createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        thinkingContent = try container.decodeIfPresent(String.self, forKey: .thinkingContent)
+        thinkingDurationSeconds = try container.decodeIfPresent(Int.self, forKey: .thinkingDurationSeconds)
+        generationDurationSeconds = try container.decodeIfPresent(Double.self, forKey: .generationDurationSeconds)
+        stats = try container.decodeIfPresent(GenerationStats.self, forKey: .stats)
+        toolActivities = try container.decodeIfPresent([ChatToolActivity].self, forKey: .toolActivities) ?? []
+        citations = try container.decodeIfPresent([SearchCitation].self, forKey: .citations) ?? []
+        modelName = try container.decodeIfPresent(String.self, forKey: .modelName) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(thinkingContent, forKey: .thinkingContent)
+        try container.encodeIfPresent(thinkingDurationSeconds, forKey: .thinkingDurationSeconds)
+        try container.encodeIfPresent(generationDurationSeconds, forKey: .generationDurationSeconds)
+        try container.encodeIfPresent(stats, forKey: .stats)
+        try container.encode(toolActivities, forKey: .toolActivities)
+        try container.encode(citations, forKey: .citations)
+        try container.encode(modelName, forKey: .modelName)
+        try container.encode(createdAt, forKey: .createdAt)
+    }
+}
+
 struct ChatMessage: Identifiable, Hashable, Codable {
     enum Role: String, Codable, Hashable {
         case system
@@ -112,6 +188,12 @@ struct ChatMessage: Identifiable, Hashable, Codable {
     /// Per-generation performance stats (tokens/sec, time-to-first-token).
     /// Added in 0.3.0; nil on messages created by older builds.
     var stats: GenerationStats?
+    /// Alternate answers for this message. Empty means the message has exactly
+    /// one implicit version (its top-level fields). Added in 0.3.1.
+    var versions: [AnswerVersion]
+    /// Index into `versions` of the answer currently mirrored into the
+    /// top-level fields. Ignored while `versions` is empty.
+    var selectedVersion: Int
 
     init(
         id: UUID = UUID(),
@@ -125,7 +207,9 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         thinkingContent: String? = nil,
         thinkingDurationSeconds: Int? = nil,
         generationDurationSeconds: Double? = nil,
-        stats: GenerationStats? = nil
+        stats: GenerationStats? = nil,
+        versions: [AnswerVersion] = [],
+        selectedVersion: Int = 0
     ) {
         self.id = id
         self.role = role
@@ -142,6 +226,29 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         self.thinkingDurationSeconds = thinkingDurationSeconds
         self.generationDurationSeconds = generationDurationSeconds
         self.stats = stats
+        self.versions = versions
+        self.selectedVersion = selectedVersion
+    }
+
+    /// Copies the selected version into the top-level fields so every existing
+    /// reader (bubbles, history search, export, model prompt history) keeps
+    /// reading the top-level fields unchanged.
+    mutating func mirrorSelectedVersion() {
+        guard versions.indices.contains(selectedVersion) else { return }
+        let version = versions[selectedVersion]
+        text = version.text
+        thinkingContent = version.thinkingContent
+        thinkingDurationSeconds = version.thinkingDurationSeconds
+        generationDurationSeconds = version.generationDurationSeconds
+        stats = version.stats
+        toolActivities = version.toolActivities
+        citations = version.citations
+    }
+
+    /// Applies an in-place edit to the selected version, when one exists.
+    mutating func mutateSelectedVersion(_ body: (inout AnswerVersion) -> Void) {
+        guard versions.indices.contains(selectedVersion) else { return }
+        body(&versions[selectedVersion])
     }
 
     var imageData: Data? {
@@ -161,6 +268,8 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         case thinkingDurationSeconds
         case generationDurationSeconds
         case stats
+        case versions
+        case selectedVersion
     }
 
     init(from decoder: Decoder) throws {
@@ -181,6 +290,8 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         thinkingDurationSeconds = try container.decodeIfPresent(Int.self, forKey: .thinkingDurationSeconds)
         generationDurationSeconds = try container.decodeIfPresent(Double.self, forKey: .generationDurationSeconds)
         stats = try container.decodeIfPresent(GenerationStats.self, forKey: .stats)
+        versions = try container.decodeIfPresent([AnswerVersion].self, forKey: .versions) ?? []
+        selectedVersion = try container.decodeIfPresent(Int.self, forKey: .selectedVersion) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -196,6 +307,8 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         try container.encodeIfPresent(thinkingDurationSeconds, forKey: .thinkingDurationSeconds)
         try container.encodeIfPresent(generationDurationSeconds, forKey: .generationDurationSeconds)
         try container.encodeIfPresent(stats, forKey: .stats)
+        try container.encode(versions, forKey: .versions)
+        try container.encode(selectedVersion, forKey: .selectedVersion)
     }
 }
 

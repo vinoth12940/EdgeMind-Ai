@@ -27,6 +27,9 @@ final class AppStateStore {
     private static let maxPersistedMessagesPerSession = 180
     private static let maxPersistedMessageTextCharacters = 64_000
     private static let maxPersistedThinkingCharacters = 48_000
+    /// Hard cap on alternate answers per message (spec §1). A regenerate past
+    /// the cap drops the oldest non-selected version.
+    static let maxAnswerVersions = 5
 
     init(
         catalog: [ModelCatalogItem] = MockCatalogData.items,
@@ -206,6 +209,9 @@ final class AppStateStore {
         }
 
         chatSessions[sessionIndex].messages[messageIndex].text = Self.trimInMemoryText(text)
+        chatSessions[sessionIndex].messages[messageIndex].mutateSelectedVersion {
+            $0.text = Self.trimInMemoryText(text)
+        }
         chatSessions[sessionIndex].updatedAt = .now
         if persist {
             saveChatSessions()
@@ -221,6 +227,7 @@ final class AppStateStore {
         guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
         guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
         chatSessions[sessionIndex].messages[messageIndex].toolActivities = toolActivities
+        chatSessions[sessionIndex].messages[messageIndex].mutateSelectedVersion { $0.toolActivities = toolActivities }
         chatSessions[sessionIndex].updatedAt = .now
         if persist { saveChatSessions() }
     }
@@ -234,6 +241,7 @@ final class AppStateStore {
         guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
         guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
         chatSessions[sessionIndex].messages[messageIndex].citations = citations
+        chatSessions[sessionIndex].messages[messageIndex].mutateSelectedVersion { $0.citations = citations }
         chatSessions[sessionIndex].updatedAt = .now
         if persist { saveChatSessions() }
     }
@@ -249,6 +257,10 @@ final class AppStateStore {
         guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
         chatSessions[sessionIndex].messages[messageIndex].thinkingContent = thinkingContent.map(Self.trimInMemoryThinking)
         chatSessions[sessionIndex].messages[messageIndex].thinkingDurationSeconds = thinkingDurationSeconds
+        chatSessions[sessionIndex].messages[messageIndex].mutateSelectedVersion {
+            $0.thinkingContent = thinkingContent.map(Self.trimInMemoryThinking)
+            $0.thinkingDurationSeconds = thinkingDurationSeconds
+        }
         chatSessions[sessionIndex].updatedAt = .now
         if persist { saveChatSessions() }
     }
@@ -262,6 +274,7 @@ final class AppStateStore {
         guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
         guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
         chatSessions[sessionIndex].messages[messageIndex].generationDurationSeconds = duration
+        chatSessions[sessionIndex].messages[messageIndex].mutateSelectedVersion { $0.generationDurationSeconds = duration }
         chatSessions[sessionIndex].updatedAt = .now
         if persist { saveChatSessions() }
     }
@@ -278,8 +291,109 @@ final class AppStateStore {
         guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
         guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
         chatSessions[sessionIndex].messages[messageIndex].stats = stats
+        chatSessions[sessionIndex].messages[messageIndex].mutateSelectedVersion { $0.stats = stats }
         chatSessions[sessionIndex].updatedAt = .now
         if persist { saveChatSessions() }
+    }
+
+    // MARK: - Answer versions and edit
+
+    /// Snapshots the current top-level content as version 0 when needed, appends
+    /// an empty version, selects it, and returns the new version's ID.
+    @discardableResult
+    func beginRegeneration(
+        _ messageID: UUID,
+        in sessionID: UUID,
+        modelName: String,
+        citations: [SearchCitation] = []
+    ) -> UUID? {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return nil }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return nil }
+
+        var message = chatSessions[sessionIndex].messages[messageIndex]
+        guard message.role == .assistant else { return nil }
+
+        if message.versions.isEmpty {
+            message.versions = [AnswerVersion(
+                text: message.text,
+                thinkingContent: message.thinkingContent,
+                thinkingDurationSeconds: message.thinkingDurationSeconds,
+                generationDurationSeconds: message.generationDurationSeconds,
+                stats: message.stats,
+                toolActivities: message.toolActivities,
+                citations: message.citations,
+                modelName: ""
+            )]
+        }
+
+        let newVersion = AnswerVersion(text: "", citations: citations, modelName: modelName)
+        message.versions.append(newVersion)
+
+        // Cap: drop the oldest non-selected version first so the answer the user
+        // is looking at is never silently discarded.
+        while message.versions.count > Self.maxAnswerVersions {
+            if let oldestOther = message.versions.firstIndex(where: { $0.id != newVersion.id }) {
+                message.versions.remove(at: oldestOther)
+            } else {
+                break
+            }
+        }
+
+        message.selectedVersion = message.versions.firstIndex(where: { $0.id == newVersion.id }) ?? 0
+        message.mirrorSelectedVersion()
+        chatSessions[sessionIndex].messages[messageIndex] = message
+        chatSessions[sessionIndex].updatedAt = .now
+        saveChatSessions()
+        return newVersion.id
+    }
+
+    /// Removes a version (used when a regenerate is abandoned). The message and
+    /// its other versions are untouched; the selection falls back to the last.
+    func removeVersion(_ versionID: UUID, from messageID: UUID, in sessionID: UUID) {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        var message = chatSessions[sessionIndex].messages[messageIndex]
+        guard let versionIndex = message.versions.firstIndex(where: { $0.id == versionID }) else { return }
+        message.versions.remove(at: versionIndex)
+        if message.versions.isEmpty {
+            // No versions left: the top-level fields stay as the last answer.
+            message.selectedVersion = 0
+        } else {
+            message.selectedVersion = min(max(message.selectedVersion, 0), message.versions.count - 1)
+            message.mirrorSelectedVersion()
+        }
+        chatSessions[sessionIndex].messages[messageIndex] = message
+        chatSessions[sessionIndex].updatedAt = .now
+        saveChatSessions()
+    }
+
+    /// Selects a version and mirrors it into the message's top-level fields.
+    func selectVersion(_ index: Int, of messageID: UUID, in sessionID: UUID) {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        var message = chatSessions[sessionIndex].messages[messageIndex]
+        guard message.versions.indices.contains(index) else { return }
+        message.selectedVersion = index
+        message.mirrorSelectedVersion()
+        chatSessions[sessionIndex].messages[messageIndex] = message
+        chatSessions[sessionIndex].updatedAt = .now
+        saveChatSessions()
+    }
+
+    /// Removes a user message and everything after it so the caller can resend an
+    /// edited prompt. Returns the removed message (attachments included) or nil
+    /// when the message is missing or is not a user message.
+    @discardableResult
+    func removeMessagesForEdit(from messageID: UUID, in sessionID: UUID) -> ChatMessage? {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return nil }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return nil }
+        let message = chatSessions[sessionIndex].messages[messageIndex]
+        guard message.role == .user else { return nil }
+
+        chatSessions[sessionIndex].messages.removeSubrange(messageIndex...)
+        chatSessions[sessionIndex].updatedAt = .now
+        saveChatSessions()
+        return message
     }
 
     func createSession(using modelID: UUID?) {
@@ -462,6 +576,12 @@ final class AppStateStore {
         var sanitized = message
         sanitized.text = trimInMemoryText(message.text)
         sanitized.thinkingContent = message.thinkingContent.map(trimInMemoryThinking)
+        sanitized.versions = message.versions.map { version in
+            var copy = version
+            copy.text = trimInMemoryText(version.text)
+            copy.thinkingContent = version.thinkingContent.map(trimInMemoryThinking)
+            return copy
+        }
         return sanitized
     }
 
@@ -491,7 +611,16 @@ final class AppStateStore {
             },
             thinkingDurationSeconds: message.thinkingDurationSeconds,
             generationDurationSeconds: message.generationDurationSeconds,
-            stats: message.stats
+            stats: message.stats,
+            versions: message.versions.map { version in
+                var copy = version
+                copy.text = InferenceBudget.trimHistoryText(version.text, maxCharacters: maxPersistedMessageTextCharacters)
+                copy.thinkingContent = version.thinkingContent.map {
+                    InferenceBudget.trimHistoryText($0, maxCharacters: maxPersistedThinkingCharacters)
+                }
+                return copy
+            },
+            selectedVersion: message.selectedVersion
         )
     }
 

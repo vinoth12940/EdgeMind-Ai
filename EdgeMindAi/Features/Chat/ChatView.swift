@@ -67,6 +67,9 @@ struct ChatView: View {
     @State private var showDeleteCurrentSessionConfirmation = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var attachedImage: UIImage?
+    /// User message being edited; while set, Send edits-and-resends instead of appending.
+    @State private var editingMessage: ChatMessage?
+    @State private var showEditConfirmation = false
     @State private var attachedDocuments: [ChatAttachment] = []
     @StateObject private var voiceController = VoiceInteractionController()
 
@@ -198,7 +201,19 @@ struct ChatView: View {
                                     MessageBubbleView(
                                         message: message,
                                         isGenerating: message.id == activeMessages.last?.id && engine.isGenerating,
-                                        showGenerationStats: store.settings.showGenerationStats
+                                        showGenerationStats: store.settings.showGenerationStats,
+                                        regenerateModels: store.availableChatModels,
+                                        currentModelName: activeModel?.catalogItem.displayName,
+                                        onRegenerate: { model in
+                                            regenerate(message, model: model)
+                                        },
+                                        onSelectVersion: { index in
+                                            guard let sessionID = store.selectedSession?.id else { return }
+                                            store.selectVersion(index, of: message.id, in: sessionID)
+                                        },
+                                        onEdit: {
+                                            beginEditing(message)
+                                        }
                                     )
                                         .id(message.id)
                                         .transition(.asymmetric(
@@ -242,6 +257,10 @@ struct ChatView: View {
                             }
                         }
                     }
+                }
+
+                if editingMessage != nil {
+                    editingBanner
                 }
 
                 // ChatComposerView integrated directly at bottom of VStack
@@ -308,8 +327,7 @@ struct ChatView: View {
                 }
             }
         }
-        .onChange(of: store.settings.voiceModeEnabled) {
-            if !store.settings.voiceModeEnabled {
+        .onChange(of: store.settings.voiceModeEnabled) {            if !store.settings.voiceModeEnabled {
                 voiceController.stopListening()
                 voiceController.stopSpeaking()
             }
@@ -321,6 +339,9 @@ struct ChatView: View {
                 attachedImage = nil
             }
         }
+        .onChange(of: store.selectedSessionID) {
+            editingMessage = nil
+        }
         .alert("Delete Conversation", isPresented: $showDeleteCurrentSessionConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -329,6 +350,37 @@ struct ChatView: View {
         } message: {
             Text("This removes the current chat from local history.")
         }
+        .alert("Edit message?", isPresented: $showEditConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Edit & Send", role: .destructive) {
+                performEditSend()
+            }
+        } message: {
+            Text("Every reply after this message will be removed and the edited message will be sent again.")
+        }
+    }
+
+    /// Banner shown above the composer while editing a previous user message.
+    private var editingBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pencil")
+                .font(.system(size: 11, weight: .bold))
+            Text("Editing — later replies will be removed")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+            Button("Cancel") {
+                editingMessage = nil
+            }
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+        }
+        .foregroundStyle(AppTheme.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(AppTheme.subtleFill))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
     }
 
     private var activeMessages: [ChatMessage] {
@@ -1152,6 +1204,13 @@ struct ChatView: View {
         voiceController.stopListening()
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPrompt.isEmpty || attachedImage != nil || !attachedDocuments.isEmpty else { return }
+
+        // Editing a previous message removes every later reply first, so confirm.
+        if editingMessage != nil {
+            showEditConfirmation = true
+            return
+        }
+
         if store.selectedSession == nil {
             store.createSession(using: store.defaultModel?.catalogItem.id)
         }
@@ -1174,5 +1233,38 @@ struct ChatView: View {
         attachedImage = nil
         attachedDocuments = []
         engine.send(request)
+    }
+
+    /// Removes the edited message and everything after it, then sends the
+    /// composer contents (which hold the edited text and attachments).
+    private func performEditSend() {
+        guard let editing = editingMessage else { return }
+        if let sessionID = store.selectedSession?.id {
+            store.removeMessagesForEdit(from: editing.id, in: sessionID)
+        }
+        editingMessage = nil
+        sendPrompt()
+    }
+
+    private func beginEditing(_ message: ChatMessage) {
+        guard !engine.isGenerating, message.role == .user else { return }
+        editingMessage = message
+        prompt = message.text
+        attachedImage = message.imageData.flatMap { UIImage(data: $0) }
+        attachedDocuments = message.attachments.filter { $0.kind != .image }
+        isInputFocused = true
+    }
+
+    private func regenerate(_ message: ChatMessage, model: InstalledModel?) {
+        guard !engine.isGenerating else { return }
+        guard let sessionID = store.selectedSession?.id else { return }
+        engine.send(TurnRequest(
+            sessionID: sessionID,
+            prompt: "",
+            attachments: [],
+            image: nil,
+            liveSearchEnabled: liveSearchEnabled,
+            target: .regenerate(assistantMessageID: message.id, model: model)
+        ))
     }
 }

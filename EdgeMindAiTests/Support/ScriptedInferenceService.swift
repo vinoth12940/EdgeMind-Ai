@@ -7,6 +7,7 @@ import Foundation
 final class ScriptedInferenceService: InferenceService, @unchecked Sendable {
     struct Call {
         let prompt: String
+        let model: InstalledModel
         let systemPrompt: String
         let conversation: [ChatMessage]
         let imageData: Data?
@@ -32,7 +33,7 @@ final class ScriptedInferenceService: InferenceService, @unchecked Sendable {
         prompt: String, model: InstalledModel, conversation: [ChatMessage],
         searchContext: SearchContext?, systemPrompt: String, imageData: Data?, settings: AppSettings?
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
-        calls.append(Call(prompt: prompt, systemPrompt: systemPrompt, conversation: conversation, imageData: imageData))
+        calls.append(Call(prompt: prompt, model: model, systemPrompt: systemPrompt, conversation: conversation, imageData: imageData))
         let script = scripts.isEmpty ? [.textDelta("unscripted"), .done(GenerationStats(totalDuration: 0))] : scripts.removeFirst()
         let chunk = firstChunk
         let stream = AsyncStream<StreamEvent> { continuation in

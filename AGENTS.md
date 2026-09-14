@@ -126,6 +126,15 @@ Persistence uses `UserDefaults` via JSON encoding. Images in chat history are sa
 
 `AppStateStore.reconcileInstalledFiles()` is called at launch to reconcile GGUF files present on disk with persisted `InstalledModel` records — it scans the models directory and calls `markInstallCompleted` for any matching files.
 
+### Answer versions and edit (v0.3.1)
+`ChatMessage.versions: [AnswerVersion]` holds alternate answers for a message and `selectedVersion` indexes the one currently mirrored into the message's top-level fields (`text`, `thinkingContent`, `stats`, `toolActivities`, `citations`, durations). An empty `versions` array means the message has exactly one implicit version, so old persisted data decodes unchanged. Rules:
+- **Every existing reader keeps using the top-level fields** — `mirrorSelectedVersion()` keeps them in sync, and `AppStateStore`'s `update*` mutations write to the selected version *and* the mirror.
+- The first regenerate snapshots the current answer as version 0. `AppStateStore.maxAnswerVersions` (5) caps a message; a 6th regenerate evicts the oldest **non-selected** version.
+- Only the selected version is sent to models as history.
+- Regenerate targets are `TurnRequest.Target.regenerate(assistantMessageID:model:)`; `StoreTurnOutput.Mode.regenerate` writes the new answer into a new version instead of appending a message, and re-derives the prompt/image from the preceding user message. The optional `model` overrides the default for that turn only.
+- Edit-and-resend is `AppStateStore.removeMessagesForEdit(from:in:)` (user messages only) followed by a normal `.newMessage` send with the returned attachments. The UI confirms first because later replies are removed.
+- Sanitizers copy and mutate (`sanitizedMessageForInMemory`/`sanitizedMessageForPersistence` trim every version too); they must never rebuild a message field by field.
+
 ### Inference layer (`Services/Inference/`)
 Four concrete backends behind the `InferenceService` protocol, selected by `ModelCatalogItem.RuntimeType` (`.gguf`, `.mlx`, `.liteRTLM`, `.foundationModels`):
 

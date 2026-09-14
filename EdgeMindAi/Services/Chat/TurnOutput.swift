@@ -30,28 +30,63 @@ protocol TurnOutput: AnyObject {
 
 @MainActor
 final class StoreTurnOutput: TurnOutput {
+    /// Which store mutation a turn's writes target.
+    enum Mode {
+        /// Append a new assistant message (a fresh user turn).
+        case newMessage
+        /// Write into a new version of an existing assistant message.
+        case regenerate(assistantMessageID: UUID, modelName: String)
+
+        var isRegenerate: Bool {
+            if case .regenerate = self { return true }
+            return false
+        }
+    }
+
     private let store: AppStateStore
     private let sessionID: UUID
+    private let mode: Mode
     private(set) var answerMessageID: UUID?
+    private var activeVersionID: UUID?
     private(set) var isFinished = false
     private let logger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "TurnOutput")
 
-    init(store: AppStateStore, sessionID: UUID) {
+    init(store: AppStateStore, sessionID: UUID, mode: Mode = .newMessage) {
         self.store = store
         self.sessionID = sessionID
+        self.mode = mode
     }
 
     func beginAnswer(messageID: UUID, citations: [SearchCitation]) {
-        answerMessageID = messageID
-        store.appendMessage(ChatMessage(id: messageID, role: .assistant, text: "", citations: citations), to: sessionID)
+        switch mode {
+        case .newMessage:
+            answerMessageID = messageID
+            store.appendMessage(ChatMessage(id: messageID, role: .assistant, text: "", citations: citations), to: sessionID)
+        case .regenerate(let assistantMessageID, let modelName):
+            answerMessageID = assistantMessageID
+            activeVersionID = store.beginRegeneration(
+                assistantMessageID,
+                in: sessionID,
+                modelName: modelName,
+                citations: citations
+            )
+        }
     }
 
     var hasActiveAnswer: Bool { answerMessageID != nil }
 
     func discardAnswer() {
         guard let answerMessageID else { return }
-        store.removeMessage(answerMessageID, from: sessionID)
+        switch mode {
+        case .newMessage:
+            store.removeMessage(answerMessageID, from: sessionID)
+        case .regenerate:
+            if let activeVersionID {
+                store.removeVersion(activeVersionID, from: answerMessageID, in: sessionID)
+            }
+        }
         self.answerMessageID = nil
+        self.activeVersionID = nil
     }
 
     func update(text: String, persist: Bool) {
@@ -85,10 +120,17 @@ final class StoreTurnOutput: TurnOutput {
         }
         isFinished = true
         guard let answerMessageID else {
-            store.appendMessage(
-                ChatMessage(role: .assistant, text: text, toolActivities: toolActivities ?? []),
-                to: sessionID
-            )
+            switch mode {
+            case .newMessage:
+                store.appendMessage(
+                    ChatMessage(role: .assistant, text: text, toolActivities: toolActivities ?? []),
+                    to: sessionID
+                )
+            case .regenerate:
+                // No version was begun, so there is nothing to overwrite; a
+                // notice avoids appending a stray assistant message.
+                store.appendMessage(ChatMessage(role: .system, text: text), to: sessionID)
+            }
             return
         }
         if let duration {
