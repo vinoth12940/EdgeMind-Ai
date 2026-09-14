@@ -1,21 +1,5 @@
 import SwiftUI
-import OSLog
 
-private let chatLogger = Logger(subsystem: "io.example.PrivateEdgeChat", category: "ChatView")
-
-private enum GenerationInterruptionReason {
-    case user
-    case memoryWarning
-
-    var notice: String {
-        switch self {
-        case .user:
-            return "Response stopped by user"
-        case .memoryWarning:
-            return "Your device needed memory — response was interrupted"
-        }
-    }
-}
 
 enum ChatInputCapability {
     static let imageUnsupportedMessage = "This model supports text and document prompts only. Choose a vision model such as Qwen 3.5 VL, LFM2.5 VL, or Gemma 4 LiteRT-LM to ask about an image."
@@ -72,38 +56,25 @@ enum ChatVisionContext {
 
 struct ChatView: View {
     @Environment(AppStateStore.self) private var store
+    @Environment(ChatTurnEngine.self) private var engine
     @Environment(\.selectedTab) private var selectedTab
     @Environment(\.scenePhase) private var scenePhase
     @State private var prompt = ""
     @State private var liveSearchEnabled = false
     @State private var searchAutoInitialized = false
     @State private var isInputFocused = false
-    @State private var isSending = false
-    @State private var generationTask: Task<Void, Never>?
-    @State private var activeGenerationID: UUID?
-    @State private var generationInterruptionReason: GenerationInterruptionReason?
-    @State private var inferenceService: InferenceService = LocalLlamaInferenceService()
-    @State private var mlxInferenceService: InferenceService = MLXInferenceService()
-    @State private var liteRTInferenceService: InferenceService = LiteRTInferenceService()
-    @State private var appleFoundationInferenceService: InferenceService = AppleFoundationInferenceService()
     @State private var showModelPicker = false
     @State private var showDeleteCurrentSessionConfirmation = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var attachedImage: UIImage?
     @State private var attachedDocuments: [ChatAttachment] = []
-    @State private var idleRuntimeReleaseTask: Task<Void, Never>?
-    /// Background pre-warm of the selected model so the first send is fast.
-    /// Cancelled if the user picks a different model before load completes.
-    @State private var prewarmTask: Task<Void, Never>?
     @StateObject private var voiceController = VoiceInteractionController()
 
-    private let profileStore = RuntimeProfileStore()
 
     private func resolved(for model: InstalledModel) -> ResolvedModel {
-        ModelRuntimeResolver.resolve(catalog: model.catalogItem, store: profileStore)
+        ModelRuntimeResolver.resolve(catalog: model.catalogItem, store: engine.profileStore)
     }
 
-    private let streamUpdateInterval: Duration = .milliseconds(80)
 
     private var composerBottomSpacing: CGFloat {
         isInputFocused ? 4 : 8
@@ -113,7 +84,7 @@ struct ChatView: View {
         guard let model = store.defaultModel else { return false }
         // Runtime profile is the gate here. Source/model-card vision claims are
         // not enough to keep image attachments enabled after a red device audit.
-        return ChatInputCapability.acceptsImage(model, profileStore: profileStore)
+        return ChatInputCapability.acceptsImage(model, profileStore: engine.profileStore)
     }
 
     private var activeModel: InstalledModel? {
@@ -186,21 +157,6 @@ struct ChatView: View {
         return "\(tokens)"
     }
 
-    private func memoryGuardMessage(for model: InstalledModel) -> String? {
-        if let headroomAlert = AvailableMemoryGuard.checkMemoryHeadroom(for: model.catalogItem, isVision: attachedImage != nil) {
-            return headroomAlert
-        }
-
-        let tier = DeviceTier.current()
-        // If the current device tier meets or exceeds the model's minimum tier requirement,
-        // do not block execution with the memory guard.
-        guard tier < model.catalogItem.minimumTier else { return nil }
-
-        let estimatedGB = model.catalogItem.estimatedResidentGB(contextTokens: tier.safeContextTokens)
-        guard estimatedGB > tier.jetsamSoftLimitGB else { return nil }
-
-        return "\(model.catalogItem.displayName) is above the safe memory budget for this device tier (\(String(format: "%.1f", estimatedGB)) GB estimated vs \(String(format: "%.1f", tier.jetsamSoftLimitGB)) GB safe). Pick a smaller model to avoid an iOS memory kill."
-    }
 
     private var lastAssistantResponseText: String? {
         activeMessages
@@ -209,49 +165,6 @@ struct ChatView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func inferenceServiceForModel(_ model: InstalledModel) -> InferenceService {
-        switch model.catalogItem.runtimeType {
-        case .gguf:
-            return inferenceService
-        case .mlx:
-            return mlxInferenceService
-        case .liteRTLM:
-            return liteRTInferenceService
-        case .foundationModels:
-            return appleFoundationInferenceService
-        }
-    }
-
-    /// Eagerly loads the selected model's weights when the user picks it from
-    /// the model picker, so the first message send doesn't pay the load cost.
-    /// Routed through `RuntimeMemoryCoordinator.prepareForRuntime(...)` so
-    /// competing runtimes are evicted (memory invariant preserved). The task
-    /// is cancelled if the user picks another model before load completes.
-    private func prewarmSelectedModel() {
-        prewarmTask?.cancel()
-        guard let model = store.defaultModel, model.catalogItem.runtimeType == .gguf else {
-            // Only GGUF pre-warms here — MLX/LiteRT load lazily inside their
-            // services and FoundationModels has no weights to load. GGUF is
-            // also the only path testable in the simulator.
-            return
-        }
-        guard let modelPath = model.localPath else { return }
-
-        prewarmTask = Task {
-            await RuntimeMemoryCoordinator.prepareForRuntime(model.catalogItem.runtimeType)
-            if Task.isCancelled { return }
-            // `generate(prompt:using:maxGeneratedTokens:)` with an empty prompt
-            // triggers `ensureContext` (the actual weight load) without running
-            // a full generation. A subsequent real send reuses the loaded
-            // context because the cap is now a per-call parameter (0.3.0).
-            do {
-                _ = try await LocalLlamaRuntime.shared.generate(prompt: " ", using: modelPath, maxGeneratedTokens: 1)
-                chatLogger.log("Pre-warmed GGUF model: \(model.catalogItem.displayName, privacy: .public)")
-            } catch {
-                chatLogger.log("Pre-warm skipped: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-    }
 
     var body: some View {
         ZStack {
@@ -284,7 +197,7 @@ struct ChatView: View {
                                 ForEach(activeMessages) { message in
                                     MessageBubbleView(
                                         message: message,
-                                        isGenerating: message.id == activeMessages.last?.id && isSending,
+                                        isGenerating: message.id == activeMessages.last?.id && engine.isGenerating,
                                         showGenerationStats: store.settings.showGenerationStats
                                     )
                                         .id(message.id)
@@ -294,7 +207,7 @@ struct ChatView: View {
                                         ))
                                 }
 
-                                if isSending {
+                                if engine.isGenerating {
                                     generationStatusCard
                                     .id("typing")
                                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -319,9 +232,9 @@ struct ChatView: View {
                                 proxy.scrollTo(activeMessages.last?.id, anchor: .bottom)
                             }
                         }
-                        .onChange(of: isSending) {
+                        .onChange(of: engine.isGenerating) {
                             withAnimation(.easeOut(duration: 0.3)) {
-                                if isSending {
+                                if engine.isGenerating {
                                     proxy.scrollTo("typing", anchor: .bottom)
                                 } else {
                                     proxy.scrollTo(activeMessages.last?.id, anchor: .bottom)
@@ -342,11 +255,11 @@ struct ChatView: View {
                     isListening: voiceController.isListening,
                     voiceStatusMessage: voiceController.lastError,
                     isVisionModel: isVisionModel,
-                    isSending: isSending,
+                    isSending: engine.isGenerating,
                     isSearchConfigured: searchGatewayConfigured,
                     onSend: sendPrompt,
                     onToggleVoiceInput: toggleVoiceInput,
-                    onStop: stopGeneration
+                    onStop: engine.stop
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
@@ -366,6 +279,9 @@ struct ChatView: View {
         .floatingDockHidden()
         .onAppear {
             store.reconcileInstalledFiles()
+            engine.speaker = { [voiceController] text, settings in
+                voiceController.speak(text, using: settings)
+            }
             applyIntentHandoff()
             if !searchAutoInitialized {
                 searchAutoInitialized = true
@@ -381,13 +297,13 @@ struct ChatView: View {
             applyIntentHandoff()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            handleMemoryWarning()
+            engine.handleMemoryWarning()
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {
-                if !isSending && generationTask == nil {
+                if !engine.isGenerating {
                     Task {
-                        await RuntimeMemoryCoordinator.releaseAll()
+                        await engine.releaseRuntimes()
                     }
                 }
             }
@@ -404,10 +320,6 @@ struct ChatView: View {
             if !isVisionModel {
                 attachedImage = nil
             }
-        }
-        .onDisappear {
-            idleRuntimeReleaseTask?.cancel()
-            idleRuntimeReleaseTask = nil
         }
         .alert("Delete Conversation", isPresented: $showDeleteCurrentSessionConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -438,8 +350,8 @@ struct ChatView: View {
 
     private func deleteCurrentSession() {
         guard let sessionID = store.selectedSession?.id else { return }
-        if isSending {
-            stopGeneration()
+        if engine.isGenerating {
+            engine.stop()
         }
         isInputFocused = false
         withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
@@ -477,7 +389,7 @@ struct ChatView: View {
                                 Task {
                                     await RuntimeMemoryCoordinator.prepareForRuntime(model.catalogItem.runtimeType)
                                 }
-                                prewarmSelectedModel()
+                                engine.prewarmDefaultModel()
                             } label: {
                                 Label(
                                     model.catalogItem.displayName,
@@ -517,8 +429,8 @@ struct ChatView: View {
                 )
             }
             .buttonStyle(.plain)
-            .disabled(isSending)
-            .opacity(isSending ? 0.6 : 1.0)
+            .disabled(engine.isGenerating)
+            .opacity(engine.isGenerating ? 0.6 : 1.0)
             .accessibilityLabel("Active model: \(activeModel?.catalogItem.displayName ?? "No model selected"). Quick model switcher")
             .accessibilityHint("Double-tap to switch between installed models or open model library")
             
@@ -1058,7 +970,7 @@ struct ChatView: View {
             if isInstalled {
                 store.setDefaultModel(id: item.id)
                 showModelPicker = false
-                prewarmSelectedModel()
+                engine.prewarmDefaultModel()
             } else {
                 showModelPicker = false
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
@@ -1216,36 +1128,6 @@ struct ChatView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
-    private func stopGeneration() {
-        generationInterruptionReason = .user
-        generationTask?.cancel()
-        generationTask = nil
-        activeGenerationID = nil
-        isSending = false
-        scheduleIdleRuntimeRelease()
-    }
-
-    private func handleMemoryWarning() {
-        guard isSending || generationTask != nil else {
-            Task { await RuntimeMemoryCoordinator.releaseAll() }
-            return
-        }
-
-        generationInterruptionReason = .memoryWarning
-        generationTask?.cancel()
-        generationTask = nil
-        activeGenerationID = nil
-        isSending = false
-
-        if let sessionID = store.selectedSession?.id {
-            store.appendMessage(
-                ChatMessage(role: .system, text: GenerationInterruptionReason.memoryWarning.notice),
-                to: sessionID
-            )
-        }
-
-        Task { await RuntimeMemoryCoordinator.releaseAll() }
-    }
 
     private func toggleVoiceInput() {
         guard store.settings.voiceModeEnabled else { return }
@@ -1265,1316 +1147,32 @@ struct ChatView: View {
         voiceController.speak(lastAssistantResponseText, using: store.settings)
     }
 
-    /// Extract a web_search tool call from raw text (handles both standard and Gemma 4 formats).
-    /// Used as a fallback when StreamProcessor misses <tool_call> due to tag splitting across tokens.
-    private static func extractToolCallQuery(from text: String) -> String? {
-        // Try standard <tool_call>...</tool_call>
-        if let openRange = text.range(of: "<tool_call>", options: .caseInsensitive),
-           let closeRange = text.range(of: "</tool_call>", options: .caseInsensitive, range: openRange.upperBound..<text.endIndex) {
-            return parseWebSearchQuery(String(text[openRange.upperBound..<closeRange.lowerBound]))
-        }
-        // Try Gemma 4 native <|tool_call>...<tool_call|>
-        if let openRange = text.range(of: "<|tool_call>", options: .caseInsensitive),
-           let closeRange = text.range(of: "<tool_call|>", options: .caseInsensitive, range: openRange.upperBound..<text.endIndex) {
-            return parseWebSearchQuery(String(text[openRange.upperBound..<closeRange.lowerBound]))
-        }
-        // Try Liquid LFM 2.5 native <|tool_call_start|>...<|tool_call_end|>
-        if let openRange = text.range(of: "<|tool_call_start|>", options: .caseInsensitive),
-           let closeRange = text.range(of: "<|tool_call_end|>", options: .caseInsensitive, range: openRange.upperBound..<text.endIndex) {
-            return parseWebSearchQuery(String(text[openRange.upperBound..<closeRange.lowerBound]))
-        }
-        return nil
-    }
-
-    private static func parseWebSearchQuery(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Try to find JSON object in the text (handles models that add extra text before JSON)
-        guard let jsonStart = trimmed.firstIndex(of: "{"),
-              let data = String(trimmed[jsonStart...]).data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-
-        // Name check (case-insensitive) — allow "web_search", "search", etc.
-        if let name = json["name"] as? String,
-           !name.lowercased().contains("search") { return nil }
-
-        // Try nested dict arguments first
-        if let args = json["arguments"] as? [String: Any],
-           let q = args["query"] as? String, !q.isEmpty { return q }
-        // Try string-encoded arguments
-        if let argsStr = json["arguments"] as? String,
-           let argsData = argsStr.data(using: .utf8),
-           let argsDict = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any],
-           let q = argsDict["query"] as? String, !q.isEmpty { return q }
-        // Try flat query key
-        if let q = json["query"] as? String, !q.isEmpty { return q }
-        return nil
-    }
-
-    private func canUseToolLoop(model: InstalledModel, resolved: ResolvedModel, imageData: Data?) -> Bool {
-        guard model.catalogItem.supportsToolCalling, resolved.tools != nil else { return false }
-
-        // When an image is present, keep the turn on the vision comprehension
-        // path instead of injecting tools which confuse VLMs (e.g. Qwen 3.5 VL emitting search_chats).
-        if imageData != nil {
-            return false
-        }
-
-        return true
-    }
-
-    /// Consumes a follow-up/retry inference stream (search fallback, grounding retry,
-    /// empty-output retry, OpenELM retry) into accumulated text + thinking. All retry
-    /// paths share this exact policy: batched UI flushes on `textDelta`, live thinking
-    /// updates, and `.toolCall`/`.done` ignored (retries never re-enter the tool loop).
-    /// Pass `streamsToUI: false` for lanes that only want the final text (OpenELM).
-    private func consumeFollowupStream(
-        _ stream: AsyncStream<StreamEvent>,
-        messageID: UUID,
-        sessionID: UUID,
-        clock: ContinuousClock,
-        lastFlush: ContinuousClock.Instant,
-        streamsToUI: Bool = true,
-        updatesThinking: Bool = true
-    ) async -> (text: String, thinking: String) {
-        var accumulated = ""
-        var thinkingAccumulated = ""
-        var flush = lastFlush
-        for await event in stream {
-            if Task.isCancelled { break }
-            switch event {
-            case .textDelta(let chunk):
-                accumulated += chunk
-                guard streamsToUI else { break }
-                let shouldFlush = clock.now - flush >= streamUpdateInterval
-                    || chunk.contains(where: \.isNewline)
-                    || accumulated.count <= 48
-                if shouldFlush {
-                    flush = clock.now
-                    updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
-                }
-            case .thinkingDelta(let chunk):
-                thinkingAccumulated += chunk
-                guard updatesThinking else { break }
-                let snapshot = thinkingAccumulated
-                await MainActor.run {
-                    store.updateMessageThinking(messageID, in: sessionID, thinkingContent: snapshot)
-                }
-            case .thinkingDone(let duration):
-                guard updatesThinking else { break }
-                let snapshot = thinkingAccumulated
-                await MainActor.run {
-                    store.updateMessageThinking(
-                        messageID, in: sessionID,
-                        thinkingContent: snapshot,
-                        thinkingDurationSeconds: duration,
-                        persist: true
-                    )
-                }
-            case .toolCall, .done:
-                // Follow-up streams don't carry stats to persist (the primary
-                // loop owns the final GenerationStats write).
-                break
-            }
-        }
-        return (accumulated, thinkingAccumulated)
-    }
-
-    /// Outcome of `runToolLoop`. The loop always finishes the generation itself
-    /// (it owns the final re-invocation stream and writes the final text), so it
-    /// returns the resolved text and a `finished` flag.
-    struct ToolLoopOutcome {
-        let finalText: String
-        let finished: Bool
-    }
-
-    /// Executes one tool call, then re-invokes inference with the tool result, and
-    /// loops if the model emits another tool call — bounded by `ToolRegistry.maxIterations`.
-    /// Each iteration's tool result text is appended to the system prompt (web_search
-    /// additionally carries its structured `searchContext` for the existing render path).
-    /// Always returns `finished: true` — the caller should treat the turn as complete.
-    private func runToolLoop(
-        toolName initialToolName: String,
-        argsJSON initialArgsJSON: String,
-        startingMessageID: UUID,
-        sessionID: UUID,
-        model: InstalledModel,
-        service: InferenceService,
-        conversation: [ChatMessage],
-        inferencePrompt: String,
-        trimmedPrompt: String,
-        effectiveImageData: Data?,
-        baseSystemPrompt: String,
-        toolContext: ToolContext,
-        availableTools: [Tool],
-        taskID: UUID,
-        clock: ContinuousClock,
-        lastFlush initialLastFlush: ContinuousClock.Instant
-    ) async -> ToolLoopOutcome {
-        var pendingToolName = initialToolName
-        var pendingArgsJSON = initialArgsJSON
-        var accumulatedToolResults: [ToolResult] = []
-        var visibleToolActivities: [ChatToolActivity] = []
-        var combinedSearchContext: SearchContext?
-        var combinedCitations: [SearchCitation] = []
-
-        // Agent trace: the model's conversation continues through the tool call so the
-        // result appears as part of its own reasoning, NOT as a detached system-prompt
-        // blob the model ignores. The original user question stays as the LAST history
-        // turn; each tool result becomes the `prompt` (the latest user turn) on
-        // re-invocation. This keeps strict user/assistant alternation that chat templates
-        // (Qwen/Llama/Gemma/LFM) require — back-to-back user turns confuse them and the
-        // model emits only <think> and no final answer.
-        var traceConversation = conversation
-        traceConversation.append(ChatMessage(role: .user, text: inferencePrompt))
-
-        var iteration = 0
-        while iteration < ToolRegistry.maxIterations {
-            iteration += 1
-            let toolName = pendingToolName
-            let argsJSON = pendingArgsJSON
-            chatLogger.log("Tool loop iter \(iteration): dispatching \(toolName, privacy: .public)")
-
-            let runningActivity = Self.toolActivity(
-                name: toolName,
-                output: Self.toolRunningOutput(for: toolName, argsJSON: argsJSON),
-                model: model,
-                status: .running
-            )
-            visibleToolActivities.append(runningActivity)
-            await MainActor.run {
-                store.updateMessageToolActivities(
-                    startingMessageID,
-                    in: sessionID,
-                    toolActivities: visibleToolActivities
-                )
-            }
-
-            // Dispatch via the registry. Unknown names yield nil and are surfaced as an error.
-            let toolStartTime = Date()
-            let result = await ToolRegistry.dispatch(name: toolName, argsJSON: argsJSON, context: toolContext)
-            let toolDuration = Date().timeIntervalSince(toolStartTime)
-
-            guard let result = result else {
-                chatLogger.log("Unknown tool: \(toolName, privacy: .public)")
-                // Replace the running row so the spinner doesn't persist forever.
-                visibleToolActivities[visibleToolActivities.count - 1] = Self.toolActivity(
-                    name: toolName,
-                    output: "Unknown tool",
-                    model: model,
-                    status: .failed,
-                    duration: toolDuration
-                )
-                let unknownMsg = ChatMessage(role: .system, text: "⚠️ Unknown tool: \(toolName)")
-                await MainActor.run {
-                    store.updateMessageToolActivities(
-                        startingMessageID,
-                        in: sessionID,
-                        toolActivities: visibleToolActivities,
-                        persist: true
-                    )
-                    store.appendMessage(unknownMsg, to: sessionID)
-                }
-                break
-            }
-
-            accumulatedToolResults.append(result)
-            if let sc = result.searchContext { combinedSearchContext = sc }
-            combinedCitations.append(contentsOf: result.citations)
-            visibleToolActivities[visibleToolActivities.count - 1] = Self.toolActivity(from: result, model: model, duration: toolDuration)
-            await MainActor.run {
-                store.updateMessageToolActivities(
-                    startingMessageID,
-                    in: sessionID,
-                    toolActivities: visibleToolActivities,
-                    persist: true
-                )
-                store.updateMessageCitations(
-                    startingMessageID,
-                    in: sessionID,
-                    citations: combinedCitations,
-                    persist: true
-                )
-            }
-
-            if let directAnswer = Self.directToolAnswer(for: result, model: model) {
-                await MainActor.run {
-                    store.updateMessageText(startingMessageID, in: sessionID, text: directAnswer, persist: true)
-                }
-                return ToolLoopOutcome(finalText: directAnswer, finished: true)
-            }
-
-            // Build the continuation prompt FROM the tool result. This becomes the
-            // latest user turn, giving clean alternation: ...history, user(question),
-            // user(tool result + "answer now"). Bounded to respect small context windows.
-            let isFinalIteration = iteration >= ToolRegistry.maxIterations
-            let boundedOutput = Self.boundToolOutputForContext(result.output, model: model)
-            let continuationPrompt = isFinalIteration
-                ? "[Tool \(result.toolName) returned]: \(boundedOutput)\n\nYou have reached the tool-call limit. Using the result above, answer the user's original question now. Do not call any more tools."
-                : "[Tool \(result.toolName) returned]: \(boundedOutput)\n\nUsing the result above, answer the user's original question. Only call another tool if the result is truly insufficient."
-
-            chatLogger.log("Tool \(toolName, privacy: .public) completed — re-invoking inference with trace (iter \(iteration))")
-
-            // Re-invoke inference. The tool result IS the prompt (latest user turn); the
-            // question lives at the end of `traceConversation` as the prior user turn.
-            // web_search also passes its structured searchContext for the existing render path.
-            let newStream: AsyncStream<StreamEvent>
-            do {
-                let genResult = try await service.generateStream(
-                    prompt: continuationPrompt,
-                    model: model,
-                    conversation: traceConversation,
-                    searchContext: combinedSearchContext,
-                    systemPrompt: baseSystemPrompt,
-                    imageData: effectiveImageData,
-                    settings: store.settings
-                )
-                newStream = genResult.stream
-            } catch {
-                chatLogger.log("Re-invocation failed: \(error.localizedDescription, privacy: .public) — ending tool loop")
-                let errMsg = ChatMessage(role: .system, text: "⚠️ \(error.localizedDescription)")
-                await MainActor.run { store.appendMessage(errMsg, to: sessionID) }
-                break
-            }
-
-            // Consume the new stream. A `.toolCall` here means the model wants another tool.
-            var accumulated = ""
-            var thinkingAccumulated = ""
-            var sawToolCall = false
-            var nextToolName = ""
-            var nextArgsJSON = ""
-            var lastFlush = initialLastFlush
-            var capturedStats: GenerationStats?
-
-            let genStartTime = Date()
-            for await newEvent in newStream {
-                if Task.isCancelled { break }
-                switch newEvent {
-                case .textDelta(let chunk):
-                    accumulated += chunk
-                    let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                        || chunk.contains(where: \.isNewline)
-                        || accumulated.count <= 48
-                    if shouldFlush {
-                        lastFlush = clock.now
-                        updateStreamingMessage(accumulated, messageID: startingMessageID, sessionID: sessionID)
-                    }
-                case .thinkingDelta(let chunk):
-                    thinkingAccumulated += chunk
-                    let snapshot = thinkingAccumulated
-                    await MainActor.run {
-                        store.updateMessageThinking(startingMessageID, in: sessionID, thinkingContent: snapshot)
-                    }
-                case .thinkingDone(let dur):
-                    let snapshot = thinkingAccumulated
-                    await MainActor.run {
-                        store.updateMessageThinking(startingMessageID, in: sessionID, thinkingContent: snapshot, thinkingDurationSeconds: dur, persist: true)
-                    }
-                case .toolCall(let name, let args):
-                    // Model wants another tool; keep updating the same assistant bubble.
-                    sawToolCall = true
-                    nextToolName = name
-                    nextArgsJSON = args
-                case .done(let stats):
-                    // Stats from tool-loop re-invocation are captured but the
-                    // outer runToolLoop writes the final duration below.
-                    capturedStats = stats
-                    break
-                }
-            }
-
-            if !sawToolCall {
-                // No further tool call — finalize the answer.
-                let genDuration = Date().timeIntervalSince(genStartTime)
-                let thinkingSeen = !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                let finalText = searchAwareAssistantText(
-                    from: accumulated,
-                    prompt: trimmedPrompt,
-                    thinkingSeen: thinkingSeen,
-                    searchContext: combinedSearchContext
-                )
-                let visibleText = AssistantResponseFallback.isEmptyOutputMessage(finalText)
-                    ? Self.fallbackToolAnswer(from: accumulatedToolResults, model: model)
-                    : finalText
-                updateStreamingMessage(visibleText, messageID: startingMessageID, sessionID: sessionID, persist: true)
-                await MainActor.run {
-                    store.updateMessageGenerationDuration(startingMessageID, in: sessionID, duration: genDuration, persist: true)
-                    store.updateMessageStats(startingMessageID, in: sessionID, stats: capturedStats, persist: true)
-                }
-                return ToolLoopOutcome(finalText: visibleText, finished: true)
-            }
-
-            // Prepare for the next iteration. Fold the just-used tool result + the
-            // assistant's tool-call into the trace so the next re-invocation keeps
-            // clean alternation: user(tool result 1), assistant(<tool_call 2>),
-            // then the next tool result becomes the new prompt.
-            traceConversation.append(ChatMessage(role: .user, text: continuationPrompt))
-            traceConversation.append(ChatMessage(role: .assistant, text: accumulated))
-            pendingToolName = nextToolName
-            pendingArgsJSON = nextArgsJSON
-            if iteration >= ToolRegistry.maxIterations {
-                chatLogger.log("Tool loop hit maxIterations (\(ToolRegistry.maxIterations)) — stopping")
-                let capMsg = ChatMessage(role: .system, text: "⚠️ Reached the tool-call limit (\(ToolRegistry.maxIterations)). Answering with what I have.")
-                await MainActor.run { store.appendMessage(capMsg, to: sessionID) }
-                let cappedText = cleanedDisplayedAssistantText(accumulated)
-                let visibleText = cappedText.isEmpty
-                    ? Self.fallbackToolAnswer(from: accumulatedToolResults, model: model)
-                    : cappedText
-                updateStreamingMessage(visibleText, messageID: startingMessageID, sessionID: sessionID, persist: true)
-                return ToolLoopOutcome(finalText: visibleText, finished: true)
-            }
-        }
-
-        // Reached only via an early `break` (unknown tool or failed re-invocation).
-        // Write a final answer so the assistant bubble is never left empty.
-        let abortedText = accumulatedToolResults.isEmpty
-            ? AssistantResponseFallback.emptyOutputMessage(thinkingSeen: false)
-            : Self.fallbackToolAnswer(from: accumulatedToolResults, model: model)
-        updateStreamingMessage(abortedText, messageID: startingMessageID, sessionID: sessionID, persist: true)
-        return ToolLoopOutcome(finalText: abortedText, finished: true)
-    }
-
-    /// User-facing status line shown when a tool starts running.
-    /// Minimal prompt used to re-invoke inference after a tool result has been appended
-    /// to the conversation trace. The model continues from the tool result in the trace;
-    /// this just hands it the turn. Short on purpose to respect small context windows.
-    private static let continuationPrompt = "Continue using the tool result above, then answer the user."
-
-    /// Bounds a tool's output text so it can't blow the context budget on small devices.
-    /// Compact devices (A14, 2K context) get a much smaller cap than Pro/Ultra tiers.
-    private static func boundToolOutputForContext(_ output: String, model: InstalledModel) -> String {
-        let tier = DeviceTier.current()
-        let cap: Int
-        switch tier {
-        case .compact:  cap = 400
-        case .standard: cap = 800
-        case .pro:      cap = 1_500
-        case .ultra:    cap = 2_500
-        }
-        if output.count <= cap { return output }
-        let end = output.index(output.startIndex, offsetBy: cap, limitedBy: output.endIndex) ?? output.endIndex
-        return String(output[output.startIndex..<end]) + "\n…[truncated to fit device context]"
-    }
-
-    /// Deterministic tools already have the final answer. Showing the tool result
-    /// directly prevents a second model pass from dropping or corrupting it.
-    private static func directToolAnswer(for result: ToolResult, model: InstalledModel) -> String? {
-        switch result.toolName {
-        case "calculate", "get_current_time", "get_device_info", "get_battery_level":
-            return boundToolOutputForContext(result.output, model: model)
-        default:
-            return nil
-        }
-    }
-
-    /// If a follow-up model pass produces only thinking or an empty answer, keep the
-    /// user-visible turn useful by surfacing the actual tool result.
-    private static func fallbackToolAnswer(from results: [ToolResult], model: InstalledModel) -> String {
-        let blocks = results.map { result in
-            let bounded = boundToolOutputForContext(result.output, model: model)
-            return "[\(result.toolName)]\n\(bounded)"
-        }
-        return blocks.joined(separator: "\n\n")
-    }
-
-    /// Translates a raw inference error into a concise, user-facing message.
-    /// Maps known failure modes (missing model file, context init, MLX
-    /// unavailable) to actionable copy instead of leaking framework strings.
-    private static func friendlyInferenceError(_ error: Error, modelName: String) -> String {
-        if let inferenceError = error as? InferenceServiceError {
-            switch inferenceError {
-            case .missingLocalModelFile:
-                return "⚠️ The model file for \(modelName) is missing. Try re-downloading it from the Models tab."
-            case .runtimeUnavailable(let detail):
-                return "⚠️ \(modelName) couldn't start: \(detail)"
-            case .noModelInstalled:
-                return "⚠️ No model is installed yet. Download one from the Models tab to start chatting."
-            }
-        }
-        return "⚠️ \(modelName) ran into a problem: \(error.localizedDescription)"
-    }
-
-    private static func toolActivity(from result: ToolResult, model: InstalledModel, duration: Double? = nil) -> ChatToolActivity {
-        toolActivity(
-            name: result.toolName,
-            output: result.output,
-            model: model,
-            status: result.output.localizedCaseInsensitiveContains("Error:") ? .failed : .completed,
-            duration: duration
-        )
-    }
-
-    private static func toolActivity(
-        name: String,
-        output: String,
-        model: InstalledModel,
-        status: ChatToolActivity.Status,
-        duration: Double? = nil
-    ) -> ChatToolActivity {
-        ChatToolActivity(
-            name: name,
-            displayName: toolDisplayName(for: name, status: status),
-            output: boundToolOutputForContext(output, model: model),
-            status: status,
-            duration: duration
-        )
-    }
-
-    private static func toolDisplayName(for name: String, status: ChatToolActivity.Status = .completed) -> String {
-        if status == .running {
-            switch name.lowercased() {
-            case "web_search": return "Searching web"
-            case "calculate": return "Calculating"
-            case "get_current_time": return "Reading time"
-            case "get_device_info": return "Reading device info"
-            case "get_battery_level": return "Reading battery"
-            case "search_chats": return "Searching chats"
-            case "read_document": return "Reading document"
-            default: return name.replacingOccurrences(of: "_", with: " ").capitalized
-            }
-        }
-
-        switch name.lowercased() {
-        case "web_search": return "Searched web"
-        case "calculate": return "Calculated"
-        case "get_current_time": return "Read time"
-        case "get_device_info": return "Read device info"
-        case "get_battery_level": return "Read battery"
-        case "search_chats": return "Searched chats"
-        case "read_document": return "Read document"
-        default: return name.replacingOccurrences(of: "_", with: " ").capitalized
-        }
-    }
-
-    private static func toolRunningOutput(for name: String, argsJSON: String) -> String {
-        switch name.lowercased() {
-        case "web_search":
-            if let query = WebSearchTool.extractQuery(argsJSON) {
-                return query
-            }
-            return "Searching the web"
-        case "calculate":
-            return CalculateTool.extractExpression(argsJSON) ?? "Evaluating expression"
-        case "get_current_time":
-            return "Reading current date, time, and timezone"
-        case "get_device_info":
-            return "Reading local hardware and runtime facts"
-        case "get_battery_level":
-            return "Reading battery state"
-        case "search_chats":
-            return "Searching local chat history"
-        case "read_document":
-            return "Reading attached document"
-        default:
-            return ""
-        }
-    }
-
-    private static func toolStatusMessage(for name: String, argsJSON: String) -> String {
-        switch name.lowercased() {
-        case "web_search":
-            if let q = WebSearchTool.extractQuery(argsJSON) { return "🔍 Searching: \(q)…" }
-            return "🔍 Searching the web…"
-        case "calculate":
-            if let e = CalculateTool.extractExpression(argsJSON) { return "🧮 Calculating: \(e)" }
-            return "🧮 Calculating…"
-        case "search_chats":
-            if let q = SearchHistoryTool.extractQuery(argsJSON) { return "📚 Searching chats: \(q)…" }
-            return "📚 Searching your chats…"
-        case "read_document":
-            return "📄 Reading document…"
-        case "get_current_time":
-            return "🕐 Getting the time…"
-        case "get_device_info":
-            return "📱 Reading device info…"
-        case "get_battery_level":
-            return "🔋 Checking battery…"
-        default:
-            return "🛠 Running \(name)…"
-        }
-    }
-
-    private func cleanedDisplayedAssistantText(_ text: String) -> String {
-        var cleaned = AssistantResponseSanitizer.clean(text)
-        cleaned = cleaned.replacingOccurrences(of: AssistantResponseFallback.emptyOutput, with: "")
-        cleaned = cleaned.replacingOccurrences(of: AssistantResponseFallback.emptyOutputAfterThinking, with: "")
-        cleaned = cleaned.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func resolvedAssistantText(from rawText: String, prompt: String, thinkingSeen: Bool) -> String {
-        let finalText = cleanedDisplayedAssistantText(rawText)
-        if AssistantResponseFallback.isInstructionEcho(finalText, systemPrompt: store.settings.systemPrompt) {
-            return AssistantResponseFallback.instructionEcho
-        }
-        if finalText.isEmpty || AssistantResponseFallback.isPromptEcho(finalText, prompt: prompt) {
-            return AssistantResponseFallback.emptyOutputMessage(thinkingSeen: thinkingSeen)
-        }
-        return finalText
-    }
-
-    private func searchAwareAssistantText(
-        from rawText: String,
-        prompt: String,
-        thinkingSeen: Bool,
-        searchContext: SearchContext?
-    ) -> String {
-        let resolved = resolvedAssistantText(from: rawText, prompt: prompt, thinkingSeen: thinkingSeen)
-        guard let searchContext else { return resolved }
-        guard SearchResultFallbackComposer.shouldReplace(resolved, prompt: prompt, searchContext: searchContext) else {
-            return resolved
-        }
-        return SearchResultFallbackComposer.compose(query: prompt, searchContext: searchContext)
-    }
-
-    private func encodedAttachmentData(from image: UIImage?, model: InstalledModel) -> Data? {
-        guard let image else { return nil }
-
-        let isMLXVision = (model.catalogItem.runtimeType == .mlx || model.catalogItem.runtimeType == .liteRTLM)
-            && (model.catalogItem.supportsVision || model.catalogItem.sourceSupportsVision)
-        let preparedImage = isMLXVision ? Self.downsampleImage(image, maxDimension: 640) : image
-        let maxBytes = isMLXVision ? 320_000 : 700_000
-        let qualitySteps: [CGFloat] = [0.75, 0.65, 0.55, 0.45, 0.35, 0.25]
-        for quality in qualitySteps {
-            guard let data = preparedImage.jpegData(compressionQuality: quality) else { continue }
-            if data.count <= maxBytes {
-                return data
-            }
-        }
-        return preparedImage.jpegData(compressionQuality: 0.25)
-    }
-
-    nonisolated private static func downsampleImage(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
-        let size = image.size
-        let maxSide = max(size.width, size.height)
-        guard maxSide > maxDimension else { return image }
-        let scale = maxDimension / maxSide
-        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
-        return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-        }
-    }
-
-    @MainActor
-    private func scheduleIdleRuntimeRelease() {
-        idleRuntimeReleaseTask?.cancel()
-        idleRuntimeReleaseTask = Task {
-            try? await Task.sleep(nanoseconds: 90_000_000_000)
-            if Task.isCancelled { return }
-            await RuntimeMemoryCoordinator.releaseAll()
-        }
-    }
-
-    @MainActor
-    private func updateStreamingMessage(_ text: String, messageID: UUID, sessionID: UUID, persist: Bool = false) {
-        store.updateMessageText(messageID, in: sessionID, text: text, persist: persist)
-    }
-
-    @MainActor
-    private func finishGenerationIfCurrent(_ taskID: UUID) {
-        guard activeGenerationID == taskID else { return }
-        isSending = false
-        generationTask = nil
-        activeGenerationID = nil
-        generationInterruptionReason = nil
-        scheduleIdleRuntimeRelease()
-    }
-
-    private func currentGenerationInterruptionNotice() async -> String {
-        await MainActor.run {
-            (generationInterruptionReason ?? .user).notice
-        }
-    }
-
     private func sendPrompt() {
-        guard !isSending else { return }
+        guard !engine.isGenerating else { return }
         voiceController.stopListening()
-
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let currentImage = attachedImage
-        let currentDocuments = attachedDocuments
-        guard !trimmedPrompt.isEmpty || currentImage != nil || !currentDocuments.isEmpty else { return }
+        guard !trimmedPrompt.isEmpty || attachedImage != nil || !attachedDocuments.isEmpty else { return }
         if store.selectedSession == nil {
             store.createSession(using: store.defaultModel?.catalogItem.id)
         }
         guard let sessionID = store.selectedSession?.id else { return }
-        guard let model = store.defaultModel else {
-            store.appendMessage(
-                ChatMessage(role: .assistant, text: InferenceServiceError.noModelInstalled.localizedDescription),
-                to: sessionID
-            )
-            return
-        }
-
-        if let memoryGuardMessage = memoryGuardMessage(for: model) {
-            store.appendMessage(ChatMessage(role: .assistant, text: memoryGuardMessage), to: sessionID)
-            return
-        }
-
-        if currentImage != nil && !ChatInputCapability.acceptsImage(model, profileStore: profileStore) {
-            store.appendMessage(ChatMessage(role: .assistant, text: ChatInputCapability.imageUnsupportedMessage), to: sessionID)
-            return
-        }
-
-        // Encode image at bounded size to avoid memory spikes during persistence/inference.
-        let jpegData = encodedAttachmentData(from: currentImage, model: model)
-        let attachments = ([jpegData.map { ChatAttachment.image($0) }].compactMap { $0 } + currentDocuments)
-        let documentContext = DocumentExtractionService.promptContext(from: attachments)
-        let inferencePrompt = documentContext.isEmpty ? trimmedPrompt : "\(trimmedPrompt)\n\n\(documentContext)"
-
-        // Capture history BEFORE appending the current user message so inference
-        // services receive clean prior context without needing to deduplicate.
-        let conversation = store.selectedSession?.messages ?? []
-        let effectiveImageData = ChatVisionContext.inheritedImageData(
-            explicitImageData: jpegData,
+        let request = TurnRequest(
+            sessionID: sessionID,
             prompt: trimmedPrompt,
-            conversation: conversation,
-            model: model,
-            profileStore: profileStore
+            attachments: attachedDocuments,
+            image: attachedImage,
+            liveSearchEnabled: liveSearchEnabled
         )
-        let userMessage = ChatMessage(role: .user, text: trimmedPrompt, attachments: attachments)
-        store.appendMessage(userMessage, to: sessionID)
+        if engine.preflightBlockMessage(hasImage: attachedImage != nil) != nil {
+            // The engine writes the blocking notice. Leave the composer contents
+            // intact so the user can fix the problem without retyping.
+            engine.send(request)
+            return
+        }
         isInputFocused = false
         prompt = ""
         attachedImage = nil
         attachedDocuments = []
-
-        let raiDecision = ResponsibleAIGuard.evaluate(prompt: trimmedPrompt)
-        if raiDecision.isBlocked, let response = raiDecision.response {
-            chatLogger.log("RAI guard blocked prompt: \(raiDecision.reason ?? "unknown", privacy: .public)")
-            store.appendMessage(ChatMessage(role: .assistant, text: response), to: sessionID)
-            return
-        }
-
-        isSending = true
-
-        let taskID = UUID()
-        activeGenerationID = taskID
-        generationInterruptionReason = nil
-
-        let task = Task {
-            do {
-                await MainActor.run {
-                    idleRuntimeReleaseTask?.cancel()
-                    idleRuntimeReleaseTask = nil
-                }
-                await RuntimeMemoryCoordinator.prepareForRuntime(model.catalogItem.runtimeType)
-
-                let searchContext: SearchContext?
-                // Search flow:
-                // - liveSearchEnabled/useSearchByDefault arms web search for this turn
-                // - current/live/explicit web queries get upfront search
-                // - everything else stays local unless the model decides to call web_search
-                // Search results are passed into the model prompt; we only fall back
-                // to a grounded summary after generation if the model refuses or emits nothing usable.
-                let resolvedModel = resolved(for: model)
-                let modelCanUseToolLoop = canUseToolLoop(model: model, resolved: resolvedModel, imageData: effectiveImageData)
-                let isOpenELM = model.catalogItem.family == .openELM
-                let searchConfigured = SearchGatewayFactory.make(settings: store.settings) != nil
-                // OpenELM lane: keep fully local/minimal prompt path for stability.
-                let searchArmed = effectiveImageData == nil && !isOpenELM && (liveSearchEnabled || store.settings.useSearchByDefault)
-                let promptNeedsLocalTool = UpfrontToolDetector.canHandleLocally(prompt: trimmedPrompt)
-                let promptNeedsSearch = !promptNeedsLocalTool
-                    && SearchResultFallbackComposer.shouldRunUpfrontSearch(trimmedPrompt)
-
-                if searchArmed && !searchConfigured && (liveSearchEnabled || promptNeedsSearch) {
-                    let warning = ChatMessage(
-                        role: .system,
-                        text: "⚠️ Web Search is active, but no search API key is configured. Please go to **Settings** to add your Tavily, Brave, or Serper API key to retrieve live results."
-                    )
-                    await MainActor.run {
-                        store.appendMessage(warning, to: sessionID)
-                    }
-                }
-
-                // If the model natively supports tool calling, we let the model decide to search (think first, then search).
-                // We only perform an upfront search as a fallback for models that do NOT support tool calling.
-                let shouldUpfrontSearch = searchConfigured
-                    && searchArmed
-                    && !modelCanUseToolLoop
-                    && promptNeedsSearch
-                if shouldUpfrontSearch,
-                   let gateway = SearchGatewayFactory.make(settings: store.settings) {
-                    do {
-                        let refinedQuery = SearchQueryRefiner.refine(trimmedPrompt, conversation: conversation)
-                        searchContext = try await gateway.search(query: refinedQuery)
-                    } catch {
-                        let warning = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
-                        await MainActor.run {
-                            store.appendMessage(warning, to: sessionID)
-                        }
-                        searchContext = nil
-                    }
-                } else {
-                    searchContext = nil
-                }
-
-                // Inject tool definitions when the model supports the tool loop and no
-                // upfront search results are available. The registry renders the `# Tools`
-                // section from whichever tools are available this turn (gated by config +
-                // attachments + history), generalizing the old web_search-only definition.
-                var systemPromptForInference = store.settings.systemPrompt
-                let toolContext = ToolContext(
-                    settings: store.settings,
-                    conversation: conversation,
-                    chatSessions: store.chatSessions,
-                    attachedDocuments: attachments,
-                    installedModel: model
-                )
-                let availableTools = ToolRegistry.availableTools(context: toolContext)
-                if modelCanUseToolLoop && searchContext == nil && !availableTools.isEmpty {
-                    let section = ToolRegistry.renderPromptSection(for: availableTools)
-                    systemPromptForInference += section
-                    chatLogger.log("Tool definitions injected: \(availableTools.map { $0.name }.joined(separator: ", "), privacy: .public)")
-                } else if searchContext != nil {
-                    chatLogger.log("Upfront search provided results — tool definition skipped to save context window")
-                } else if !modelCanUseToolLoop && effectiveImageData == nil {
-                    // Non-tool models can't emit <tool_call> blocks, so the agentic loop
-                    // won't fire. Instead, detect local-tool intent UPFRONT (time, device,
-                    // battery, calculate) and inject the result into the system prompt.
-                    // The model just reads it and answers. Mirrors the upfront web_search path.
-                    // When an image is attached, skip upfront tools so questions like "what
-                    // device is this in the picture" are answered by the vision model.
-                    let upfront = await UpfrontToolDetector.detectAndRun(
-                        prompt: trimmedPrompt,
-                        context: toolContext
-                    )
-                    if !upfront.isEmpty {
-                        if let directAnswer = UpfrontToolDetector.directAnswer(for: upfront) {
-                            let message = ChatMessage(
-                                role: .assistant,
-                                text: directAnswer,
-                                toolActivities: upfront.map { Self.toolActivity(from: $0, model: model) }
-                            )
-                            await MainActor.run {
-                                store.appendMessage(message, to: sessionID)
-                                finishGenerationIfCurrent(taskID)
-                            }
-                            return
-                        }
-                        let injection = UpfrontToolDetector.renderInjection(for: upfront)
-                        systemPromptForInference += injection
-                        chatLogger.log("Upfront local tools injected for non-tool model: \(upfront.map { $0.toolName }.joined(separator: ", "), privacy: .public)")
-                    } else {
-                        chatLogger.log("Non-tool model, no local-tool intent detected")
-                    }
-                } else if effectiveImageData != nil {
-                    chatLogger.log("Image present — tool definitions and upfront tools skipped for vision turn")
-                } else {
-                    chatLogger.log("No tools available this turn — tool definition NOT injected")
-                }
-
-                // Create a placeholder assistant message for streaming
-                let service = inferenceServiceForModel(model)
-                let pendingCitations = searchContext?.citations ?? []
-                let (messageID, stream) = try await service.generateStream(
-                    prompt: inferencePrompt,
-                    model: model,
-                    conversation: conversation,
-                    searchContext: searchContext,
-                    systemPrompt: systemPromptForInference,
-                    imageData: effectiveImageData,
-                    settings: store.settings
-                )
-
-                let placeholder = ChatMessage(id: messageID, role: .assistant, text: "", citations: pendingCitations)
-                await MainActor.run {
-                    store.appendMessage(placeholder, to: sessionID)
-                }
-
-                var accumulated = ""
-                var thinkingAccumulated = ""
-                var stoppedByUser = false
-                var capturedStats: GenerationStats?
-                let clock = ContinuousClock()
-                var lastFlush = clock.now
-
-                let streamStartTime = Date()
-                for await event in stream {
-                    if Task.isCancelled {
-                        let interruptionNotice = await currentGenerationInterruptionNotice()
-                        accumulated += "\n\n*(\(interruptionNotice))*"
-                        stoppedByUser = true
-                        updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID, persist: true)
-                        break
-                    }
-
-                    switch event {
-                    case .textDelta(let chunk):
-                        accumulated += chunk
-                        if model.catalogItem.family == .openELM {
-                            break
-                        }
-                        let shouldFlush = clock.now - lastFlush >= streamUpdateInterval
-                            || chunk.contains(where: \.isNewline)
-                            || accumulated.count <= 48
-                        if shouldFlush {
-                            lastFlush = clock.now
-                            updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID)
-                        }
-
-                    case .thinkingDelta(let chunk):
-                        thinkingAccumulated += chunk
-                        let snapshot = thinkingAccumulated
-                        await MainActor.run {
-                            store.updateMessageThinking(messageID, in: sessionID, thinkingContent: snapshot)
-                        }
-
-                    case .thinkingDone(let duration):
-                        let snapshot = thinkingAccumulated
-                        await MainActor.run {
-                            store.updateMessageThinking(
-                                messageID, in: sessionID,
-                                thinkingContent: snapshot,
-                                thinkingDurationSeconds: duration,
-                                persist: true
-                            )
-                        }
-
-                    case .toolCall(let name, let argsJSON):
-                        chatLogger.log("StreamProcessor yielded .toolCall: name=\(name, privacy: .public) argsLen=\(argsJSON.count)")
-                        guard modelCanUseToolLoop else {
-                            chatLogger.log("Ignoring tool call: model is not tool-verified")
-                            break
-                        }
-                        // Multi-tool, multi-step dispatch via the registry. This loop
-                        // runs the tool, shows a status message, then re-invokes inference
-                        // with the tool result appended to the system prompt. Bounded by
-                        // ToolRegistry.maxIterations to cap latency. web_search keeps its
-                        // structured searchContext render path; other tools append plain text.
-                        let loopOutcome = await runToolLoop(
-                            toolName: name,
-                            argsJSON: argsJSON,
-                            startingMessageID: messageID,
-                            sessionID: sessionID,
-                            model: model,
-                            service: service,
-                            conversation: conversation,
-                            inferencePrompt: inferencePrompt,
-                            trimmedPrompt: trimmedPrompt,
-                            effectiveImageData: effectiveImageData,
-                            baseSystemPrompt: store.settings.systemPrompt,
-                            toolContext: toolContext,
-                            availableTools: availableTools,
-                            taskID: taskID,
-                            clock: clock,
-                            lastFlush: lastFlush
-                        )
-                        accumulated = loopOutcome.finalText
-                        if loopOutcome.finished {
-                            await MainActor.run { finishGenerationIfCurrent(taskID) }
-                            return
-                        }
-                        // Loop indicated "continue consuming" — but the for-await over the
-                        // original stream has already terminated (tool call ends the stream),
-                        // so we fall through to the post-stream path. The multi-step state is
-                        // carried via accumulated/toolResults appended below in runToolLoop.
-
-                    case .done(let stats):
-                        capturedStats = stats
-                        break
-                    }
-                }
-
-                // Cancelling the task ends `for await` over an AsyncStream without
-                // delivering another event, so the in-loop check above is usually
-                // skipped. Mark the stop here so no fallback search/retry or voice
-                // playback runs after the user pressed Stop.
-                if Task.isCancelled && !stoppedByUser {
-                    let interruptionNotice = await currentGenerationInterruptionNotice()
-                    accumulated += "\n\n*(\(interruptionNotice))*"
-                    stoppedByUser = true
-                    updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID, persist: true)
-                }
-
-                // ── Post-stream tool call fallback ──────────────────────
-                // If StreamProcessor missed a <tool_call> block (e.g. tag split
-                // across token boundaries), detect it in the accumulated text.
-                chatLogger.log("Stream ended. accumulated length=\(accumulated.count), checking for missed tool calls…")
-                if accumulated.lowercased().contains("<tool_call>") || accumulated.lowercased().contains("<|tool_call>") {
-                    chatLogger.log("Post-stream: raw text contains tool_call tag")
-                }
-                if !stoppedByUser,
-                   modelCanUseToolLoop,
-                   let query = Self.extractToolCallQuery(from: accumulated),
-                   SearchGatewayFactory.make(settings: store.settings) != nil {
-                    chatLogger.log("Post-stream fallback FIRED — query: \(query, privacy: .private)")
-
-                    let refinedQuery = SearchQueryRefiner.refine(query, conversation: conversation)
-                    let runningActivity = Self.toolActivity(
-                        name: "web_search",
-                        output: refinedQuery,
-                        model: model,
-                        status: .running
-                    )
-                    await MainActor.run {
-                        store.updateMessageText(messageID, in: sessionID, text: "", persist: false)
-                        store.updateMessageToolActivities(messageID, in: sessionID, toolActivities: [runningActivity])
-                    }
-
-                    var agenticSearchContext: SearchContext? = nil
-                    if let gateway = SearchGatewayFactory.make(settings: store.settings) {
-                        chatLogger.log("Post-stream: calling search gateway…")
-                        do {
-                            agenticSearchContext = try await gateway.search(query: refinedQuery)
-                            chatLogger.log("Post-stream: search returned \(agenticSearchContext?.snippets.count ?? 0) snippets")
-                            let completed = ToolResult(
-                                toolName: "web_search",
-                                output: agenticSearchContext?.answer ?? "Found \(agenticSearchContext?.citations.count ?? 0) sources.",
-                                citations: agenticSearchContext?.citations ?? [],
-                                searchContext: agenticSearchContext
-                            )
-                            await MainActor.run {
-                                store.updateMessageToolActivities(
-                                    messageID,
-                                    in: sessionID,
-                                    toolActivities: [Self.toolActivity(from: completed, model: model)],
-                                    persist: true
-                                )
-                                store.updateMessageCitations(
-                                    messageID,
-                                    in: sessionID,
-                                    citations: agenticSearchContext?.citations ?? [],
-                                    persist: true
-                                )
-                            }
-                        } catch {
-                            chatLogger.log("Post-stream: search error: \(error.localizedDescription, privacy: .public)")
-                            let errorMsg = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
-                            await MainActor.run { store.appendMessage(errorMsg, to: sessionID) }
-                        }
-                    } else {
-                        chatLogger.log("Post-stream: no search gateway available")
-                    }
-                    if agenticSearchContext == nil {
-                        let unavailableMsg = ChatMessage(role: .system, text: "⚠️ Search unavailable — answering from local knowledge.")
-                        await MainActor.run { store.appendMessage(unavailableMsg, to: sessionID) }
-                    }
-
-                    let newPendingCitations = agenticSearchContext?.citations ?? []
-                    await MainActor.run {
-                        store.updateMessageCitations(messageID, in: sessionID, citations: newPendingCitations, persist: true)
-                    }
-                    let (_, newStream) = try await service.generateStream(
-                        prompt: inferencePrompt,
-                        model: model,
-                        conversation: conversation,
-                        searchContext: agenticSearchContext,
-                        systemPrompt: store.settings.systemPrompt,
-                        imageData: effectiveImageData,
-                        settings: store.settings
-                    )
-
-                    (accumulated, thinkingAccumulated) = await consumeFollowupStream(
-                        newStream,
-                        messageID: messageID,
-                        sessionID: sessionID,
-                        clock: clock,
-                        lastFlush: lastFlush
-                    )
-                    let finalText2 = searchAwareAssistantText(
-                        from: accumulated,
-                        prompt: trimmedPrompt,
-                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                        searchContext: agenticSearchContext
-                    )
-                    updateStreamingMessage(
-                        finalText2,
-                        messageID: messageID, sessionID: sessionID, persist: true
-                    )
-                    await MainActor.run { finishGenerationIfCurrent(taskID) }
-                    return
-                }
-
-                // Sanitize the final text — this is what gets stored in conversation history,
-                // so template tokens must be stripped to prevent feedback loops on next turn.
-                chatLogger.log("Raw accumulated text (\(accumulated.count) chars): \(accumulated.prefix(500), privacy: .private)")
-                let finalText = resolvedAssistantText(
-                    from: accumulated,
-                    prompt: trimmedPrompt,
-                    thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                )
-                chatLogger.log("Resolved final text (\(finalText.count) chars): \(finalText.prefix(300), privacy: .private)")
-
-                // OpenELM-specific retry path: if the first pass echoed instructions,
-                // retry once with an ultra-minimal system prompt and no history/search.
-                if !stoppedByUser,
-                   model.catalogItem.family == .openELM,
-                   (AssistantResponseFallback.isInstructionEchoMessage(finalText)
-                        || AssistantResponseFallback.isLikelyOffTopicReply(finalText, prompt: trimmedPrompt)) {
-                    chatLogger.log("OpenELM instruction-echo retry triggered.")
-                    await MainActor.run { store.removeMessage(messageID, from: sessionID) }
-
-                    let retryMsg = ChatMessage(role: .system, text: "🔄 Retrying OpenELM with minimal prompt…")
-                    await MainActor.run { store.appendMessage(retryMsg, to: sessionID) }
-
-                    let (retryMsgID, retryStream) = try await service.generateStream(
-                        prompt: inferencePrompt,
-                        model: model,
-                        conversation: [],
-                        searchContext: nil,
-                        systemPrompt: "Answer in one short sentence.",
-                        imageData: nil,
-                        settings: store.settings
-                    )
-                    let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: [])
-                    await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
-
-                    // OpenELM lane: no live UI flushes, no thinking-store updates.
-                    (accumulated, thinkingAccumulated) = await consumeFollowupStream(
-                        retryStream,
-                        messageID: retryMsgID,
-                        sessionID: sessionID,
-                        clock: clock,
-                        lastFlush: lastFlush,
-                        streamsToUI: model.catalogItem.family != .openELM,
-                        updatesThinking: false
-                    )
-                    let retryFinalText = resolvedAssistantText(
-                        from: accumulated,
-                        prompt: trimmedPrompt,
-                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-                    let stabilizedRetryText: String
-                    if AssistantResponseFallback.isInstructionEchoMessage(retryFinalText)
-                        || AssistantResponseFallback.isLikelyOffTopicReply(retryFinalText, prompt: trimmedPrompt) {
-                        stabilizedRetryText = AssistantResponseFallback.openELMSafeFallback(for: trimmedPrompt)
-                    } else {
-                        stabilizedRetryText = retryFinalText
-                    }
-                    updateStreamingMessage(stabilizedRetryText, messageID: retryMsgID, sessionID: sessionID, persist: true)
-                    await MainActor.run { finishGenerationIfCurrent(taskID) }
-                    return
-                }
-
-                // ── Search-grounding retry ──────────────────────────
-                // Some small models still emit a stock "no real-time access"
-                // disclaimer even when fresh web results are already in the prompt.
-                // Retry once with a stricter search-grounding prompt and no history.
-                if !stoppedByUser,
-                   let searchContext,
-                   AssistantResponseFallback.isSearchAccessRefusal(finalText) {
-                    chatLogger.log("Search-grounding retry triggered after searched response refused live/current access.")
-                    await MainActor.run { store.removeMessage(messageID, from: sessionID) }
-
-                    let retryMsg = ChatMessage(role: .system, text: "🔄 Retrying with grounded web results…")
-                    await MainActor.run { store.appendMessage(retryMsg, to: sessionID) }
-
-                    let retryCitations = searchContext.citations
-                    let (retryMsgID, retryStream) = try await service.generateStream(
-                        prompt: inferencePrompt,
-                        model: model,
-                        conversation: conversation,
-                        searchContext: searchContext,
-                        systemPrompt: SearchGroundingGuidance.retrySystemPrompt(from: store.settings.systemPrompt),
-                        imageData: nil,
-                        settings: store.settings
-                    )
-                    let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: retryCitations)
-                    await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
-
-                    (accumulated, thinkingAccumulated) = await consumeFollowupStream(
-                        retryStream,
-                        messageID: retryMsgID,
-                        sessionID: sessionID,
-                        clock: clock,
-                        lastFlush: lastFlush
-                    )
-                    let retryFinalText = searchAwareAssistantText(
-                        from: accumulated,
-                        prompt: trimmedPrompt,
-                        thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                        searchContext: searchContext
-                    )
-                    updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
-                    await MainActor.run { finishGenerationIfCurrent(taskID) }
-                    return
-                }
-
-                // ── Empty-output fallback ───────────────────────────
-                // Two branches depending on whether search was already provided:
-                // A) searchContext was provided but model still failed → retry with
-                //    simplified prompt (no history, no tool def) to maximize context
-                // B) No search context → auto-search and retry
-                if !stoppedByUser,
-                   AssistantResponseFallback.isEmptyOutputMessage(finalText),
-                   effectiveImageData == nil,
-                   SearchGatewayFactory.make(settings: store.settings) != nil {
-
-                    if searchContext != nil {
-                        // ── Branch A: search was provided, model still produced nothing ──
-                        // Retry with a minimal system prompt and no history to give the
-                        // model maximum context window for the search results + question.
-                        chatLogger.log("Empty-output retry: search context was provided but model produced nothing. Retrying with simplified prompt.")
-                        await MainActor.run { store.removeMessage(messageID, from: sessionID) }
-
-                        let retryMsg = ChatMessage(role: .system, text: "🔄 Retrying with simplified prompt…")
-                        await MainActor.run { store.appendMessage(retryMsg, to: sessionID) }
-
-                        let retryCitations = searchContext?.citations ?? []
-                        let (retryMsgID, retryStream) = try await service.generateStream(
-                            prompt: inferencePrompt,
-                            model: model,
-                            conversation: conversation,
-                            searchContext: searchContext,
-                            systemPrompt: SearchGroundingGuidance.retrySystemPrompt(from: store.settings.systemPrompt),
-                            imageData: nil,
-                            settings: store.settings
-                        )
-                        let retryPlaceholder = ChatMessage(id: retryMsgID, role: .assistant, text: "", citations: retryCitations)
-                        await MainActor.run { store.appendMessage(retryPlaceholder, to: sessionID) }
-
-                        (accumulated, thinkingAccumulated) = await consumeFollowupStream(
-                            retryStream,
-                            messageID: retryMsgID,
-                            sessionID: sessionID,
-                            clock: clock,
-                            lastFlush: lastFlush
-                        )
-                        let retryFinalText = searchAwareAssistantText(
-                            from: accumulated,
-                            prompt: trimmedPrompt,
-                            thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                            searchContext: searchContext
-                        )
-                        updateStreamingMessage(retryFinalText, messageID: retryMsgID, sessionID: sessionID, persist: true)
-                        await MainActor.run { finishGenerationIfCurrent(taskID) }
-                        return
-
-                    } else if let gateway = SearchGatewayFactory.make(settings: store.settings) {
-                        // ── Branch B: no search was done → auto-search and retry ──
-                        chatLogger.log("Empty-output auto-search fallback triggered for: \(trimmedPrompt, privacy: .private)")
-                        await MainActor.run { store.removeMessage(messageID, from: sessionID) }
-
-                        let refinedQuery = SearchQueryRefiner.refine(trimmedPrompt, conversation: conversation)
-                        let searchingMsg = ChatMessage(role: .system, text: "🔍 Searching: \(refinedQuery)…")
-                        await MainActor.run { store.appendMessage(searchingMsg, to: sessionID) }
-
-                        var fallbackSearchContext: SearchContext? = nil
-                        do {
-                            fallbackSearchContext = try await gateway.search(query: refinedQuery)
-                            chatLogger.log("Auto-search fallback returned \(fallbackSearchContext?.snippets.count ?? 0) snippets")
-                        } catch {
-                            chatLogger.log("Auto-search fallback error: \(error.localizedDescription, privacy: .public)")
-                            let errorMsg = ChatMessage(role: .system, text: "⚠️ Search failed: \(error.localizedDescription)")
-                            await MainActor.run { store.appendMessage(errorMsg, to: sessionID) }
-                        }
-
-                        if let fallbackSearchContext {
-                            let fallbackCitations = fallbackSearchContext.citations
-                            let (fbMessageID, fbStream) = try await service.generateStream(
-                                prompt: inferencePrompt,
-                                model: model,
-                                conversation: conversation,
-                                searchContext: fallbackSearchContext,
-                                systemPrompt: store.settings.systemPrompt,
-                                imageData: effectiveImageData,
-                                settings: store.settings
-                            )
-                            let fbPlaceholder = ChatMessage(id: fbMessageID, role: .assistant, text: "", citations: fallbackCitations)
-                            await MainActor.run { store.appendMessage(fbPlaceholder, to: sessionID) }
-
-                            (accumulated, thinkingAccumulated) = await consumeFollowupStream(
-                                fbStream,
-                                messageID: fbMessageID,
-                                sessionID: sessionID,
-                                clock: clock,
-                                lastFlush: lastFlush
-                            )
-                            let fbFinalText = searchAwareAssistantText(
-                                from: accumulated,
-                                prompt: trimmedPrompt,
-                                thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                                searchContext: fallbackSearchContext
-                            )
-                            updateStreamingMessage(fbFinalText, messageID: fbMessageID, sessionID: sessionID, persist: true)
-                            await MainActor.run { finishGenerationIfCurrent(taskID) }
-                            return
-                        }
-                    }
-                }
-
-                let persistedFinalText = searchAwareAssistantText(
-                    from: accumulated,
-                    prompt: trimmedPrompt,
-                    thinkingSeen: !thinkingAccumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                    searchContext: searchContext
-                )
-
-                if !stoppedByUser {
-                    let streamDuration = Date().timeIntervalSince(streamStartTime)
-                    await MainActor.run {
-                        store.updateMessageGenerationDuration(messageID, in: sessionID, duration: streamDuration, persist: true)
-                        store.updateMessageStats(messageID, in: sessionID, stats: capturedStats, persist: true)
-                    }
-                }
-
-                updateStreamingMessage(persistedFinalText, messageID: messageID, sessionID: sessionID, persist: true)
-
-                if !stoppedByUser,
-                   store.settings.voiceModeEnabled,
-                   store.settings.autoPlayVoiceResponses,
-                   !AssistantResponseFallback.isEmptyOutputMessage(persistedFinalText) {
-                    await MainActor.run {
-                        voiceController.speak(persistedFinalText, using: store.settings)
-                    }
-                }
-
-                await MainActor.run {
-                    finishGenerationIfCurrent(taskID)
-                }
-            } catch {
-                if !Task.isCancelled {
-                    let friendlyError = Self.friendlyInferenceError(error, modelName: model.catalogItem.displayName)
-                    let errorMessage = ChatMessage(role: .system, text: friendlyError)
-                    await MainActor.run {
-                        store.appendMessage(errorMessage, to: sessionID)
-                    }
-                }
-                await MainActor.run {
-                    finishGenerationIfCurrent(taskID)
-                }
-            }
-        }
-        generationTask = task
-    }
-
-    /// Heuristic: returns true when the question likely needs live/current data.
-    /// Uses whole-word matching to avoid false positives (e.g. "game" matching "gameplay").
-    static func looksLikeRealTimeQuery(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        let wordCount = lower.split(separator: " ").count
-        // Very short messages or greetings — never auto-search
-        if wordCount <= 4 { return false }
-
-        // High-confidence multi-word signals — always search
-        let phrases = [
-            "right now", "latest news", "breaking news", "live score", "live update",
-            "today's news", "today's score", "today's match", "today's game", "today's weather",
-            "today's price", "current score", "current price", "current news",
-            "trending now", "what happened", "recent news", "latest update",
-            "stock price", "match result", "election result",
-            "who won", "who is winning", "what is the score", "weather today",
-            "news today", "cricket score", "football score", "nba score", "ipl score",
-            "ipl match", "ipl today"
-        ]
-        if phrases.contains(where: { lower.contains($0) }) { return true }
-
-        // Single-word signals — only when paired with a question indicator
-        let hasQuestion = lower.hasPrefix("what") || lower.hasPrefix("who") ||
-                          lower.hasPrefix("when") || lower.hasPrefix("where") ||
-                          lower.contains("?")
-        if !hasQuestion { return false }
-
-        // Whole-word check via regex word boundaries
-        let singleWordSignals = ["ipl", "cricket", "nba", "nfl", "premier league", "standings"]
-        for signal in singleWordSignals {
-            if let _ = lower.range(of: "\\b\(signal)\\b", options: .regularExpression) { return true }
-        }
-        // Year with question
-        if lower.contains("2025") || lower.contains("2026") { return true }
-        return false
+        engine.send(request)
     }
 }

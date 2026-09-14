@@ -64,20 +64,16 @@ final class ChatTurnEngine {
     }
 }
 
-extension ChatTurnEngine {
-    /// Nested (not top-level) until Task 4 deletes ChatView's file-private
-    /// copy of the same name, which would otherwise be an invalid redeclaration.
-    enum GenerationInterruptionReason {
-        case user
-        case memoryWarning
+enum GenerationInterruptionReason {
+    case user
+    case memoryWarning
 
-        var notice: String {
-            switch self {
-            case .user:
-                return "Response stopped by user"
-            case .memoryWarning:
-                return "Your device needed memory — response was interrupted"
-            }
+    var notice: String {
+        switch self {
+        case .user:
+            return "Response stopped by user"
+        case .memoryWarning:
+            return "Your device needed memory — response was interrupted"
         }
     }
 }
@@ -92,10 +88,14 @@ extension ChatTurnEngine {
         let liteRT: InferenceService = LiteRTInferenceService()
         let appleFoundation: InferenceService = AppleFoundationInferenceService()
     }
+}
 
-    static func live() -> Dependencies {
-        let services = LiveServices()
-        return Dependencies(
+extension ChatTurnEngine.Dependencies {
+    /// Production dependencies: the real runtimes, the real memory coordinator,
+    /// and the 90-second idle release.
+    static func live() -> Self {
+        let services = ChatTurnEngine.LiveServices()
+        return Self(
             resolveModel: { $0.defaultModel },
             serviceForModel: { model in
                 switch model.catalogItem.runtimeType {
@@ -163,6 +163,12 @@ extension ChatTurnEngine {
         }
 
         Task { await dependencies.releaseAllRuntimes() }
+    }
+
+    /// Releases every runtime's memory. The view calls this when the app
+    /// backgrounds while no turn is in flight.
+    func releaseRuntimes() async {
+        await dependencies.releaseAllRuntimes()
     }
 
     /// Eagerly loads the selected model's weights when the user picks it from

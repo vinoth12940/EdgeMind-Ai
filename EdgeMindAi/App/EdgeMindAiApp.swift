@@ -3,11 +3,15 @@ import SwiftUI
 @main
 struct EdgeMindAiApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var store = AppStateStore()
+    @State private var store: AppStateStore
     @State private var authStore = AuthStateStore()
+    @State private var chatEngine: ChatTurnEngine
 
     init() {
         UITabBar.appearance().isHidden = true
+        let store = AppStateStore()
+        _store = State(initialValue: store)
+        _chatEngine = State(initialValue: ChatTurnEngine(store: store, dependencies: .live()))
     }
 
     var body: some Scene {
@@ -15,6 +19,7 @@ struct EdgeMindAiApp: App {
             LaunchRootView()
             .environment(store)
             .environment(authStore)
+            .environment(chatEngine)
             .preferredColorScheme(store.settings.appearanceMode.preferredColorScheme)
         }
         .onChange(of: scenePhase) { _, newPhase in
