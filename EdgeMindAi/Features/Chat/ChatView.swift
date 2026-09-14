@@ -1450,8 +1450,24 @@ struct ChatView: View {
 
             guard let result = result else {
                 chatLogger.log("Unknown tool: \(toolName, privacy: .public)")
+                // Replace the running row so the spinner doesn't persist forever.
+                visibleToolActivities[visibleToolActivities.count - 1] = Self.toolActivity(
+                    name: toolName,
+                    output: "Unknown tool",
+                    model: model,
+                    status: .failed,
+                    duration: toolDuration
+                )
                 let unknownMsg = ChatMessage(role: .system, text: "⚠️ Unknown tool: \(toolName)")
-                await MainActor.run { store.appendMessage(unknownMsg, to: sessionID) }
+                await MainActor.run {
+                    store.updateMessageToolActivities(
+                        startingMessageID,
+                        in: sessionID,
+                        toolActivities: visibleToolActivities,
+                        persist: true
+                    )
+                    store.appendMessage(unknownMsg, to: sessionID)
+                }
                 break
             }
 
@@ -1593,11 +1609,22 @@ struct ChatView: View {
                 chatLogger.log("Tool loop hit maxIterations (\(ToolRegistry.maxIterations)) — stopping")
                 let capMsg = ChatMessage(role: .system, text: "⚠️ Reached the tool-call limit (\(ToolRegistry.maxIterations)). Answering with what I have.")
                 await MainActor.run { store.appendMessage(capMsg, to: sessionID) }
-                return ToolLoopOutcome(finalText: accumulated, finished: true)
+                let cappedText = cleanedDisplayedAssistantText(accumulated)
+                let visibleText = cappedText.isEmpty
+                    ? Self.fallbackToolAnswer(from: accumulatedToolResults, model: model)
+                    : cappedText
+                updateStreamingMessage(visibleText, messageID: startingMessageID, sessionID: sessionID, persist: true)
+                return ToolLoopOutcome(finalText: visibleText, finished: true)
             }
         }
 
-        return ToolLoopOutcome(finalText: "", finished: true)
+        // Reached only via an early `break` (unknown tool or failed re-invocation).
+        // Write a final answer so the assistant bubble is never left empty.
+        let abortedText = accumulatedToolResults.isEmpty
+            ? AssistantResponseFallback.emptyOutputMessage(thinkingSeen: false)
+            : Self.fallbackToolAnswer(from: accumulatedToolResults, model: model)
+        updateStreamingMessage(abortedText, messageID: startingMessageID, sessionID: sessionID, persist: true)
+        return ToolLoopOutcome(finalText: abortedText, finished: true)
     }
 
     /// User-facing status line shown when a tool starts running.
@@ -2143,6 +2170,17 @@ struct ChatView: View {
                         capturedStats = stats
                         break
                     }
+                }
+
+                // Cancelling the task ends `for await` over an AsyncStream without
+                // delivering another event, so the in-loop check above is usually
+                // skipped. Mark the stop here so no fallback search/retry or voice
+                // playback runs after the user pressed Stop.
+                if Task.isCancelled && !stoppedByUser {
+                    let interruptionNotice = await currentGenerationInterruptionNotice()
+                    accumulated += "\n\n*(\(interruptionNotice))*"
+                    stoppedByUser = true
+                    updateStreamingMessage(accumulated, messageID: messageID, sessionID: sessionID, persist: true)
                 }
 
                 // ── Post-stream tool call fallback ──────────────────────

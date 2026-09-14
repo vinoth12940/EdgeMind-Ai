@@ -51,6 +51,32 @@ final class AppStateStoreMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func test_appendingMessagePreservesStatsToolActivitiesAndDurationOnEarlierMessages() {
+        let session = ChatSession(title: "Stats", modelID: nil, messages: [])
+        let store = AppStateStore(catalog: [], installedModels: [], chatSessions: [session], settings: .default)
+        let stats = GenerationStats(timeToFirstToken: 0.4, totalDuration: 2, outputTokens: 40, deltaCount: 40)
+        let activity = ChatToolActivity(name: "calculate", displayName: "Calculator", output: "4")
+        let assistant = ChatMessage(role: .assistant, text: "Answer")
+
+        store.appendMessage(assistant, to: session.id)
+        store.updateMessageStats(assistant.id, in: session.id, stats: stats)
+        store.updateMessageToolActivities(assistant.id, in: session.id, toolActivities: [activity])
+        store.updateMessageGenerationDuration(assistant.id, in: session.id, duration: 2)
+        store.appendMessage(ChatMessage(role: .user, text: "Next question"), to: session.id)
+
+        let inMemory = store.chatSessions.first?.messages.first(where: { $0.id == assistant.id })
+        XCTAssertEqual(inMemory?.stats, stats)
+        XCTAssertEqual(inMemory?.toolActivities, [activity])
+        XCTAssertEqual(inMemory?.generationDurationSeconds, 2)
+
+        let reloaded = AppStateStore(catalog: [], installedModels: [], chatSessions: [], settings: .default)
+        let persisted = reloaded.chatSessions.first?.messages.first(where: { $0.id == assistant.id })
+        XCTAssertEqual(persisted?.stats, stats)
+        XCTAssertEqual(persisted?.toolActivities, [activity])
+        XCTAssertEqual(persisted?.generationDurationSeconds, 2)
+    }
+
+    @MainActor
     func test_initRemovesDeprecatedOpenELMAndKeepsSupportedModels() {
         let openELM = deprecatedItem(
             name: "OpenELM 1.1B Instruct (MLX)",

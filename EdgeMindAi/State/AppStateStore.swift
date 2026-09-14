@@ -456,17 +456,13 @@ final class AppStateStore {
         return retained
     }
 
+    /// Copies the message and trims in place so every other field (stats, tool
+    /// activities, generation duration) survives re-sanitization on each append.
     private static func sanitizedMessageForInMemory(_ message: ChatMessage) -> ChatMessage {
-        ChatMessage(
-            id: message.id,
-            role: message.role,
-            text: trimInMemoryText(message.text),
-            createdAt: message.createdAt,
-            citations: message.citations,
-            attachments: message.attachments,
-            thinkingContent: message.thinkingContent.map(trimInMemoryThinking),
-            thinkingDurationSeconds: message.thinkingDurationSeconds
-        )
+        var sanitized = message
+        sanitized.text = trimInMemoryText(message.text)
+        sanitized.thinkingContent = message.thinkingContent.map(trimInMemoryThinking)
+        return sanitized
     }
 
     private static func trimInMemoryText(_ text: String) -> String {
@@ -489,10 +485,13 @@ final class AppStateStore {
             createdAt: message.createdAt,
             citations: message.citations,
             attachments: sanitizedAttachments,
+            toolActivities: message.toolActivities,
             thinkingContent: message.thinkingContent.map {
                 InferenceBudget.trimHistoryText($0, maxCharacters: maxPersistedThinkingCharacters)
             },
-            thinkingDurationSeconds: message.thinkingDurationSeconds
+            thinkingDurationSeconds: message.thinkingDurationSeconds,
+            generationDurationSeconds: message.generationDurationSeconds,
+            stats: message.stats
         )
     }
 
