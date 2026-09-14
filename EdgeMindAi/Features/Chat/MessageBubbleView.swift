@@ -12,6 +12,8 @@ struct MessageBubbleView: View {
     var onRegenerate: ((InstalledModel?) -> Void)?
     var onSelectVersion: ((Int) -> Void)?
     var onEdit: (() -> Void)?
+    /// Opens Settings → Memory from the "Using N memories" chip.
+    var onShowMemories: (() -> Void)?
 
     @State private var thinkingExpanded = false
     @State private var searchExpanded = false
@@ -225,6 +227,10 @@ struct MessageBubbleView: View {
             if hasMultipleVersions {
                 versionControls
             }
+
+            if message.memoryCount > 0 {
+                memoryChip
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 24)
@@ -255,6 +261,27 @@ struct MessageBubbleView: View {
         .sheet(item: $previewItem) { item in
             AttachmentPreviewSheet(item: item)
         }
+    }
+
+    /// "Using N memories" chip, shown when the answer's prompt carried memories.
+    private var memoryChip: some View {
+        Button {
+            onShowMemories?()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                Text("Using \(message.memoryCount) memor\(message.memoryCount == 1 ? "y" : "ies")")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(AppTheme.accent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(AppTheme.accent.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+        .disabled(onShowMemories == nil)
+        .accessibilityLabel("This answer used \(message.memoryCount) saved memories")
     }
 
     private var hasActivitySummary: Bool {

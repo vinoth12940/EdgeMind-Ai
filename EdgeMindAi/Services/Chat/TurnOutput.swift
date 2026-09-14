@@ -15,6 +15,8 @@ protocol TurnOutput: AnyObject {
     func update(thinking: String, duration: Int?, persist: Bool)
     func setToolActivities(_ activities: [ChatToolActivity], persist: Bool)
     func setCitations(_ citations: [SearchCitation])
+    /// Records how many saved memories shaped this answer.
+    func setMemoryCount(_ count: Int)
     /// Appends a system notice (warnings, retry banners).
     func appendNotice(_ text: String)
     /// Terminal write. If no answer was begun, appends a new assistant message.
@@ -107,6 +109,11 @@ final class StoreTurnOutput: TurnOutput {
     func setCitations(_ citations: [SearchCitation]) {
         guard let answerMessageID else { return }
         store.updateMessageCitations(answerMessageID, in: sessionID, citations: citations, persist: true)
+    }
+
+    func setMemoryCount(_ count: Int) {
+        guard let answerMessageID else { return }
+        store.updateMessageMemoryCount(answerMessageID, in: sessionID, memoryCount: count, persist: false)
     }
 
     func appendNotice(_ text: String) {

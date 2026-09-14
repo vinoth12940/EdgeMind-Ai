@@ -437,6 +437,15 @@ enum InferenceBudget {
         return min(preferred, hardCeiling)
     }
 
+    /// Prompt allowance for the saved-memory section (spec §1). Grows with the
+    /// device-safe context window so compact devices keep most of the window.
+    static func memoryTokenBudget(for model: InstalledModel, tier: DeviceTier = .current()) -> Int {
+        let contextWindow = safeContextWindow(for: model, tier: tier)
+        if contextWindow <= 2_048 { return 150 }
+        if contextWindow <= 4_096 { return 300 }
+        return 500
+    }
+
     static func mlxHistoryBudget(for model: InstalledModel, searchContext: SearchContext?, maxGeneratedTokens: Int, tier: DeviceTier = .current()) -> Int {
         let contextWindow = safeContextWindow(for: model, tier: tier)
         let reservedPromptSpace = searchContext == nil

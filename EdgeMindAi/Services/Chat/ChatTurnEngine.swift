@@ -51,6 +51,8 @@ final class ChatTurnEngine {
         /// (model, hasImage) -> blocking message, or nil to proceed.
         var memoryGuardMessage: @MainActor (InstalledModel, Bool) -> String?
         var idleReleaseDelay: Duration
+        /// Saved personal memories. Nil in tests and headless contexts without one.
+        var memoryStore: MemoryStore?
     }
 
     private(set) var isGenerating = false
@@ -119,7 +121,7 @@ extension ChatTurnEngine {
 extension ChatTurnEngine.Dependencies {
     /// Production dependencies: the real runtimes, the real memory coordinator,
     /// and the 90-second idle release.
-    static func live() -> Self {
+    static func live(memoryStore: MemoryStore? = nil) -> Self {
         let services = ChatTurnEngine.LiveServices()
         return Self(
             resolveModel: { $0.defaultModel },
@@ -152,7 +154,8 @@ extension ChatTurnEngine.Dependencies {
 
                 return "\(model.catalogItem.displayName) is above the safe memory budget for this device tier (\(String(format: "%.1f", estimatedGB)) GB estimated vs \(String(format: "%.1f", tier.jetsamSoftLimitGB)) GB safe). Pick a smaller model to avoid an iOS memory kill."
             },
-            idleReleaseDelay: .seconds(90)
+            idleReleaseDelay: .seconds(90),
+            memoryStore: memoryStore
         )
     }
 }
@@ -503,6 +506,15 @@ extension ChatTurnEngine {
                 // section from whichever tools are available this turn (gated by config +
                 // attachments + history), generalizing the old web_search-only definition.
                 var systemPromptForInference = store.settings.systemPrompt
+                var usedMemoryCount = 0
+                if store.settings.memoryEnabled, let memoryStore = dependencies.memoryStore {
+                    let memorySection = memoryStore.promptSection(for: model)
+                    if !memorySection.text.isEmpty {
+                        systemPromptForInference += "\n\n" + memorySection.text
+                        usedMemoryCount = memorySection.includedCount
+                        chatEngineLogger.log("Memory section injected: \(memorySection.includedCount) items")
+                    }
+                }
                 let toolContext = ToolContext(
                     settings: store.settings,
                     conversation: conversation,
@@ -565,6 +577,9 @@ extension ChatTurnEngine {
                 )
 
                 output.beginAnswer(messageID: messageID, citations: pendingCitations)
+                if usedMemoryCount > 0 {
+                    output.setMemoryCount(usedMemoryCount)
+                }
 
                 var thinkingAccumulated = ""
                 var stoppedByUser = false

@@ -296,6 +296,21 @@ final class AppStateStore {
         if persist { saveChatSessions() }
     }
 
+    /// Records how many saved memories the answer used (for the "Using N
+    /// memories" chip). Added in 0.3.1.
+    func updateMessageMemoryCount(
+        _ messageID: UUID,
+        in sessionID: UUID,
+        memoryCount: Int,
+        persist: Bool = false
+    ) {
+        guard let sessionIndex = chatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let messageIndex = chatSessions[sessionIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        chatSessions[sessionIndex].messages[messageIndex].memoryCount = memoryCount
+        chatSessions[sessionIndex].updatedAt = .now
+        if persist { saveChatSessions() }
+    }
+
     // MARK: - Answer versions and edit
 
     /// Snapshots the current top-level content as version 0 when needed, appends
@@ -620,7 +635,8 @@ final class AppStateStore {
                 }
                 return copy
             },
-            selectedVersion: message.selectedVersion
+            selectedVersion: message.selectedVersion,
+            memoryCount: message.memoryCount
         )
     }
 

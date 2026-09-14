@@ -57,6 +57,7 @@ enum ChatVisionContext {
 struct ChatView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(ChatTurnEngine.self) private var engine
+    @Environment(MemoryStore.self) private var memoryStore
     @Environment(\.selectedTab) private var selectedTab
     @Environment(\.scenePhase) private var scenePhase
     @State private var prompt = ""
@@ -73,6 +74,8 @@ struct ChatView: View {
     @State private var showExportSheet = false
     /// Suppresses the task-based model suggestion for the rest of the session.
     @State private var dismissedModelSuggestion = false
+    /// "remember that …" text awaiting a Save / Don't save decision.
+    @State private var pendingMemoryCandidate: String?
     @State private var attachedDocuments: [ChatAttachment] = []
     @StateObject private var voiceController = VoiceInteractionController()
 
@@ -216,6 +219,9 @@ struct ChatView: View {
                                         },
                                         onEdit: {
                                             beginEditing(message)
+                                        },
+                                        onShowMemories: {
+                                            selectedTab.wrappedValue = 3
                                         }
                                     )
                                         .id(message.id)
@@ -260,6 +266,10 @@ struct ChatView: View {
                             }
                         }
                     }
+                }
+
+                if let candidate = pendingMemoryCandidate {
+                    memoryCandidateCard(candidate)
                 }
 
                 if let suggestion = modelSuggestion {
@@ -420,6 +430,55 @@ struct ChatView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss model suggestion")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(AppTheme.panelRaised.opacity(0.9))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.5)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+    }
+
+    /// Confirmation card for a "remember that …" phrase. The turn proceeds
+    /// either way; this only decides whether the memory is saved.
+    private func memoryCandidateCard(_ candidate: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(AppTheme.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Save this to memory?")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary)
+                Text(candidate)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            Button("Save") {
+                memoryStore.add(candidate)
+                pendingMemoryCandidate = nil
+            }
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .buttonStyle(.plain)
+            .foregroundStyle(AppTheme.accent)
+
+            Button("Don't save") {
+                pendingMemoryCandidate = nil
+            }
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .buttonStyle(.plain)
+            .foregroundStyle(AppTheme.textTertiary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1304,6 +1363,11 @@ struct ChatView: View {
         if editingMessage != nil {
             showEditConfirmation = true
             return
+        }
+
+        if store.settings.memoryEnabled,
+           let candidate = MemoryPhraseDetector.candidateMemory(from: trimmedPrompt) {
+            pendingMemoryCandidate = candidate
         }
 
         if store.selectedSession == nil {

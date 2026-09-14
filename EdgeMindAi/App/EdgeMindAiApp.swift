@@ -6,12 +6,15 @@ struct EdgeMindAiApp: App {
     @State private var store: AppStateStore
     @State private var authStore = AuthStateStore()
     @State private var chatEngine: ChatTurnEngine
+    @State private var memoryStore: MemoryStore
 
     init() {
         UITabBar.appearance().isHidden = true
         let store = AppStateStore()
+        let memoryStore = MemoryStore()
         _store = State(initialValue: store)
-        _chatEngine = State(initialValue: ChatTurnEngine(store: store, dependencies: .live()))
+        _memoryStore = State(initialValue: memoryStore)
+        _chatEngine = State(initialValue: ChatTurnEngine(store: store, dependencies: .live(memoryStore: memoryStore)))
     }
 
     var body: some Scene {
@@ -20,6 +23,7 @@ struct EdgeMindAiApp: App {
             .environment(store)
             .environment(authStore)
             .environment(chatEngine)
+            .environment(memoryStore)
             .preferredColorScheme(store.settings.appearanceMode.preferredColorScheme)
         }
         .onChange(of: scenePhase) { _, newPhase in

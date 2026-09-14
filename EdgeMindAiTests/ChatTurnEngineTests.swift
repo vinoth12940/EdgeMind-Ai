@@ -42,7 +42,8 @@ final class ChatTurnEngineTests: XCTestCase {
     private func makeEngine(
         model: InstalledModel?,
         service: InferenceService,
-        memoryGuard: String? = nil
+        memoryGuard: String? = nil,
+        memoryStore: MemoryStore? = nil
     ) -> ChatTurnEngine {
         let engine = ChatTurnEngine(
             store: store,
@@ -52,7 +53,8 @@ final class ChatTurnEngineTests: XCTestCase {
                 prepareRuntime: { _ in },
                 releaseAllRuntimes: { },
                 memoryGuardMessage: { _, _ in memoryGuard },
-                idleReleaseDelay: .seconds(3600)
+                idleReleaseDelay: .seconds(3600),
+                memoryStore: memoryStore
             )
         )
         engine.speaker = { [weak self] text, _ in self?.spoken.append(text) }
@@ -152,6 +154,34 @@ final class ChatTurnEngineTests: XCTestCase {
         XCTAssertEqual(messages.map(\.role), [.user, .system])
         XCTAssertTrue(messages[1].text.contains("model file"))
         XCTAssertFalse(engine.isGenerating)
+    }
+
+    // MARK: memory
+
+    func test_memoryEnabled_injectsSectionAndRecordsCount() async {
+        let memoryStore = MemoryStore(items: [MemoryItem(text: "Lives in Austin")])
+        let service = ScriptedInferenceService(scripts: [[.textDelta("Try the tacos.")]])
+        let engine = makeEngine(model: appleModel, service: service, memoryStore: memoryStore)
+
+        engine.send(request("Where should I eat?"))
+        await engine.waitUntilIdle()
+
+        XCTAssertTrue(service.calls.first?.systemPrompt.contains("# About the user") ?? false)
+        XCTAssertTrue(service.calls.first?.systemPrompt.contains("Lives in Austin") ?? false)
+        XCTAssertEqual(messages.last { $0.role == .assistant }?.memoryCount, 1)
+    }
+
+    func test_memoryDisabled_omitsSectionAndCount() async {
+        store.settings.memoryEnabled = false
+        let memoryStore = MemoryStore(items: [MemoryItem(text: "Lives in Austin")])
+        let service = ScriptedInferenceService(scripts: [[.textDelta("Hi")]])
+        let engine = makeEngine(model: appleModel, service: service, memoryStore: memoryStore)
+
+        engine.send(request("Hello"))
+        await engine.waitUntilIdle()
+
+        XCTAssertFalse(service.calls.first?.systemPrompt.contains("# About the user") ?? true)
+        XCTAssertEqual(messages.last { $0.role == .assistant }?.memoryCount, 0)
     }
 
     // MARK: tool loop

@@ -194,6 +194,9 @@ struct ChatMessage: Identifiable, Hashable, Codable {
     /// Index into `versions` of the answer currently mirrored into the
     /// top-level fields. Ignored while `versions` is empty.
     var selectedVersion: Int
+    /// How many saved memories were injected into the prompt for this answer.
+    /// 0 means none. Added in 0.3.1.
+    var memoryCount: Int
 
     init(
         id: UUID = UUID(),
@@ -209,7 +212,8 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         generationDurationSeconds: Double? = nil,
         stats: GenerationStats? = nil,
         versions: [AnswerVersion] = [],
-        selectedVersion: Int = 0
+        selectedVersion: Int = 0,
+        memoryCount: Int = 0
     ) {
         self.id = id
         self.role = role
@@ -228,6 +232,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         self.stats = stats
         self.versions = versions
         self.selectedVersion = selectedVersion
+        self.memoryCount = memoryCount
     }
 
     /// Copies the selected version into the top-level fields so every existing
@@ -270,6 +275,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         case stats
         case versions
         case selectedVersion
+        case memoryCount
     }
 
     init(from decoder: Decoder) throws {
@@ -292,6 +298,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         stats = try container.decodeIfPresent(GenerationStats.self, forKey: .stats)
         versions = try container.decodeIfPresent([AnswerVersion].self, forKey: .versions) ?? []
         selectedVersion = try container.decodeIfPresent(Int.self, forKey: .selectedVersion) ?? 0
+        memoryCount = try container.decodeIfPresent(Int.self, forKey: .memoryCount) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -309,6 +316,7 @@ struct ChatMessage: Identifiable, Hashable, Codable {
         try container.encodeIfPresent(stats, forKey: .stats)
         try container.encode(versions, forKey: .versions)
         try container.encode(selectedVersion, forKey: .selectedVersion)
+        try container.encode(memoryCount, forKey: .memoryCount)
     }
 }
 

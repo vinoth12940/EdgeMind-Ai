@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(AuthStateStore.self) private var authStore
+    @Environment(MemoryStore.self) private var memoryStore
     @Environment(\.selectedTab) private var selectedTab
     @State private var isReauthenticating = false
     @State private var hfTokenDraft = ""
@@ -35,6 +36,8 @@ struct SettingsView: View {
                     
                     settingsGroupCard(icon: "brain.head.profile", title: "AI Configuration", iconColor: AppTheme.accentSoft) {
                         behaviorSectionContent
+                        Divider().foregroundStyle(AppTheme.divider)
+                        memorySectionContent
                     }
                     
                     settingsGroupCard(icon: "globe.americas.fill", title: "Search & Integration", iconColor: AppTheme.warning) {
@@ -266,6 +269,38 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
+    private var memorySectionContent: some View {
+        NavigationLink {
+            MemorySettingsView()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.accent)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Memory")
+                        .font(.appBody(14))
+                        .foregroundStyle(AppTheme.textPrimary)
+                    Text(memoryStore.items.isEmpty
+                         ? "Save facts about you for future chats"
+                         : "\(memoryStore.items.count) saved · \(store.settings.memoryEnabled ? "on" : "off")")
+                        .font(.appBody(11))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(AppTheme.textTertiary)
+            }
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+    }
+
     private var huggingFaceSectionContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("API Token")
