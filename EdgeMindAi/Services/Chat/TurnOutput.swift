@@ -8,8 +8,9 @@ import OSLog
 protocol TurnOutput: AnyObject {
     /// Appends the assistant placeholder that streaming updates target.
     func beginAnswer(messageID: UUID, citations: [SearchCitation])
-    /// Removes the current answer message and begins a new one (retry lanes).
-    func restartAnswer(messageID: UUID, citations: [SearchCitation])
+    /// Removes the current answer message; later writes are ignored until the
+    /// next `beginAnswer` (retry lanes discard the stale answer before retrying).
+    func discardAnswer()
     func update(text: String, persist: Bool)
     func update(thinking: String, duration: Int?, persist: Bool)
     func setToolActivities(_ activities: [ChatToolActivity], persist: Bool)
@@ -19,6 +20,11 @@ protocol TurnOutput: AnyObject {
     /// Terminal write. If no answer was begun, appends a new assistant message.
     /// Calls after the first are ignored.
     func finish(text: String, toolActivities: [ChatToolActivity]?, stats: GenerationStats?, duration: Double?)
+    /// Terminal write for turns that end with no answer message (errors before
+    /// `beginAnswer` or after `discardAnswer`): marks the turn finished, writes nothing.
+    func finishWithoutAnswer()
+    /// True while an answer message is begun and not discarded.
+    var hasActiveAnswer: Bool { get }
     var isFinished: Bool { get }
 }
 
@@ -40,11 +46,12 @@ final class StoreTurnOutput: TurnOutput {
         store.appendMessage(ChatMessage(id: messageID, role: .assistant, text: "", citations: citations), to: sessionID)
     }
 
-    func restartAnswer(messageID: UUID, citations: [SearchCitation]) {
-        if let answerMessageID {
-            store.removeMessage(answerMessageID, from: sessionID)
-        }
-        beginAnswer(messageID: messageID, citations: citations)
+    var hasActiveAnswer: Bool { answerMessageID != nil }
+
+    func discardAnswer() {
+        guard let answerMessageID else { return }
+        store.removeMessage(answerMessageID, from: sessionID)
+        self.answerMessageID = nil
     }
 
     func update(text: String, persist: Bool) {
@@ -89,5 +96,13 @@ final class StoreTurnOutput: TurnOutput {
         }
         store.updateMessageStats(answerMessageID, in: sessionID, stats: stats, persist: true)
         store.updateMessageText(answerMessageID, in: sessionID, text: text, persist: true)
+    }
+
+    func finishWithoutAnswer() {
+        guard !isFinished else {
+            logger.error("finishWithoutAnswer called after finish; ignoring")
+            return
+        }
+        isFinished = true
     }
 }

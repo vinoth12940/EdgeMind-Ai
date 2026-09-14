@@ -138,4 +138,41 @@ final class ChatTurnEngineTests: XCTestCase {
         XCTAssertEqual(messages.map(\.role), [.user, .assistant])
         XCTAssertTrue(service.calls.isEmpty)
     }
+
+    /// An error before `beginAnswer` writes only the friendly notice (no assistant bubble).
+    /// Not covered: an error thrown after `beginAnswer` with the answer still live. The only
+    /// such path (the missed-tool-call search lane) needs a real search gateway; retry lanes
+    /// discard the answer before their `generateStream` can throw.
+    func test_generateStreamThrowsBeforeAnswer_appendsOnlyErrorNotice() async {
+        let engine = makeEngine(model: appleModel, service: ThrowingInferenceService(error: .missingLocalModelFile))
+
+        engine.send(request("Hi"))
+        await engine.waitUntilIdle()
+
+        XCTAssertEqual(messages.map(\.role), [.user, .system])
+        XCTAssertTrue(messages[1].text.contains("model file"))
+        XCTAssertFalse(engine.isGenerating)
+    }
+}
+
+private final class ThrowingInferenceService: InferenceService, @unchecked Sendable {
+    let error: InferenceServiceError
+
+    init(error: InferenceServiceError) {
+        self.error = error
+    }
+
+    func generateReply(
+        prompt: String, model: InstalledModel, conversation: [ChatMessage],
+        searchContext: SearchContext?, systemPrompt: String, imageData: Data?, settings: AppSettings?
+    ) async throws -> ChatMessage {
+        throw error
+    }
+
+    func generateStream(
+        prompt: String, model: InstalledModel, conversation: [ChatMessage],
+        searchContext: SearchContext?, systemPrompt: String, imageData: Data?, settings: AppSettings?
+    ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
+        throw error
+    }
 }

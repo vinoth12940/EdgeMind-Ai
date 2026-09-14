@@ -688,6 +688,7 @@ extension ChatTurnEngine {
                    (AssistantResponseFallback.isInstructionEchoMessage(finalText)
                         || AssistantResponseFallback.isLikelyOffTopicReply(finalText, prompt: trimmedPrompt)) {
                     chatEngineLogger.log("OpenELM instruction-echo retry triggered.")
+                    output.discardAnswer()
 
                     output.appendNotice("🔄 Retrying OpenELM with minimal prompt…")
 
@@ -700,7 +701,7 @@ extension ChatTurnEngine {
                         imageData: nil,
                         settings: store.settings
                     )
-                    output.restartAnswer(messageID: retryMsgID, citations: [])
+                    output.beginAnswer(messageID: retryMsgID, citations: [])
 
                     // OpenELM lane: no live UI flushes, no thinking-store updates.
                     (accumulated, thinkingAccumulated) = await consumeFollowupStream(
@@ -736,6 +737,7 @@ extension ChatTurnEngine {
                    let searchContext,
                    AssistantResponseFallback.isSearchAccessRefusal(finalText) {
                     chatEngineLogger.log("Search-grounding retry triggered after searched response refused live/current access.")
+                    output.discardAnswer()
 
                     output.appendNotice("🔄 Retrying with grounded web results…")
 
@@ -749,7 +751,7 @@ extension ChatTurnEngine {
                         imageData: nil,
                         settings: store.settings
                     )
-                    output.restartAnswer(messageID: retryMsgID, citations: retryCitations)
+                    output.beginAnswer(messageID: retryMsgID, citations: retryCitations)
 
                     (accumulated, thinkingAccumulated) = await consumeFollowupStream(
                         retryStream,
@@ -783,6 +785,7 @@ extension ChatTurnEngine {
                         // Retry with a minimal system prompt and no history to give the
                         // model maximum context window for the search results + question.
                         chatEngineLogger.log("Empty-output retry: search context was provided but model produced nothing. Retrying with simplified prompt.")
+                        output.discardAnswer()
 
                         output.appendNotice("🔄 Retrying with simplified prompt…")
 
@@ -796,7 +799,7 @@ extension ChatTurnEngine {
                             imageData: nil,
                             settings: store.settings
                         )
-                        output.restartAnswer(messageID: retryMsgID, citations: retryCitations)
+                        output.beginAnswer(messageID: retryMsgID, citations: retryCitations)
 
                         (accumulated, thinkingAccumulated) = await consumeFollowupStream(
                             retryStream,
@@ -817,6 +820,7 @@ extension ChatTurnEngine {
                     } else if let gateway = SearchGatewayFactory.make(settings: store.settings) {
                         // ── Branch B: no search was done → auto-search and retry ──
                         chatEngineLogger.log("Empty-output auto-search fallback triggered for: \(trimmedPrompt, privacy: .private)")
+                        output.discardAnswer()
 
                         let refinedQuery = SearchQueryRefiner.refine(trimmedPrompt, conversation: conversation)
                         output.appendNotice("🔍 Searching: \(refinedQuery)…")
@@ -841,7 +845,7 @@ extension ChatTurnEngine {
                                 imageData: effectiveImageData,
                                 settings: store.settings
                             )
-                            output.restartAnswer(messageID: fbMessageID, citations: fallbackCitations)
+                            output.beginAnswer(messageID: fbMessageID, citations: fallbackCitations)
 
                             (accumulated, thinkingAccumulated) = await consumeFollowupStream(
                                 fbStream,
@@ -891,13 +895,19 @@ extension ChatTurnEngine {
                     output.appendNotice(friendlyError)
                 }
                 if !output.isFinished {
-                    let currentText = cleanedDisplayedAssistantText(accumulated)
-                    output.finish(
-                        text: currentText.isEmpty ? AssistantResponseFallback.emptyOutputMessage(thinkingSeen: false) : currentText,
-                        toolActivities: nil,
-                        stats: nil,
-                        duration: nil
-                    )
+                    if output.hasActiveAnswer {
+                        let currentText = cleanedDisplayedAssistantText(accumulated)
+                        output.finish(
+                            text: currentText.isEmpty ? AssistantResponseFallback.emptyOutputMessage(thinkingSeen: false) : currentText,
+                            toolActivities: nil,
+                            stats: nil,
+                            duration: nil
+                        )
+                    } else {
+                        // No answer bubble exists (error before `beginAnswer` or after a
+                        // retry lane discarded it): the notice above is the only write.
+                        output.finishWithoutAnswer()
+                    }
                 }
                 finishGenerationIfCurrent(taskID)
             }
