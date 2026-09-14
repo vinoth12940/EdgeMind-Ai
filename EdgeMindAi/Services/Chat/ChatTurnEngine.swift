@@ -203,6 +203,81 @@ extension ChatTurnEngine {
         await dependencies.releaseAllRuntimes()
     }
 
+    // MARK: - Headless answers (Shortcuts)
+
+    enum HeadlessAnswerError: LocalizedError {
+        case needsApp
+        case emptyPrompt
+        case noAnswer
+
+        var errorDescription: String? {
+            switch self {
+            case .needsApp: return "Open Edge Mind Ai to answer with this model."
+            case .emptyPrompt: return "A prompt is required."
+            case .noAnswer: return "The model did not produce an answer."
+            }
+        }
+    }
+
+    /// Answers a prompt without UI, for the Shortcuts intent. Allowed only for
+    /// Apple Intelligence or a ready model with a small (\u2264 2 GB) disk footprint
+    /// that passes the memory guard; anything else throws `.needsApp` so the
+    /// intent can open the app instead. A 120-second timeout returns partial text.
+    func answerHeadless(prompt: String, timeout: Duration = .seconds(120)) async throws -> String {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw HeadlessAnswerError.emptyPrompt }
+        guard let model = dependencies.resolveModel(store), isHeadlessEligible(model) else {
+            throw HeadlessAnswerError.needsApp
+        }
+
+        store.createSession(using: model.catalogItem.id)
+        guard let sessionID = store.selectedSessionID else { throw HeadlessAnswerError.needsApp }
+
+        let collector = CollectingTurnOutput(
+            inner: StoreTurnOutput(store: store, sessionID: sessionID)
+        )
+        send(
+            TurnRequest(
+                sessionID: sessionID,
+                prompt: trimmed,
+                attachments: [],
+                image: nil,
+                liveSearchEnabled: false
+            ),
+            output: collector
+        )
+
+        let finished = await withTaskGroup(of: Bool.self) { group in
+            group.addTask { [weak self] in
+                await self?.waitUntilIdle()
+                return true
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+
+        if !finished {
+            stop()
+            await waitUntilIdle()
+        }
+
+        let answer = collector.collectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !answer.isEmpty else { throw HeadlessAnswerError.noAnswer }
+        return answer
+    }
+
+    private func isHeadlessEligible(_ model: InstalledModel) -> Bool {
+        if model.catalogItem.runtimeType == .foundationModels { return true }
+        guard model.installState == .installed else { return false }
+        guard model.catalogItem.parsedDiskSizeGBForEstimator <= 2 else { return false }
+        return AvailableMemoryGuard.checkMemoryHeadroom(for: model.catalogItem, isVision: false) == nil
+    }
+
     /// Eagerly loads the selected model's weights when the user picks it from
     /// the model picker, so the first message send doesn't pay the load cost.
     /// Routed through `prepareRuntime` so competing runtimes are evicted
@@ -374,6 +449,12 @@ extension ChatTurnEngine {
 
 extension ChatTurnEngine {
     func send(_ request: TurnRequest) {
+        send(request, output: nil)
+    }
+
+    /// Runs a turn with an optional custom `TurnOutput` (headless answers use a
+    /// collecting wrapper). The default is a `StoreTurnOutput` for the session.
+    func send(_ request: TurnRequest, output overrideOutput: TurnOutput?) {
         guard !isGenerating else { return }
 
         let sessionID = request.sessionID
@@ -409,7 +490,8 @@ extension ChatTurnEngine {
         }
 
         guard !trimmedPrompt.isEmpty || currentImage != nil || !currentDocuments.isEmpty else { return }
-        let output = StoreTurnOutput(store: store, sessionID: sessionID, mode: outputMode)
+        let output: TurnOutput = overrideOutput
+            ?? StoreTurnOutput(store: store, sessionID: sessionID, mode: outputMode)
 
         guard let model = overrideModel ?? dependencies.resolveModel(store) else {
             output.finish(text: InferenceServiceError.noModelInstalled.localizedDescription, toolActivities: nil, stats: nil, duration: nil)

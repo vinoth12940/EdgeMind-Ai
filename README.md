@@ -330,7 +330,7 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 
 | Metric | Value |
 |--------|-------|
-| Swift files | ~129 |
+| Swift files | ~136 |
 | Lines of code | ~32,600 |
 | Model catalog entries | 46 |
 | GGUF models | 18 |
@@ -339,7 +339,7 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 | Apple Foundation Models | 1 |
 | AI Labs | 10 |
 | Search providers | 4 |
-| Unit tests | 417 XCTest test cases covering hardware tiering, device capabilities, catalog consistency, runtime profiles, streaming, memory guards, the chat turn engine, answer versions, chat export, model suggestions, personal memory, document search, and agentic tools |
+| Unit tests | 439 XCTest test cases covering hardware tiering, device capabilities, catalog consistency, runtime profiles, streaming, memory guards, the chat turn engine, answer versions, chat export, model suggestions, personal memory, document search, share import, and agentic tools |
 | Bundle ID | `com.vinothrajalingam.EdgeMindAi` |
 | Min deployment target | iOS 17.0 |
 | Color scheme | Adaptive Light / Dark via AppTheme |

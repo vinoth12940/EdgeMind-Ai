@@ -58,6 +58,8 @@ struct ChatView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(ChatTurnEngine.self) private var engine
     @Environment(MemoryStore.self) private var memoryStore
+    @Environment(DocumentLibraryStore.self) private var documentLibrary
+    @Environment(DeepLinkCoordinator.self) private var deepLinks
     @Environment(\.selectedTab) private var selectedTab
     @Environment(\.scenePhase) private var scenePhase
     @State private var prompt = ""
@@ -315,6 +317,7 @@ struct ChatView: View {
         .floatingDockHidden()
         .onAppear {
             store.reconcileInstalledFiles()
+            Task { await drainShareInbox() }
             engine.speaker = { [voiceController] text, settings in
                 voiceController.speak(text, using: settings)
             }
@@ -331,6 +334,10 @@ struct ChatView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             applyIntentHandoff()
+            Task { await drainShareInbox() }
+        }
+        .onChange(of: deepLinks.pendingRoute) { _, _ in
+            handleDeepLink()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
             engine.handleMemoryWarning()
@@ -443,6 +450,56 @@ struct ChatView: View {
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
+    }
+
+    // MARK: - Share Extension and deep links
+
+    /// Imports nothing by itself; `ShareInboxProcessor` writes to the library and
+    /// returns the chat-shaped outcome.
+    private func handleDeepLink() {
+        guard let route = deepLinks.consumeRoute() else { return }
+        switch route {
+        case .ask(let mode):
+            isInputFocused = true
+            if mode == .voice, store.settings.voiceModeEnabled {
+                Task { await voiceController.toggleListening(seedText: prompt) }
+            }
+        case .share(let id):
+            Task { await importSharedItem(id: id) }
+        case .settingsMemory, .settingsDocuments:
+            break // RootView switches tabs; SettingsView pushes the destination.
+        }
+    }
+
+    private func drainShareInbox() async {
+        let outcomes = await ShareInboxProcessor.drainPending(library: documentLibrary)
+        for outcome in outcomes {
+            apply(outcome)
+        }
+    }
+
+    private func importSharedItem(id: UUID) async {
+        let inbox = ShareInbox()
+        guard let payload = inbox.payload(id: id) else { return }
+        guard let outcome = await ShareInboxProcessor.process(payload, inbox: inbox, library: documentLibrary) else { return }
+        apply(outcome)
+    }
+
+    private func apply(_ outcome: ShareImportOutcome) {
+        if store.selectedSession == nil {
+            store.createSession(using: store.defaultModel?.catalogItem.id)
+        }
+        prompt = outcome.prompt
+        attachedDocuments = outcome.attachments.filter { $0.kind != .image }
+        if let imageAttachment = outcome.attachments.first(where: { $0.kind == .image }),
+           let data = imageAttachment.rawData {
+            attachedImage = UIImage(data: data)
+        }
+        if outcome.shouldAutoSend {
+            sendPrompt()
+        } else {
+            isInputFocused = true
+        }
     }
 
     /// Confirmation card for a "remember that …" phrase. The turn proceeds

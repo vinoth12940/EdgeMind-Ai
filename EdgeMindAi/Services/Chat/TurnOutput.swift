@@ -155,3 +155,61 @@ final class StoreTurnOutput: TurnOutput {
         isFinished = true
     }
 }
+
+/// Wraps a `StoreTurnOutput` and captures the final answer so a headless
+/// Shortcuts run can return it. Every write still lands in the store, so the
+/// turn is saved as a normal chat titled from the prompt.
+@MainActor
+final class CollectingTurnOutput: TurnOutput {
+    private let inner: TurnOutput
+    private(set) var collectedText = ""
+
+    init(inner: TurnOutput) {
+        self.inner = inner
+    }
+
+    func beginAnswer(messageID: UUID, citations: [SearchCitation]) {
+        inner.beginAnswer(messageID: messageID, citations: citations)
+    }
+
+    func discardAnswer() {
+        inner.discardAnswer()
+    }
+
+    var hasActiveAnswer: Bool { inner.hasActiveAnswer }
+    var isFinished: Bool { inner.isFinished }
+
+    func update(text: String, persist: Bool) {
+        // Streaming updates are not the final answer; `finish` owns `collectedText`.
+        inner.update(text: text, persist: persist)
+    }
+
+    func update(thinking: String, duration: Int?, persist: Bool) {
+        inner.update(thinking: thinking, duration: duration, persist: persist)
+    }
+
+    func setToolActivities(_ activities: [ChatToolActivity], persist: Bool) {
+        inner.setToolActivities(activities, persist: persist)
+    }
+
+    func setCitations(_ citations: [SearchCitation]) {
+        inner.setCitations(citations)
+    }
+
+    func setMemoryCount(_ count: Int) {
+        inner.setMemoryCount(count)
+    }
+
+    func appendNotice(_ text: String) {
+        inner.appendNotice(text)
+    }
+
+    func finish(text: String, toolActivities: [ChatToolActivity]?, stats: GenerationStats?, duration: Double?) {
+        collectedText = text
+        inner.finish(text: text, toolActivities: toolActivities, stats: stats, duration: duration)
+    }
+
+    func finishWithoutAnswer() {
+        inner.finishWithoutAnswer()
+    }
+}

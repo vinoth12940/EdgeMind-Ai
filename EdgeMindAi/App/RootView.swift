@@ -28,6 +28,7 @@ extension EnvironmentValues {
 struct RootView: View {
     @Environment(AppStateStore.self) private var store
     @Environment(AuthStateStore.self) private var authStore
+    @Environment(DeepLinkCoordinator.self) private var deepLinks
 
     @State private var selectedTab = 0
     @State private var isKeyboardVisible = false
@@ -115,6 +116,12 @@ struct RootView: View {
             isKeyboardVisible = false
         }
         .onAppear(perform: applyIntentHandoff)
+        .onChange(of: deepLinks.requestedSettingsSection) { _, section in
+            // Settings owns pushing the destination; RootView only picks the tab.
+            if section != nil {
+                selectedTab = 3
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             applyIntentHandoff()
         }

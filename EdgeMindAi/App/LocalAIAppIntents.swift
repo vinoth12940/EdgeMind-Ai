@@ -76,8 +76,8 @@ struct OpenLocalAIDestinationIntent: AppIntent {
 
 struct AskDefaultLocalModelIntent: AppIntent {
     static var title: LocalizedStringResource = "Ask Edge Mind Ai"
-    static var description = IntentDescription("Open Edge Mind Ai with a prompt for the default local model.")
-    static var openAppWhenRun = true
+    static var description = IntentDescription("Ask the default on-device model and get the answer back in Shortcuts when the model can run in the background.")
+    static var openAppWhenRun = false
 
     @Parameter(title: "Prompt")
     var prompt: String
@@ -90,13 +90,30 @@ struct AskDefaultLocalModelIntent: AppIntent {
         modelName = ""
     }
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else {
             LocalAIIntentHandoffStore.save(destination: .chat, modelName: modelName)
-            return .result(dialog: "Opening local chat.")
+            return .result(value: "", dialog: "Opening local chat.")
         }
-        LocalAIIntentHandoffStore.save(destination: .chat, prompt: prompt, modelName: modelName)
-        return .result(dialog: "Opening local chat with your prompt.")
+
+        // Answer inline when the default model is small enough to run in the
+        // background (Apple Intelligence, or a ready model under 2 GB).
+        if let services = await MainActor.run(body: { AppServices.shared }) {
+            do {
+                let answer = try await services.engine.answerHeadless(prompt: trimmed)
+                return .result(value: answer, dialog: IntentDialog(stringLiteral: answer))
+            } catch {
+                // Too large to run headlessly, or it produced nothing: keep the
+                // prompt queued so opening the app continues the conversation.
+                LocalAIIntentHandoffStore.save(destination: .chat, prompt: trimmed, modelName: modelName)
+                return .result(value: "", dialog: "Open Edge Mind Ai to answer with this model.")
+            }
+        }
+
+        LocalAIIntentHandoffStore.save(destination: .chat, prompt: trimmed, modelName: modelName)
+        return .result(value: "", dialog: "Open Edge Mind Ai to answer with this model.")
     }
 }
 

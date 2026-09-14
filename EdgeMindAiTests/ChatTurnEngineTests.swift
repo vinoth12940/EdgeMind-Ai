@@ -184,6 +184,53 @@ final class ChatTurnEngineTests: XCTestCase {
         XCTAssertEqual(messages.last { $0.role == .assistant }?.memoryCount, 0)
     }
 
+    // MARK: headless answers
+
+    func test_answerHeadless_returnsAnswerAndSavesChat() async throws {
+        let service = ScriptedInferenceService(scripts: [[.textDelta("Inline answer"), .done(GenerationStats(totalDuration: 1))]])
+        let engine = makeEngine(model: appleModel, service: service)
+
+        let answer = try await engine.answerHeadless(prompt: "Greet me briefly")
+
+        XCTAssertEqual(answer, "Inline answer")
+        // The turn is saved as a normal chat titled from the prompt.
+        let saved = store.chatSessions.first { session in
+            session.messages.contains { $0.role == .user && $0.text == "Greet me briefly" }
+        }
+        XCTAssertNotNil(saved)
+        XCTAssertTrue(saved?.messages.contains { $0.role == .assistant && $0.text == "Inline answer" } ?? false)
+    }
+
+    func test_answerHeadless_throwsNeedsAppForLargeModel() async {
+        let largeItem = MockCatalogData.items.first { $0.parsedDiskSizeGBForEstimator > 2.5 }!
+        let largeModel = InstalledModel(catalogItem: largeItem, installState: .installed, progress: 1, localPath: largeItem.mlxModelID)
+        let service = ScriptedInferenceService(scripts: [])
+        let engine = makeEngine(model: largeModel, service: service)
+
+        do {
+            _ = try await engine.answerHeadless(prompt: "hello")
+            XCTFail("Expected needsApp")
+        } catch let error as ChatTurnEngine.HeadlessAnswerError {
+            XCTAssertEqual(error.errorDescription, ChatTurnEngine.HeadlessAnswerError.needsApp.errorDescription)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertTrue(service.calls.isEmpty)
+    }
+
+    func test_answerHeadless_rejectsEmptyPrompt() async {
+        let engine = makeEngine(model: appleModel, service: ScriptedInferenceService(scripts: []))
+
+        do {
+            _ = try await engine.answerHeadless(prompt: "   ")
+            XCTFail("Expected emptyPrompt")
+        } catch let error as ChatTurnEngine.HeadlessAnswerError {
+            XCTAssertEqual(error.errorDescription, ChatTurnEngine.HeadlessAnswerError.emptyPrompt.errorDescription)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     // MARK: tool loop
 
     func test_toolCall_thenAnswer_writesActivityAndFinalText() async {

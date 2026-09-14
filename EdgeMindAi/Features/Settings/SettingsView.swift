@@ -5,11 +5,22 @@ struct SettingsView: View {
     @Environment(AuthStateStore.self) private var authStore
     @Environment(MemoryStore.self) private var memoryStore
     @Environment(DocumentLibraryStore.self) private var documentLibrary
+    @Environment(DeepLinkCoordinator.self) private var deepLinks
     @Environment(\.selectedTab) private var selectedTab
     @State private var isReauthenticating = false
     @State private var hfTokenDraft = ""
     @State private var tokenDebounceTask: Task<Void, Never>?
     @State private var showingPrivacyPolicy = false
+    @State private var showMemoryDestination = false
+    @State private var showDocumentsDestination = false
+
+    private func applyDeepLink() {
+        guard let section = deepLinks.consumeSettingsSection() else { return }
+        switch section {
+        case .memory: showMemoryDestination = true
+        case .documents: showDocumentsDestination = true
+        }
+    }
 
     private var selectedVoiceAsset: InstalledModel? {
         store.installedModels.first(where: {
@@ -67,6 +78,14 @@ struct SettingsView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $showMemoryDestination) {
+            MemorySettingsView()
+        }
+        .navigationDestination(isPresented: $showDocumentsDestination) {
+            DocumentLibraryView()
+        }
+        .onAppear { applyDeepLink() }
+        .onChange(of: deepLinks.requestedSettingsSection) { _, _ in applyDeepLink() }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {

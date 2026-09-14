@@ -8,29 +8,42 @@ struct EdgeMindAiApp: App {
     @State private var chatEngine: ChatTurnEngine
     @State private var memoryStore: MemoryStore
     @State private var documentLibrary = DocumentLibraryStore()
+    @State private var deepLinks = DeepLinkCoordinator()
 
     init() {
         UITabBar.appearance().isHidden = true
         let store = AppStateStore()
         let memoryStore = MemoryStore()
         let documentLibrary = DocumentLibraryStore()
+        let engine = ChatTurnEngine(
+            store: store,
+            dependencies: .live(memoryStore: memoryStore, documentLibrary: documentLibrary)
+        )
         _store = State(initialValue: store)
         _memoryStore = State(initialValue: memoryStore)
         _documentLibrary = State(initialValue: documentLibrary)
-        _chatEngine = State(initialValue: ChatTurnEngine(
+        _chatEngine = State(initialValue: engine)
+        // Reachable from App Intents that run without the UI (Shortcuts).
+        AppServices.shared = AppServices(
             store: store,
-            dependencies: .live(memoryStore: memoryStore, documentLibrary: documentLibrary)
-        ))
+            engine: engine,
+            memoryStore: memoryStore,
+            documentLibrary: documentLibrary
+        )
     }
 
     var body: some Scene {
         WindowGroup {
             LaunchRootView()
+            .onOpenURL { url in
+                deepLinks.handle(url)
+            }
             .environment(store)
             .environment(authStore)
             .environment(chatEngine)
             .environment(memoryStore)
             .environment(documentLibrary)
+            .environment(deepLinks)
             .preferredColorScheme(store.settings.appearanceMode.preferredColorScheme)
         }
         .onChange(of: scenePhase) { _, newPhase in

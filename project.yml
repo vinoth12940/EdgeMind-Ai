@@ -42,7 +42,16 @@ targets:
       - path: EdgeMindAi
     resources:
       - path: EdgeMindAi/Resources
+    info:
+      path: EdgeMindAi/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: com.vinothrajalingam.EdgeMindAi
+            CFBundleURLSchemes:
+              - edgemindai
     dependencies:
+      - target: EdgeMindShare
+        embed: true
       - framework: Vendor/build-apple/llama.xcframework
         embed: true
         codeSign: true
@@ -118,3 +127,32 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+
+  EdgeMindShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: EdgeMindShare
+      # Shared with the app so both sides agree on the inbox format.
+      - path: EdgeMindAi/Services/Share/AppGroup.swift
+      - path: EdgeMindAi/Services/Share/ShareInbox.swift
+    info:
+      path: EdgeMindShare/Info.plist
+      properties:
+        CFBundleDisplayName: Edge Mind AI Share
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsFileWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vinothrajalingam.EdgeMindAi.Share
+        CODE_SIGN_ENTITLEMENTS: EdgeMindShare/EdgeMindShare.entitlements
+        INFOPLIST_KEY_CFBundleName: Edge Mind AI Share
+        TARGETED_DEVICE_FAMILY: 1,2
+        SKIP_INSTALL: YES
