@@ -306,8 +306,14 @@ struct ChatView: View {
                             .frame(maxWidth: .infinity)
                         }
                         .scrollDismissesKeyboard(.interactively)
-                        .defaultScrollAnchor(.bottom)
-                        .onAppear { scrollProxy = proxy }
+                        // Do NOT use `.defaultScrollAnchor(.bottom)` here: on iOS 26.6.1
+                        // devices it sends LazyVStack placement into an endless layout loop
+                        // at first render, and the scene-create watchdog (0x8BADF00D) kills
+                        // the app on launch whenever a saved chat has messages.
+                        .onAppear {
+                            scrollProxy = proxy
+                            proxy.scrollTo(activeMessages.last?.id, anchor: .bottom)
+                        }
                         .onChange(of: activeMessages.count) {
                             withAnimation(.easeOut(duration: 0.3)) {
                                 proxy.scrollTo(activeMessages.last?.id, anchor: .bottom)
