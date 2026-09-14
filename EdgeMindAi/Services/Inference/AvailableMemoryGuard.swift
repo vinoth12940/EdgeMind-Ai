@@ -33,17 +33,26 @@ enum AvailableMemoryGuard {
         #if targetEnvironment(simulator)
         return nil
         #else
-        let tier = DeviceTier.current()
-        let estimatedGB = model.estimatedResidentGB(contextTokens: tier.safeContextTokens) + (isVision ? 0.4 : 0.0)
         let freeGB = availableMemoryGB()
 
-        // Reserve 350 MB for app views, audio rendering, and system frameworks.
-        let requiredGB = estimatedGB + 0.35
-
-        if freeGB < requiredGB {
-            memoryGuardLogger.warning("Low memory headroom: free=\(freeGB, privacy: .public) GB, required=\(requiredGB, privacy: .public) GB for \(model.displayName, privacy: .public)")
-            return "Device memory is currently low (\(String(format: "%.1f", freeGB)) GB available, ~\(String(format: "%.1f", estimatedGB)) GB needed). Close background apps or pick a lighter model to avoid iOS terminating the app."
+        // Critical Jetsam threshold: iOS typically sends low memory warnings around 250 MB
+        // and terminates the app under ~150–200 MB of remaining headroom.
+        let criticalFloorGB = 0.35
+        if freeGB < criticalFloorGB {
+            memoryGuardLogger.warning("Critically low memory headroom: free=\(freeGB, privacy: .public) GB")
+            return "Device memory is critically low (\(String(format: "%.1f", freeGB * 1024)) MB available). Close background apps to avoid iOS terminating the app."
         }
+
+        // Only enforce extra headroom checks for models running on a device tier below their requirement.
+        let tier = DeviceTier.current()
+        if tier < model.minimumTier {
+            let neededGB = model.parsedDiskSizeGBForEstimator * 1.15 + (isVision ? 0.4 : 0.0) + criticalFloorGB
+            if freeGB < neededGB {
+                memoryGuardLogger.warning("Low memory headroom for below-tier model: free=\(freeGB, privacy: .public) GB, needed=\(neededGB, privacy: .public) GB for \(model.displayName, privacy: .public)")
+                return "Device memory is currently low (\(String(format: "%.1f", freeGB)) GB available, ~\(String(format: "%.1f", neededGB)) GB needed). Close background apps or pick a lighter model."
+            }
+        }
+
         return nil
         #endif
     }
