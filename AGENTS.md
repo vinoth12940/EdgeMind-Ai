@@ -135,6 +135,9 @@ Persistence uses `UserDefaults` via JSON encoding. Images in chat history are sa
 - Edit-and-resend is `AppStateStore.removeMessagesForEdit(from:in:)` (user messages only) followed by a normal `.newMessage` send with the returned attachments. The UI confirms first because later replies are removed.
 - Sanitizers copy and mutate (`sanitizedMessageForInMemory`/`sanitizedMessageForPersistence` trim every version too); they must never rebuild a message field by field.
 
+### Model suggestions (v0.3.1)
+`ModelSuggestionAdvisor.suggestion(prompt:hasImage:hasDocuments:current:installed:profiles:tier:)` is a pure function that never switches models. Rules in priority order: (1) an image is attached and the current model's profile `vision != .imageAndText`; (2) the current model's verdict is red (a **green** candidate is required here); (3) a document/tool intent is detected and the current model has no verified tool calling. "Best" candidate = green verdict, then recommended for the tier, then smallest `parsedDiskSizeGBForEstimator`; candidates must be `.installed` and allowed on `DeviceTier.current()`. `ChatView` renders it as a dismissible composer banner, suppressed for the rest of the session once dismissed.
+
 ### Inference layer (`Services/Inference/`)
 Four concrete backends behind the `InferenceService` protocol, selected by `ModelCatalogItem.RuntimeType` (`.gguf`, `.mlx`, `.liteRTLM`, `.foundationModels`):
 

@@ -71,6 +71,8 @@ struct ChatView: View {
     @State private var editingMessage: ChatMessage?
     @State private var showEditConfirmation = false
     @State private var showExportSheet = false
+    /// Suppresses the task-based model suggestion for the rest of the session.
+    @State private var dismissedModelSuggestion = false
     @State private var attachedDocuments: [ChatAttachment] = []
     @StateObject private var voiceController = VoiceInteractionController()
 
@@ -260,6 +262,10 @@ struct ChatView: View {
                     }
                 }
 
+                if let suggestion = modelSuggestion {
+                    modelSuggestionBanner(suggestion)
+                }
+
                 if editingMessage != nil {
                     editingBanner
                 }
@@ -359,6 +365,74 @@ struct ChatView: View {
         } message: {
             Text("Every reply after this message will be removed and the edited message will be sent again.")
         }
+    }
+
+    /// Task-based model advice (spec §3). Pure function; nil when the current
+    /// model is fine or the banner was dismissed for this session.
+    private var modelSuggestion: ModelSuggestion? {
+        guard !dismissedModelSuggestion, let current = store.defaultModel else { return nil }
+        return ModelSuggestionAdvisor.suggestion(
+            prompt: prompt,
+            hasImage: attachedImage != nil,
+            hasDocuments: !attachedDocuments.isEmpty,
+            current: current,
+            installed: store.installedModels,
+            profiles: engine.profileStore,
+            tier: DeviceTier.current()
+        )
+    }
+
+    private func modelSuggestionBanner(_ suggestion: ModelSuggestion) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(AppTheme.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(suggestion.reason.message)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Try \(suggestion.model.catalogItem.displayName)")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Button("Switch") {
+                store.setDefaultModel(id: suggestion.model.catalogItem.id)
+                engine.prewarmDefaultModel()
+            }
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .buttonStyle(.plain)
+            .foregroundStyle(AppTheme.accent)
+
+            Button {
+                dismissedModelSuggestion = true
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(AppTheme.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss model suggestion")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(AppTheme.panelRaised.opacity(0.9))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(AppTheme.cardStroke, lineWidth: 0.5)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
     }
 
     /// Banner shown above the composer while editing a previous user message.
