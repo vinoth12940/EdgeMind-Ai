@@ -1,6 +1,6 @@
 # App Store Listing — Edge Mind Ai
 
-> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.3.0).
+> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.3.1).
 > Anything in `[brackets]` you must fill in (URLs, contact, demo account).
 
 ---
@@ -89,15 +89,11 @@ on-device AI,offline AI,local LLM,private chat,AI assistant,MLX,llama,vision,voi
 ## 5. What's New in This Version
 
 ```
-• Smarter device-tier classification prevents memory crashes on 4 GB–6 GB iPhones and iPads.
-• Automatic memory eviction on background — no more Jetsam terminations.
-• Pre-flight memory guard warns before inference on constrained devices.
-• Purged 5 obsolete 2023/2024 models; added Qwen 3 0.6B/1.7B and SmolVLM2 2.2B for 2026 edge.
-• New "Best for your iPhone" badge recommends optimal models for your device.
-• Quick Model Switcher in the chat top bar — switch models mid-conversation.
-• Vision & Camera Ready shelf in the Model Library highlights image-capable models.
-• Improved runtime memory coordination between GGUF, MLX, LiteRT, and Foundation Models.
-• Bug fixes and stability improvements across all supported devices.
+• Fixed an issue where the app could freeze and close on launch after updating to iOS 26.6.
+• Tapping Stop now fully stops a response — no follow-up searches or voice playback afterward.
+• Response speed stats and tool activity now stay on earlier messages and are saved with your chats.
+• Tool steps that fail no longer leave a spinning indicator or an empty reply.
+• Bug fixes and stability improvements.
 ```
 
 ---
@@ -247,7 +243,7 @@ Because there is **no Sign in with Apple** in this build (entitlement disabled),
 
 ## 12. Pre-submit checklist (App Store Connect will block submission until these are green)
 
-- [ ] Build 0.3.0 (7) shows a green checkmark in TestFlight (processing finished)
+- [ ] Build 0.3.1 (7) shows a green checkmark in TestFlight (processing finished)
 - [ ] Build selected on the App Store tab → "Build" section
 - [ ] All screenshots uploaded (iPhone 6.9" + iPad 13")
 - [ ] Description, subtitle, keywords, promo text filled
@@ -265,7 +261,7 @@ Once all green → **"Add for Review"** → **"Submit to Review"**.
 
 ## 13. Submission command (for the NEXT version, e.g. 0.4.0)
 
-Once 0.3.0 is approved, future uploads are one command. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, then:
+Once 0.3.1 is approved, future uploads are one command. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, then:
 
 ```bash
 cd "/Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge Mind Ai"
