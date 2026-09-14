@@ -70,6 +70,7 @@ struct ChatView: View {
     /// User message being edited; while set, Send edits-and-resends instead of appending.
     @State private var editingMessage: ChatMessage?
     @State private var showEditConfirmation = false
+    @State private var showExportSheet = false
     @State private var attachedDocuments: [ChatAttachment] = []
     @StateObject private var voiceController = VoiceInteractionController()
 
@@ -490,6 +491,21 @@ struct ChatView: View {
             
             HStack(spacing: 2) {
                 if store.selectedSession != nil {
+                    Menu {
+                        Button {
+                            showExportSheet = true
+                        } label: {
+                            Label("Share chat…", systemImage: "square.and.arrow.up")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .frame(width: 38, height: 40)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Chat options")
+
                     Button {
                         showDeleteCurrentSessionConfirmation = true
                     } label: {
@@ -525,6 +541,11 @@ struct ChatView: View {
             modelPickerSheet
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showExportSheet) {
+            if let session = store.selectedSession {
+                ChatExportSheet(session: session)
+            }
         }
     }
 
