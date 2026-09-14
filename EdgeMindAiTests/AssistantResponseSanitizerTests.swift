@@ -88,4 +88,11 @@ final class AssistantResponseSanitizerTests: XCTestCase {
             "<|startoftext|><|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\nHi<|im_end|>\n<|im_start|>assistant\n"
         )
     }
+
+    func test_scrubsLeakedToolCallJSON() {
+        let rawLeaked = """
+        {"name": "search_chats", "arguments": {"query": ""}}
+        """
+        XCTAssertEqual(AssistantResponseSanitizer.clean(rawLeaked), "")
+    }
 }

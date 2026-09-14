@@ -609,6 +609,18 @@ enum AssistantResponseSanitizer {
         cleaned = cleaned.replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
         cleaned = cleaned.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
 
+        // Scrub leaked raw tool-call JSON (e.g. {"name": "search_chats", "arguments": ...})
+        // if a model leaks tool JSON without answering.
+        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{") && trimmed.contains("\"name\"") && (trimmed.contains("\"arguments\"") || trimmed.contains("\"parameters\"")) {
+            // Check if entire text or leading block is tool-call JSON
+            if let data = trimmed.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               json["name"] is String {
+                cleaned = ""
+            }
+        }
+
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

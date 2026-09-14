@@ -1307,9 +1307,9 @@ struct ChatView: View {
     private func canUseToolLoop(model: InstalledModel, resolved: ResolvedModel, imageData: Data?) -> Bool {
         guard model.catalogItem.supportsToolCalling, resolved.tools != nil else { return false }
 
-        // LFM2.5 VL's tool-calling path is text-only. Keep image prompts on
-        // the vision path instead of asking the same turn to emit tools.
-        if imageData != nil, model.catalogItem.family == .lfm {
+        // When an image is present, keep the turn on the vision comprehension
+        // path instead of injecting tools which confuse VLMs (e.g. Qwen 3.5 VL emitting search_chats).
+        if imageData != nil {
             return false
         }
 
@@ -1997,11 +1997,13 @@ struct ChatView: View {
                     chatLogger.log("Tool definitions injected: \(availableTools.map { $0.name }.joined(separator: ", "), privacy: .public)")
                 } else if searchContext != nil {
                     chatLogger.log("Upfront search provided results — tool definition skipped to save context window")
-                } else if !modelCanUseToolLoop {
+                } else if !modelCanUseToolLoop && effectiveImageData == nil {
                     // Non-tool models can't emit <tool_call> blocks, so the agentic loop
                     // won't fire. Instead, detect local-tool intent UPFRONT (time, device,
                     // battery, calculate) and inject the result into the system prompt.
                     // The model just reads it and answers. Mirrors the upfront web_search path.
+                    // When an image is attached, skip upfront tools so questions like "what
+                    // device is this in the picture" are answered by the vision model.
                     let upfront = await UpfrontToolDetector.detectAndRun(
                         prompt: trimmedPrompt,
                         context: toolContext
@@ -2025,6 +2027,8 @@ struct ChatView: View {
                     } else {
                         chatLogger.log("Non-tool model, no local-tool intent detected")
                     }
+                } else if effectiveImageData != nil {
+                    chatLogger.log("Image present — tool definitions and upfront tools skipped for vision turn")
                 } else {
                     chatLogger.log("No tools available this turn — tool definition NOT injected")
                 }
