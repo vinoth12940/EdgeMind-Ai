@@ -115,7 +115,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     func test_auditCatalogSkipsRemainingCasesAfterFirstFailure() async {
         let item = makeCatalogItem()
         let runner = ModelAuditRunner(
-            inferenceFactory: { _ in ScriptedInferenceService(events: [.done(GenerationStats(totalDuration: 0))]) },
+            inferenceFactory: { _ in AuditScriptedInferenceService(events: [.done(GenerationStats(totalDuration: 0))]) },
             downloader: MockAuditDownloader(),
             store: AppStateStore(),
             profileStore: RuntimeProfileStore(bundleLoader: { [] }, overrideLoader: { [] })
@@ -164,7 +164,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 
     private func makeRunner(events: [StreamEvent]) -> ModelAuditRunner {
-        makeRunner(service: ScriptedInferenceService(events: events))
+        makeRunner(service: AuditScriptedInferenceService(events: events))
     }
 
     private func makeRunner(service: any InferenceService) -> ModelAuditRunner {
@@ -237,7 +237,7 @@ final class ModelAuditRunnerTests: XCTestCase {
     }
 }
 
-private struct ScriptedInferenceService: InferenceService {
+private struct AuditScriptedInferenceService: InferenceService {
     let events: [StreamEvent]
 
     func generateReply(
