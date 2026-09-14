@@ -153,6 +153,91 @@ final class ChatTurnEngineTests: XCTestCase {
         XCTAssertTrue(messages[1].text.contains("model file"))
         XCTAssertFalse(engine.isGenerating)
     }
+
+    // MARK: tool loop
+
+    func test_toolCall_thenAnswer_writesActivityAndFinalText() async {
+        let service = ScriptedInferenceService(scripts: [
+            [.toolCall(name: "search_chats", argsJSON: "{\"query\": \"recipe\"}")],
+            [.textDelta("No earlier chats mention that."), .done(GenerationStats(totalDuration: 1))]
+        ])
+        let engine = makeEngine(model: toolModel, service: service)
+
+        engine.send(request("did we talk about a recipe before"))
+        await engine.waitUntilIdle()
+
+        let answer = messages.last { $0.role == .assistant }
+        XCTAssertEqual(answer?.toolActivities.first?.name, "search_chats")
+        XCTAssertNotEqual(answer?.toolActivities.first?.status, .running)
+        XCTAssertEqual(answer?.text, "No earlier chats mention that.")
+        XCTAssertEqual(service.calls.count, 2)
+        XCTAssertTrue(service.calls.first?.systemPrompt.contains("# Tools") ?? false)
+    }
+
+    func test_unknownTool_marksFailedAndNeverLeavesEmptyAnswer() async {
+        let service = ScriptedInferenceService(scripts: [[.toolCall(name: "launch_rockets", argsJSON: "{}")]])
+        let engine = makeEngine(model: toolModel, service: service)
+
+        engine.send(request("do the thing"))
+        await engine.waitUntilIdle()
+
+        let answer = messages.last { $0.role == .assistant }
+        XCTAssertEqual(answer?.toolActivities.last?.status, .failed)
+        XCTAssertFalse(answer?.text.isEmpty ?? true)
+        XCTAssertTrue(messages.contains { $0.role == .system && $0.text.contains("Unknown tool: launch_rockets") })
+        XCTAssertFalse(engine.isGenerating)
+    }
+
+    func test_calculateTool_returnsDirectAnswerWithoutSecondPass() async {
+        let service = ScriptedInferenceService(scripts: [
+            [.toolCall(name: "calculate", argsJSON: "{\"expression\": \"6*7\"}")]
+        ])
+        let engine = makeEngine(model: toolModel, service: service)
+
+        engine.send(request("use the calculator for six times seven"))
+        await engine.waitUntilIdle()
+
+        XCTAssertEqual(service.calls.count, 1)
+        XCTAssertTrue(messages.last { $0.role == .assistant }?.text.contains("42") ?? false)
+    }
+
+    func test_toolLoopCap_writesNonEmptyAnswerAndCapNotice() async {
+        let loop: [StreamEvent] = [.toolCall(name: "search_chats", argsJSON: "{\"query\": \"again\"}")]
+        let service = ScriptedInferenceService(scripts: [loop, loop, loop, loop])
+        let engine = makeEngine(model: toolModel, service: service)
+
+        engine.send(request("search my chats repeatedly"))
+        await engine.waitUntilIdle()
+
+        XCTAssertTrue(messages.contains { $0.text.contains("Reached the tool-call limit") })
+        XCTAssertFalse(messages.last { $0.role == .assistant }?.text.isEmpty ?? true)
+    }
+
+    // MARK: fallback lanes
+
+    func test_emptyOutput_withoutSearch_finishesWithEmptyOutputMessage() async {
+        let service = ScriptedInferenceService(scripts: [[.done(GenerationStats(totalDuration: 0))]])
+        let engine = makeEngine(model: appleModel, service: service)
+
+        engine.send(request("say nothing"))
+        await engine.waitUntilIdle()
+
+        let answer = messages.last { $0.role == .assistant }
+        XCTAssertTrue(AssistantResponseFallback.isEmptyOutputMessage(answer?.text ?? ""))
+        XCTAssertEqual(service.calls.count, 1)
+    }
+
+    func test_upfrontLocalTool_forNonToolModel_answersDirectly() async {
+        let service = ScriptedInferenceService(scripts: [])
+        let engine = makeEngine(model: appleModel, service: service)
+
+        engine.send(request("what is 12 * 12"))
+        await engine.waitUntilIdle()
+
+        let answer = messages.last { $0.role == .assistant }
+        XCTAssertTrue(answer?.text.contains("144") ?? false)
+        XCTAssertTrue(service.calls.isEmpty)
+    }
 }
 
 private final class ThrowingInferenceService: InferenceService, @unchecked Sendable {
