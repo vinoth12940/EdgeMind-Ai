@@ -592,4 +592,107 @@ final class ModelCatalogItemTests: XCTestCase {
         )
         XCTAssertFalse(voiceModel.isBestMatch(for: .compact))
     }
+
+    func test_downloadConsentStore_recordsAndResetsConsent() {
+        let item = ModelCatalogItem(
+            displayName: "Test Consent Model",
+            family: .qwen,
+            variant: "Q4_K_M GGUF",
+            summary: "",
+            parameterSize: "0.6B",
+            diskSize: "~450 MB",
+            contextWindow: "40K",
+            runtimeType: .gguf,
+            minimumTier: .compact
+        )
+
+        ModelDownloadConsentStore.resetConsent(for: item)
+        XCTAssertFalse(ModelDownloadConsentStore.hasConsent(for: item))
+
+        ModelDownloadConsentStore.recordConsent(for: item)
+        XCTAssertTrue(ModelDownloadConsentStore.hasConsent(for: item))
+
+        ModelDownloadConsentStore.resetConsent(for: item)
+        XCTAssertFalse(ModelDownloadConsentStore.hasConsent(for: item))
+    }
+
+    func test_memoryConsentRequirement_clearedWhenConsentGranted() {
+        let item = ModelCatalogItem(
+            displayName: "Memory Heavy",
+            family: .mlxCommunity,
+            variant: "MLX 4-bit \(UUID().uuidString)",
+            summary: "",
+            parameterSize: "8B",
+            quantization: "MLX 4-bit",
+            diskSize: "~5 GB",
+            contextWindow: "128K",
+            runtimeType: .mlx,
+            mlxModelID: "mlx-community/memory-heavy",
+            minimumTier: .pro
+        )
+
+        ModelDownloadConsentStore.resetConsent(for: item)
+        XCTAssertNotNil(ModelInstallGuard.memoryConsentRequirement(for: item, currentTier: .pro))
+
+        ModelDownloadConsentStore.recordConsent(for: item)
+        XCTAssertNil(ModelInstallGuard.memoryConsentRequirement(for: item, currentTier: .pro))
+
+        ModelDownloadConsentStore.resetConsent(for: item)
+    }
+
+    func test_urlModelDownloadService_stripsAuthHeaderOnCrossHostRedirect() {
+        let service = URLModelDownloadService()
+        let session = URLSession(configuration: .default)
+
+        var originalRequest = URLRequest(url: URL(string: "https://huggingface.co/models/download.gguf")!)
+        originalRequest.setValue("Bearer test_token", forHTTPHeaderField: "Authorization")
+        let task = session.downloadTask(with: originalRequest)
+
+        var redirectRequest = URLRequest(url: URL(string: "https://cdn.hf.co/cas/download.gguf?signature=123")!)
+        redirectRequest.setValue("Bearer test_token", forHTTPHeaderField: "Authorization")
+
+        let response = HTTPURLResponse(
+            url: redirectRequest.url!,
+            statusCode: 302,
+            httpVersion: "HTTP/1.1",
+            headerFields: nil
+        )!
+
+        var receivedRequest: URLRequest?
+        service.urlSession(session, task: task, willPerformHTTPRedirection: response, newRequest: redirectRequest) { req in
+            receivedRequest = req
+        }
+
+        XCTAssertNotNil(receivedRequest)
+        XCTAssertNil(receivedRequest?.value(forHTTPHeaderField: "Authorization"),
+                     "Authorization header must be stripped when redirecting to a different host")
+    }
+
+    func test_urlModelDownloadService_preservesAuthHeaderOnSameHostRedirect() {
+        let service = URLModelDownloadService()
+        let session = URLSession(configuration: .default)
+
+        var originalRequest = URLRequest(url: URL(string: "https://huggingface.co/models/download.gguf")!)
+        originalRequest.setValue("Bearer test_token", forHTTPHeaderField: "Authorization")
+        let task = session.downloadTask(with: originalRequest)
+
+        var redirectRequest = URLRequest(url: URL(string: "https://huggingface.co/models/new_path.gguf")!)
+        redirectRequest.setValue("Bearer test_token", forHTTPHeaderField: "Authorization")
+
+        let response = HTTPURLResponse(
+            url: redirectRequest.url!,
+            statusCode: 302,
+            httpVersion: "HTTP/1.1",
+            headerFields: nil
+        )!
+
+        var receivedRequest: URLRequest?
+        service.urlSession(session, task: task, willPerformHTTPRedirection: response, newRequest: redirectRequest) { req in
+            receivedRequest = req
+        }
+
+        XCTAssertNotNil(receivedRequest)
+        XCTAssertEqual(receivedRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer test_token",
+                       "Authorization header must be preserved when redirecting within the same host")
+    }
 }

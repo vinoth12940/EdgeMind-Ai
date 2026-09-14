@@ -32,15 +32,21 @@ enum ModelDownloadConsentStore {
     private static let key = "mlx.downloadConsent"
 
     static func hasConsent(for item: ModelCatalogItem) -> Bool {
-        guard let dictionary = UserDefaults.standard.dictionary(forKey: key) as? [String: Date] else {
+        guard let dictionary = UserDefaults.standard.dictionary(forKey: key) else {
             return false
         }
         return dictionary[item.id.uuidString] != nil
     }
 
     static func recordConsent(for item: ModelCatalogItem) {
-        var dictionary = UserDefaults.standard.dictionary(forKey: key) as? [String: Date] ?? [:]
+        var dictionary = UserDefaults.standard.dictionary(forKey: key) ?? [:]
         dictionary[item.id.uuidString] = Date()
+        UserDefaults.standard.set(dictionary, forKey: key)
+    }
+
+    static func resetConsent(for item: ModelCatalogItem) {
+        guard var dictionary = UserDefaults.standard.dictionary(forKey: key) else { return }
+        dictionary.removeValue(forKey: item.id.uuidString)
         UserDefaults.standard.set(dictionary, forKey: key)
     }
 }
@@ -167,9 +173,15 @@ final class URLModelDownloadService: NSObject, ModelDownloadService {
         let destinationURL = try Self.destinationURL(for: model)
 
         if FileManager.default.fileExists(atPath: destinationURL.path) {
-            let installed = makeInstalledModel(for: model, destinationURL: destinationURL)
-            onEvent(.init(modelID: model.id, state: .installed, progress: 1, localPath: destinationURL.path, message: nil))
-            return installed
+            let attributes = try? FileManager.default.attributesOfItem(atPath: destinationURL.path)
+            let fileSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+            if fileSize > 1_000_000 {
+                let installed = makeInstalledModel(for: model, destinationURL: destinationURL)
+                onEvent(.init(modelID: model.id, state: .installed, progress: 1, localPath: destinationURL.path, message: nil))
+                return installed
+            } else {
+                try? FileManager.default.removeItem(at: destinationURL)
+            }
         }
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -252,26 +264,45 @@ extension URLModelDownloadService: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let pendingDownload = takePendingDownload(for: downloadTask.taskIdentifier) else { return }
 
+        if let httpResponse = downloadTask.response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            try? FileManager.default.removeItem(at: location)
+            let errorMessage = "Download failed: HTTP \(httpResponse.statusCode) (\(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)))"
+            let error = NSError(domain: "ModelDownload", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+            pendingDownload.onEvent(.init(modelID: pendingDownload.model.id, state: .failed, progress: 0, localPath: nil, message: errorMessage))
+            pendingDownload.continuation.resume(throwing: error)
+            return
+        }
+
         do {
             if FileManager.default.fileExists(atPath: pendingDownload.destinationURL.path) {
-                try? FileManager.default.removeItem(at: location)
-                completeAsInstalled(pendingDownload)
-                return
+                try? FileManager.default.removeItem(at: pendingDownload.destinationURL)
             }
 
             try FileManager.default.moveItem(at: location, to: pendingDownload.destinationURL)
 
             completeAsInstalled(pendingDownload)
         } catch {
-            if FileManager.default.fileExists(atPath: pendingDownload.destinationURL.path) {
-                try? FileManager.default.removeItem(at: location)
-                completeAsInstalled(pendingDownload)
-                return
-            }
-
+            try? FileManager.default.removeItem(at: location)
             pendingDownload.onEvent(.init(modelID: pendingDownload.model.id, state: .failed, progress: 0, localPath: nil, message: error.localizedDescription))
             pendingDownload.continuation.resume(throwing: error)
         }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        var redirectedRequest = request
+        if let originalHost = task.originalRequest?.url?.host?.lowercased(),
+           let newHost = request.url?.host?.lowercased(),
+           originalHost != newHost {
+            redirectedRequest.setValue(nil, forHTTPHeaderField: "Authorization")
+        }
+        completionHandler(redirectedRequest)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {

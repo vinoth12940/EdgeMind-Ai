@@ -14,8 +14,7 @@ struct ModelLibraryView: View {
     @State private var modelToDelete: InstalledModel? = nil
     @State private var showDeleteConfirmation = false
     @State private var pendingConsentItem: ModelCatalogItem?
-    @State private var pendingConsentRequiredGB: Double = 0
-    @State private var pendingConsentAvailableGB: Double = 0
+    @State private var pendingConsentMessage = ""
     @State private var showInstallConsent = false
 
     var body: some View {
@@ -96,26 +95,18 @@ struct ModelLibraryView: View {
                 Text("Remove \"\(model.catalogItem.displayName)\" (\(model.catalogItem.diskSize)) from this device? You can re-download it later.")
             }
         }
-        .alert("High Memory Risk", isPresented: $showInstallConsent) {
+        .alert("Hardware Warning", isPresented: $showInstallConsent) {
             Button("Cancel", role: .cancel) {
                 pendingConsentItem = nil
             }
-            Button("Proceed anyway", role: .destructive) {
+            Button("Download anyway", role: .destructive) {
                 guard let item = pendingConsentItem else { return }
                 ModelDownloadConsentStore.recordConsent(for: item)
                 pendingConsentItem = nil
-                if item.runtimeType == .foundationModels {
-                    startFoundationModelsInstall(for: item)
-                } else if item.runtimeType == .mlx {
-                    startMLXInstall(for: item)
-                } else {
-                    startInstall(for: item)
-                }
+                proceedWithInstall(for: item)
             }
         } message: {
-            if let item = pendingConsentItem {
-                Text("\"\(item.displayName)\" is estimated at ~\(String(format: "%.1f", pendingConsentRequiredGB)) GB resident memory, above this device budget of ~\(String(format: "%.1f", pendingConsentAvailableGB)) GB.")
-            }
+            Text(pendingConsentMessage)
         }
     }
 
@@ -1132,7 +1123,7 @@ struct ModelLibraryView: View {
             mlxRuntimeAvailable: mlxRuntimeAvailable,
             currentTier: DeviceTier.current(),
             onInstall: { item in
-                attemptInstall(for: item)
+                proceedWithInstall(for: item)
             },
             onUse: { modelID in
                 store.setDefaultModel(id: modelID)
@@ -1402,19 +1393,26 @@ struct ModelLibraryView: View {
     }
 
     private func attemptInstall(for item: ModelCatalogItem) {
-        if let tierMessage = ModelInstallGuard.unsupportedTierMessage(for: item) {
-            store.markInstallFailed(for: item, message: "\(tierMessage). This model is hidden from phone-safe bulk installs to avoid app termination.")
+        let currentTier = DeviceTier.current()
+        if let tierMessage = ModelInstallGuard.unsupportedTierMessage(for: item, currentTier: currentTier),
+           !ModelDownloadConsentStore.hasConsent(for: item) {
+            pendingConsentItem = item
+            pendingConsentMessage = "\"\(item.displayName)\" requires \(item.minimumTier.displayName). On this device (\(currentTier.displayName)), it may experience high memory pressure or slowdown."
+            showInstallConsent = true
             return
         }
 
         if let consent = requiresInstallConsent(for: item) {
             pendingConsentItem = item
-            pendingConsentRequiredGB = consent.required
-            pendingConsentAvailableGB = consent.available
+            pendingConsentMessage = "\"\(item.displayName)\" is estimated at ~\(String(format: "%.1f", consent.required)) GB resident memory, above this device budget of ~\(String(format: "%.1f", consent.available)) GB."
             showInstallConsent = true
             return
         }
 
+        proceedWithInstall(for: item)
+    }
+
+    private func proceedWithInstall(for item: ModelCatalogItem) {
         if item.runtimeType == .foundationModels {
             startFoundationModelsInstall(for: item)
         } else if item.runtimeType == .mlx {
@@ -1439,6 +1437,10 @@ private struct FamilyDetailView: View {
     let onInstall: (ModelCatalogItem) -> Void
     let onUse: (UUID) -> Void
     let onDeleteRequest: (InstalledModel?) -> Void
+
+    @State private var showInstallConsent = false
+    @State private var pendingConsentItem: ModelCatalogItem?
+    @State private var pendingConsentMessage = ""
 
     private var color: Color {
         AppTheme.labColor(for: family)
@@ -1478,7 +1480,7 @@ private struct FamilyDetailView: View {
                             installed: installedModel(for: item),
                             isDownloading: activeDownloads.contains(item.id),
                             currentTier: currentTier,
-                            onInstall: { onInstall(item) },
+                            onInstall: { handleInstallRequest(for: item) },
                             onUse: { onUse(item.id) },
                             onDelete: { onDeleteRequest(installedModel(for: item)) }
                         )
@@ -1492,8 +1494,39 @@ private struct FamilyDetailView: View {
         .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle(family.rawValue)
         .navigationBarTitleDisplayMode(.inline)
-
         .floatingDockHidden()
+        .alert("Hardware Warning", isPresented: $showInstallConsent) {
+            Button("Cancel", role: .cancel) {
+                pendingConsentItem = nil
+            }
+            Button("Download anyway", role: .destructive) {
+                guard let item = pendingConsentItem else { return }
+                ModelDownloadConsentStore.recordConsent(for: item)
+                pendingConsentItem = nil
+                onInstall(item)
+            }
+        } message: {
+            Text(pendingConsentMessage)
+        }
+    }
+
+    private func handleInstallRequest(for item: ModelCatalogItem) {
+        if let tierMessage = ModelInstallGuard.unsupportedTierMessage(for: item, currentTier: currentTier),
+           !ModelDownloadConsentStore.hasConsent(for: item) {
+            pendingConsentItem = item
+            pendingConsentMessage = "\"\(item.displayName)\" requires \(item.minimumTier.displayName). On this device (\(currentTier.displayName)), it may experience high memory pressure or slowdown."
+            showInstallConsent = true
+            return
+        }
+
+        if let consent = ModelInstallGuard.memoryConsentRequirement(for: item, currentTier: currentTier) {
+            pendingConsentItem = item
+            pendingConsentMessage = "\"\(item.displayName)\" is estimated at ~\(String(format: "%.1f", consent.required)) GB resident memory, above this device budget of ~\(String(format: "%.1f", consent.available)) GB."
+            showInstallConsent = true
+            return
+        }
+
+        onInstall(item)
     }
 
     private var hero: some View {
@@ -2064,14 +2097,23 @@ private struct ModelTile: View {
                 .padding(.vertical, 11)
                 .background(AppTheme.panelRaised.opacity(0.7))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            } else if let tierMessage = ModelInstallGuard.unsupportedTierMessage(for: item, currentTier: currentTier) {
-                Label(tierMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+            } else if let tierMessage = ModelInstallGuard.unsupportedTierMessage(for: item, currentTier: currentTier),
+                      !ModelDownloadConsentStore.hasConsent(for: item) {
+                Button(action: onInstall) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                        Text(item.primaryUse == .voice ? "Download voice (\(tierMessage))" : "Download (\(tierMessage))")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
                     .foregroundStyle(AppTheme.warning)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
-                    .background(AppTheme.warning.opacity(0.12))
+                    .background(AppTheme.warning.opacity(0.14))
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(item.runtimeType == .gguf && item.downloadURL == nil)
             } else {
                 Button(action: onInstall) {
                     HStack(spacing: 6) {
