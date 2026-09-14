@@ -38,6 +38,11 @@ struct EdgeMindAiApp: App {
             .onOpenURL { url in
                 deepLinks.handle(url)
             }
+            .task {
+                #if DEBUG
+                deepLinks.handleLaunchArguments()
+                #endif
+            }
             .environment(store)
             .environment(authStore)
             .environment(chatEngine)

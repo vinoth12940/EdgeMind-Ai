@@ -90,6 +90,20 @@ final class DeepLinkCoordinator {
         return pendingRoute
     }
 
+    #if DEBUG
+    /// Drives a deep link from a launch argument so automation can exercise the
+    /// route without tapping through SpringBoard's "Open in …?" confirmation:
+    /// `xcrun simctl launch <udid> <bundle-id> -deep-link "edgemindai://settings/memory"`
+    func handleLaunchArguments(_ arguments: [String] = ProcessInfo.processInfo.arguments) {
+        guard let flagIndex = arguments.firstIndex(of: "-deep-link"),
+              arguments.indices.contains(flagIndex + 1),
+              let url = URL(string: arguments[flagIndex + 1]) else {
+            return
+        }
+        handle(url)
+    }
+    #endif
+
     func consumeSettingsSection() -> SettingsSection? {
         defer { requestedSettingsSection = nil }
         return requestedSettingsSection
