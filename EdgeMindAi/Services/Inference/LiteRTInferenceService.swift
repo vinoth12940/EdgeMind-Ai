@@ -227,7 +227,7 @@ struct LiteRTInferenceService: InferenceService {
             modelPath: modelPath,
             systemPrompt: turn.system,
             history: turn.history,
-            message: currentMessage,
+            message: turn.message,
             multimodal: imageData != nil
         )
         let rawStream = AsyncStream<String> { continuation in
