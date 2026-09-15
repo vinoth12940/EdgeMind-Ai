@@ -331,7 +331,7 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 | Metric | Value |
 |--------|-------|
 | Swift files | ~138 |
-| Lines of code | ~32,600 |
+| Lines of code | ~35,900 |
 | Model catalog entries | 46 |
 | GGUF models | 18 |
 | MLX models | 25 |
