@@ -506,7 +506,12 @@ extension ChatTurnEngine {
         // Encode image at bounded size to avoid memory spikes during persistence/inference.
         let jpegData = Self.encodedAttachmentData(from: currentImage, model: model)
         let attachments = ([jpegData.map { ChatAttachment.image($0) }].compactMap { $0 } + currentDocuments)
-        let documentContext = DocumentExtractionService.promptContext(from: attachments)
+        // Bound inlined document text to this model's context window; an
+        // unbounded PDF overflows small-context runtimes such as LiteRT-LM.
+        let documentContext = DocumentExtractionService.promptContext(
+            from: attachments,
+            maxCharacters: InferenceBudget.documentContextBudget(for: model)
+        )
         let inferencePrompt = documentContext.isEmpty ? trimmedPrompt : "\(trimmedPrompt)\n\n\(documentContext)"
 
         let effectiveImageData = ChatVisionContext.inheritedImageData(

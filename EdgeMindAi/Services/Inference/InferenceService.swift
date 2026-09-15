@@ -493,6 +493,62 @@ enum InferenceBudget {
         return model.catalogItem.supportsVision ? max(1_500, base / 2) : base
     }
 
+    /// Conservative token estimate for prompt budgeting. Real tokenizers emit
+    /// more tokens than `count / 4` on dense text (PDFs, code, punctuation), so
+    /// budgeting assumes 3 characters per token.
+    static func estimatedTokens(_ text: String) -> Int {
+        guard !text.isEmpty else { return 0 }
+        return max(1, Int(ceil(Double(text.count) / 3.0)))
+    }
+
+    /// Characters available for the whole prompt (system + history + current
+    /// turn) once room for the generated answer is reserved.
+    static func promptCharacterBudget(for model: InstalledModel, searchContext: SearchContext? = nil) -> Int {
+        let contextWindow = safeContextWindow(for: model)
+        let generated = maxGeneratedTokens(for: model, searchContext: searchContext)
+        let systemReserve = min(512, max(160, contextWindow / 8))
+        let promptTokens = max(128, contextWindow - generated - systemReserve)
+        return promptTokens * 3
+    }
+
+    /// Fits an assembled prompt into the model's safe context window: the current
+    /// turn is trimmed first (it carries any attached-document text), then the
+    /// oldest history turns are dropped until everything fits.
+    ///
+    /// Small-context runtimes reject oversized prompts outright — LiteRT-LM
+    /// answers with `INVALID_ARGUMENT: Input token ids are too long` above its
+    /// 2048-token cap — so every prompt must pass through here.
+    static func fitPrompt(
+        system: String,
+        history: [String],
+        current: String,
+        for model: InstalledModel,
+        searchContext: SearchContext? = nil
+    ) -> (history: [String], current: String) {
+        let contextWindow = safeContextWindow(for: model)
+        let generated = maxGeneratedTokens(for: model, searchContext: searchContext)
+        let systemCost = estimatedTokens(system)
+        // 16-token safety margin for template/role tokens the renderer adds.
+        let availableTokens = max(64, contextWindow - generated - systemCost - 16)
+
+        // The current turn matters most, so give it first claim on the budget.
+        let currentBudgetCharacters = max(256, (availableTokens / 2) * 3)
+        let boundedCurrent = current.count > currentBudgetCharacters
+            ? trimHistoryText(current, maxCharacters: currentBudgetCharacters)
+            : current
+
+        var remainingTokens = availableTokens - estimatedTokens(boundedCurrent)
+        var kept: [String] = []
+        for turn in history.reversed() {
+            let cost = estimatedTokens(turn)
+            if cost > remainingTokens { break }
+            kept.insert(turn, at: 0)
+            remainingTokens -= cost
+        }
+
+        return (kept, boundedCurrent)
+    }
+
     static func trimHistoryText(_ text: String, maxCharacters: Int) -> String {
         guard text.count > maxCharacters else { return text }
         guard maxCharacters > 256 else { return String(text.suffix(maxCharacters)) }

@@ -116,20 +116,36 @@ enum DocumentExtractionService {
         throw DocumentExtractionError.unsupportedType
     }
 
-    static func promptContext(from attachments: [ChatAttachment]) -> String {
-        let documentBlocks = attachments.compactMap { attachment -> String? in
-            guard let text = attachment.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
-                return nil
+    /// Inlines attached documents for the prompt, bounded to `maxCharacters` in
+    /// total. The bound is required: a 20,000-character PDF is roughly 5,000
+    /// tokens, which overflows small-context runtimes (LiteRT-LM caps at 2048 and
+    /// rejects the request outright). Callers pass
+    /// `InferenceBudget.documentContextBudget(for:)`; the default preserves the
+    /// historical 20,000-character cap.
+    static func promptContext(from attachments: [ChatAttachment], maxCharacters: Int = maxExtractedCharacters) -> String {
+        let header = "\n\nAttached document context:\n"
+        // Leave room for the header and the per-document label.
+        var remaining = max(0, maxCharacters - header.count)
+
+        var documentBlocks: [String] = []
+        for attachment in attachments {
+            guard remaining > 0 else { break }
+            guard let text = attachment.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else {
+                continue
             }
-            return "### \(attachment.fileName)\n\(text)"
+
+            let label = "### \(attachment.fileName)\n"
+            guard label.count < remaining else { continue }
+            remaining -= label.count
+
+            let body = text.count <= remaining ? text : String(text.prefix(remaining))
+            remaining -= body.count
+            documentBlocks.append(label + body)
         }
 
         guard !documentBlocks.isEmpty else { return "" }
-        return """
-
-Attached document context:
-\(documentBlocks.joined(separator: "\n\n"))
-"""
+        return header + documentBlocks.joined(separator: "\n\n")
     }
 
     private static func readText(_ url: URL) throws -> String {

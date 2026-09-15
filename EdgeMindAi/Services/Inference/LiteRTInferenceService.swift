@@ -179,13 +179,19 @@ struct LiteRTInferenceService: InferenceService {
     ) async throws -> ChatMessage {
 #if canImport(LiteRTLM) && !targetEnvironment(simulator)
         let modelPath = try Self.modelPath(for: model)
-        let history = Self.history(from: conversation, model: model, multimodal: imageData != nil)
-        let currentMessage = Self.message(prompt: prompt, imageData: imageData)
+        let turn = Self.budgetedTurn(
+            prompt: prompt,
+            conversation: conversation,
+            model: model,
+            imageData: imageData,
+            baseSystemPrompt: systemPrompt,
+            searchContext: searchContext
+        )
         let response = try await LiteRTRuntime.shared.generate(
             modelPath: modelPath,
-            systemPrompt: Self.systemPrompt(base: systemPrompt, searchContext: searchContext),
-            history: history,
-            message: currentMessage,
+            systemPrompt: turn.system,
+            history: turn.history,
+            message: turn.message,
             multimodal: imageData != nil
         )
         return ChatMessage(
@@ -209,12 +215,18 @@ struct LiteRTInferenceService: InferenceService {
     ) async throws -> (messageID: UUID, stream: AsyncStream<StreamEvent>) {
 #if canImport(LiteRTLM) && !targetEnvironment(simulator)
         let modelPath = try Self.modelPath(for: model)
-        let history = Self.history(from: conversation, model: model, multimodal: imageData != nil)
-        let currentMessage = Self.message(prompt: prompt, imageData: imageData)
+        let turn = Self.budgetedTurn(
+            prompt: prompt,
+            conversation: conversation,
+            model: model,
+            imageData: imageData,
+            baseSystemPrompt: systemPrompt,
+            searchContext: searchContext
+        )
         let rawThrowingStream = try await LiteRTRuntime.shared.generateStream(
             modelPath: modelPath,
-            systemPrompt: Self.systemPrompt(base: systemPrompt, searchContext: searchContext),
-            history: history,
+            systemPrompt: turn.system,
+            history: turn.history,
             message: currentMessage,
             multimodal: imageData != nil
         )
@@ -256,14 +268,48 @@ struct LiteRTInferenceService: InferenceService {
         return fileURL.path
     }
 
-    private static func history(from conversation: [ChatMessage], model: InstalledModel, multimodal: Bool) -> [LiteRTLM.Message] {
+    /// Assembles the prompt for one turn and clamps the **total** to the model's
+    /// safe context window. LiteRT-LM hard-caps at 2048 tokens and fails the
+    /// request above it, so history alone is not enough — the current turn
+    /// (which carries inlined document text) and the history are trimmed
+    /// together by `InferenceBudget.fitPrompt`.
+    private static func budgetedTurn(
+        prompt: String,
+        conversation: [ChatMessage],
+        model: InstalledModel,
+        imageData: Data?,
+        baseSystemPrompt: String,
+        searchContext: SearchContext?
+    ) -> (system: String, history: [LiteRTLM.Message], message: LiteRTLM.Message) {
+        let system = systemPrompt(base: baseSystemPrompt, searchContext: searchContext)
+        let entries = historyEntries(from: conversation, model: model, multimodal: imageData != nil)
+
+        let fitted = InferenceBudget.fitPrompt(
+            system: system,
+            history: entries.map(\.text),
+            current: prompt,
+            for: model,
+            searchContext: searchContext
+        )
+
+        // `fitPrompt` keeps a contiguous suffix, so the surviving count maps
+        // straight back onto the role-tagged entries.
+        let retained = entries.suffix(fitted.history.count).map(\.message)
+        return (system, retained, message(prompt: fitted.current, imageData: imageData))
+    }
+
+    private static func historyEntries(
+        from conversation: [ChatMessage],
+        model: InstalledModel,
+        multimodal: Bool
+    ) -> [(text: String, message: LiteRTLM.Message)] {
         if multimodal {
             return []
         }
 
         let maxMessages = InferenceBudget.maxHistoryMessages(for: model, searchContext: nil)
         let maxCharacters = InferenceBudget.maxHistoryCharactersPerMessage(for: model)
-        var retained: [LiteRTLM.Message] = []
+        var retained: [(text: String, message: LiteRTLM.Message)] = []
 
         for message in conversation.reversed() {
             let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -272,14 +318,16 @@ struct LiteRTInferenceService: InferenceService {
             }
 
             let boundedText = InferenceBudget.trimHistoryText(text, maxCharacters: maxCharacters)
+            let built: LiteRTLM.Message
             switch message.role {
             case .system:
-                retained.insert(LiteRTLM.Message(boundedText, role: .system), at: 0)
+                built = LiteRTLM.Message(boundedText, role: .system)
             case .user:
-                retained.insert(LiteRTLM.Message(boundedText, role: .user), at: 0)
+                built = LiteRTLM.Message(boundedText, role: .user)
             case .assistant:
-                retained.insert(LiteRTLM.Message(boundedText, role: .model), at: 0)
+                built = LiteRTLM.Message(boundedText, role: .model)
             }
+            retained.insert((boundedText, built), at: 0)
 
             if retained.count >= maxMessages {
                 break

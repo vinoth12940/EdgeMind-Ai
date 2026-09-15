@@ -125,6 +125,7 @@
 		B6DCB597C9D8EC4F675508C8 /* AuthLandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 923F778B81353CB6796F86CD /* AuthLandingView.swift */; };
 		B8EBA6737CA7C80359E3721A /* AssistantResponseSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557946AF363FA768868ECF02 /* AssistantResponseSanitizerTests.swift */; };
 		B8F3638510225B20F307693D /* AuthStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4AFE161E2AC1363498AA121 /* AuthStateStore.swift */; };
+		BB53B2B01C7E3CA5A7692709 /* PromptBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853519E74B7420D1DF6D82C3 /* PromptBudgetTests.swift */; };
 		BDEDA4198ED056896CDBD470 /* LiteRTInferenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B72651E530FA37A9F23615A /* LiteRTInferenceService.swift */; };
 		C158C62D261C93896B7028FC /* ShareInboxProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4EF4ABB62F61412AC7B50 /* ShareInboxProcessor.swift */; };
 		C2AD95196D26F72ED03563EC /* ShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF78B3D36A35D08B076A107 /* ShareInbox.swift */; };
@@ -296,6 +297,7 @@
 		80D1855080C2168B9CA5F36F /* ChatTurnEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTurnEngine.swift; sourceTree = "<group>"; };
 		84A6306181A227248925BCFD /* DocumentSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentSearchService.swift; sourceTree = "<group>"; };
 		8525EB03CB54A9CFDAA0EA2C /* EdgeMindAi.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = EdgeMindAi.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		853519E74B7420D1DF6D82C3 /* PromptBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptBudgetTests.swift; sourceTree = "<group>"; };
 		85B79F04A2812B3C2550ABDF /* EdgeMindAiTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = EdgeMindAiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		87B6CE4A471E1D66261D8AD4 /* StreamProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamProcessor.swift; sourceTree = "<group>"; };
 		8822DE76431C58923039E78F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -736,6 +738,7 @@
 				8CC9D9EB62BB4FCFA53A1809 /* ModelAuditRunnerTests.swift */,
 				C7FC3C64DEBA1CBA269F31FB /* ModelCatalogItemTests.swift */,
 				2B6EF3C373D50E567AD41B07 /* ModelSuggestionAdvisorTests.swift */,
+				853519E74B7420D1DF6D82C3 /* PromptBudgetTests.swift */,
 				8C1F26BF9850547F87CB7E25 /* PromptRendererTests.swift */,
 				7C36F031CE57DB4431E0C25F /* PromptTemplateTests.swift */,
 				1A4F4716A3BE45B778846657 /* ReadDocumentToolTests.swift */,
@@ -995,6 +998,7 @@
 				E94E4BBAB44D42C58C0F1E6D /* ModelAuditRunnerTests.swift in Sources */,
 				2DDD97C18D8C8B31E3D82B48 /* ModelCatalogItemTests.swift in Sources */,
 				F6D25A91ADC549572ACE63AE /* ModelSuggestionAdvisorTests.swift in Sources */,
+				BB53B2B01C7E3CA5A7692709 /* PromptBudgetTests.swift in Sources */,
 				AA47FA89459D0DCBC59982BC /* PromptRendererTests.swift in Sources */,
 				4C81C2F45206C76A9215F943 /* PromptTemplateTests.swift in Sources */,
 				C59D67AB1B0D03E02AC89EDD /* ReadDocumentToolTests.swift in Sources */,
