@@ -160,6 +160,21 @@ WWDC26 opened the Foundation Models framework: a public **`LanguageModel`** prot
   ```
   `devicectl` intercepts dash-prefixed arguments, so the env var is the reliable trigger. Verified PASS on iPhone 17 Pro / iOS 27.0 (`supportsVision=true`, `supportsToolCalling=true`).
 
+### Tool calling on Apple Intelligence (v0.3.2)
+The iOS 27 system model **does** follow the app's `<tool_call>` convention, so it joins the existing agentic loop instead of needing a second, native tool path. Two things had to be true — both are now verified:
+1. **`AppleFoundationModelService` must route through `StreamProcessor`.** It previously handed its text straight to the UI, so `<tool_call>` blocks were never parsed and the loop could never fire for this runtime. `generateStream` now wraps its single response in a `StreamProcessor`, giving it the same tool-call/think handling as GGUF and MLX.
+2. **`arguments` must reach tools as arguments, not as the whole payload.** `StreamProcessor.parseToolCall` used to return the entire `{"name":…,"arguments":…}` JSON, which broke tools like `calculate` (they look for their own keys). `StreamProcessor.argumentsJSON(from:)` now normalizes all three shapes models use:
+   - nested object — `{"arguments": {"query": "x"}}`
+   - JSON encoded as a string — `{"arguments": "{\"query\": \"x\"}"}`
+   - **bare value** — `{"arguments": "47 * 89"}`, which is what Apple Intelligence emits; it passes through unchanged so each tool's raw-string fallback interprets it.
+   This matches the Gemma payload convention, which was already arguments-only.
+
+Device evidence (iPhone 17 Pro / iOS 27.0, `FM_TOOL_PROBE=1`): the model emitted
+`<tool_call>{"name": "calculate", "arguments": "47 * 89"}</tool_call>`.
+Note it also hallucinated an answer afterwards — which is exactly why the tool loop
+intercepts and re-invokes with the real result rather than trusting the model.
+`StreamProcessorTests` locks the end-to-end path (payload → `.toolCall` → `CalculateTool` → 4183).
+
 ### Attachment extraction and OCR (v0.3.1)
 - **Text layer first, OCR second.** `DocumentExtractionService` reads the embedded text layer (`PDFDocument.page.string`, or UTF-8 text); when that yields fewer than `DocumentTextRecognizer.minimumTextLayerCharacters` (16), it falls back to on-device Vision OCR (`VNRecognizeTextRequest`, `.accurate`) on the rendered page. Scanned or photographed PDFs have **no text layer**, so without this the attachment was silently empty and the model answered as if nothing were attached. OCR is local; nothing is uploaded.
 - **Long documents are excerpted by relevance, not truncated by position.** `DocumentExcerptBuilder` chunks the text and keeps the chunks that score best against the user's prompt (BM25 via `DocumentSearchService`), preserving reading order and marking the result `[Excerpted the N most relevant part(s) …]`. Plain head truncation used to drop the answer whenever it sat past the budget — which is only ~1,600 characters on LiteRT's 2048-token window.

@@ -304,9 +304,23 @@ final class ChatTurnEngineTests: XCTestCase {
         XCTAssertEqual(service.calls.count, 1)
     }
 
+    /// A chat model whose runtime profile has no verified tool calling, so the
+    /// turn takes the upfront-injection path rather than the agentic loop.
+    /// (Apple Intelligence used to qualify here; it now has verified tool
+    /// calling, so it runs the tool loop instead.)
+    private var nonToolChatModel: InstalledModel {
+        let profiles = RuntimeProfileStore()
+        let item = MockCatalogData.items.first {
+            $0.primaryUse == .chat
+                && $0.runtimeType == .mlx
+                && ModelRuntimeResolver.resolve(catalog: $0, store: profiles).tools == nil
+        }!
+        return InstalledModel(catalogItem: item, installState: .installed, progress: 1, localPath: item.mlxModelID)
+    }
+
     func test_upfrontLocalTool_forNonToolModel_answersDirectly() async {
         let service = ScriptedInferenceService(scripts: [])
-        let engine = makeEngine(model: appleModel, service: service)
+        let engine = makeEngine(model: nonToolChatModel, service: service)
 
         engine.send(request("what is 12 * 12"))
         await engine.waitUntilIdle()

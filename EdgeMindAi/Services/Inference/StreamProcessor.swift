@@ -301,6 +301,41 @@ actor StreamProcessor {
         return bestMatch
     }
 
+    /// Normalizes the `arguments` field of a `<tool_call>` payload into the JSON
+    /// (or bare value) a tool expects.
+    ///
+    /// Models disagree on this shape:
+    ///   - `{"arguments": {"query": "x"}}`      → nested object (most models)
+    ///   - `{"arguments": "{\"query\": \"x\"}"}`   → JSON encoded as a string
+    ///   - `{"arguments": "47 * 89"}`           → bare value (Apple Intelligence
+    ///                                            on the iOS 27 system model)
+    ///
+    /// A bare value is passed through unchanged so each tool's own
+    /// "model sent the raw string" fallback can interpret it.
+    static func argumentsJSON(from payload: [String: Any]) -> String {
+        guard let arguments = payload["arguments"] else { return "{}" }
+
+        if let dict = arguments as? [String: Any],
+           let data = try? JSONSerialization.data(withJSONObject: dict),
+           let text = String(data: data, encoding: .utf8) {
+            return text
+        }
+
+        if let string = arguments as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return "{}" }
+            // Already-JSON string arguments stay JSON; anything else is a bare value.
+            if trimmed.hasPrefix("{"),
+               let data = trimmed.data(using: .utf8),
+               (try? JSONSerialization.jsonObject(with: data)) is [String: Any] {
+                return trimmed
+            }
+            return trimmed
+        }
+
+        return "{}"
+    }
+
     fileprivate static func parseToolCall(_ raw: String) -> (name: String, argsJSON: String)? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -320,7 +355,10 @@ actor StreamProcessor {
         }
 
         if let name = json["name"] as? String, !name.isEmpty {
-            return (name, jsonText)
+            // Tools receive the *arguments* only, matching the Gemma payload
+            // convention. Returning the whole payload here used to break tools
+            // such as `calculate`, which look for their own argument keys.
+            return (name, Self.argumentsJSON(from: json))
         }
 
         let prefix = String(trimmed[..<jsonStart]).lowercased()

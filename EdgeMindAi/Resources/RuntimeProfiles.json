@@ -2,7 +2,7 @@
   {
     "catalogID": "088DAD16-6510-56FE-86C9-AEA507A22E2D",
     "verifiedThinking": null,
-    "verifiedToolCalling": null,
+    "verifiedToolCalling": "xmlToolCall",
     "verifiedVision": "imageAndText",
     "knownLeakTokens": [
       "<|im_end|>",

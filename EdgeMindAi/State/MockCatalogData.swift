@@ -23,7 +23,9 @@ enum MockCatalogData {
             // AppleFoundationModelService.supportsVision.
             supportsVision: true,
             supportsReasoning: true,
-            supportsToolCalling: false,
+            // Verified on device: the iOS 27 system model emits the app's
+            // <tool_call> convention, so the existing agentic loop applies.
+            supportsToolCalling: true,
             runtimeStatus: .recommended,
             auditVerdict: .green,
             testedDeviceTier: .pro,

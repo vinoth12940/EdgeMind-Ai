@@ -370,4 +370,70 @@ final class StreamProcessorTests: XCTestCase {
         }
         return output
     }
+
+    // MARK: - Tool-call argument shapes
+
+    /// Models disagree on the `arguments` shape. Tools receive arguments only
+    /// (matching the Gemma payload convention), so each form must normalize.
+    func test_toolArguments_nestedObject() {
+        let json = StreamProcessor.argumentsJSON(from: ["arguments": ["query": "kyoto"]])
+        XCTAssertEqual(json, "{\"query\":\"kyoto\"}")
+    }
+
+    func test_toolArguments_jsonEncodedString() {
+        let json = StreamProcessor.argumentsJSON(from: ["arguments": "{\"query\":\"kyoto\"}"])
+        XCTAssertEqual(json, "{\"query\":\"kyoto\"}")
+    }
+
+    /// Apple Intelligence sends a bare value: {"arguments": "47 * 89"}.
+    func test_toolArguments_bareString_passesThrough() {
+        let json = StreamProcessor.argumentsJSON(from: ["arguments": "47 * 89"])
+        XCTAssertEqual(json, "47 * 89")
+    }
+
+    func test_toolArguments_missing_isEmptyObject() {
+        XCTAssertEqual(StreamProcessor.argumentsJSON(from: [:]), "{}")
+        XCTAssertEqual(StreamProcessor.argumentsJSON(from: ["arguments": ""]), "{}")
+    }
+
+    /// End to end: the system model's payload must produce a usable calculate call.
+    func test_appleIntelligencePayload_drivesCalculateTool() async throws {
+        let payload = """
+        <tool_call>
+        {"name": "calculate", "arguments": "47 * 89"}
+        </tool_call>
+        """
+        let events = await process(tokens: [payload])
+
+        guard case .toolCall(let name, let argsJSON)? = events.first(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }) else {
+            return XCTFail("expected a toolCall event, got \(events)")
+        }
+
+        XCTAssertEqual(name, "calculate")
+        // The bare value must survive to the tool's raw-string fallback.
+        XCTAssertEqual(CalculateTool.extractExpression(argsJSON), "47 * 89")
+        XCTAssertEqual(try MathEvaluator.evaluate("47 * 89"), 4183, accuracy: 0.0001)
+    }
+
+    /// The standard nested form must also reach the tool as arguments only.
+    func test_nestedPayload_argumentsOnlyReachTool() async throws {
+        let payload = """
+        <tool_call>
+        {"name": "calculate", "arguments": {"expression": "6*7"}}
+        </tool_call>
+        """
+        let events = await process(tokens: [payload])
+
+        guard case .toolCall(_, let argsJSON)? = events.first(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }) else {
+            return XCTFail("expected a toolCall event, got \(events)")
+        }
+
+        XCTAssertEqual(CalculateTool.extractExpression(argsJSON), "6*7")
+    }
 }

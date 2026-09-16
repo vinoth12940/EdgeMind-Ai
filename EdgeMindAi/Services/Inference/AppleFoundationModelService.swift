@@ -102,13 +102,25 @@ struct AppleFoundationInferenceService: InferenceService {
                         systemPrompt: systemPrompt,
                         imageData: imageData
                     )
-                    let firstTokenTime = Date().timeIntervalSince(streamStart)
-                    continuation.yield(.textDelta(text))
-                    continuation.yield(.done(GenerationStats(
-                        timeToFirstToken: firstTokenTime,
-                        totalDuration: Date().timeIntervalSince(streamStart),
-                        deltaCount: 1
-                    )))
+
+                    // Route the model's output through the shared StreamProcessor.
+                    // This service used to hand its text straight to the UI, which
+                    // meant `<tool_call>` blocks were never parsed and the agentic
+                    // tool loop could never fire for Apple Intelligence. Going
+                    // through the pipeline gives it the same tool-call and think
+                    // handling as every other runtime.
+                    let raw = AsyncStream<String> { rawContinuation in
+                        rawContinuation.yield(text)
+                        rawContinuation.finish()
+                    }
+                    let processor = StreamProcessor(
+                        rawStream: raw,
+                        v2Enabled: settings?.streamProcessorV2Enabled ?? AppSettings.default.streamProcessorV2Enabled,
+                        hangTimeout: settings?.inferenceV2Timeout ?? AppSettings.default.inferenceV2Timeout
+                    )
+                    for await event in await processor.process() {
+                        continuation.yield(event)
+                    }
                 } catch {
                     continuation.yield(.textDelta(error.localizedDescription))
                     continuation.yield(.done(GenerationStats(totalDuration: Date().timeIntervalSince(streamStart))))
