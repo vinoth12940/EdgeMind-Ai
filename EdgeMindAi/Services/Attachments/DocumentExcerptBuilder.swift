@@ -67,6 +67,9 @@ enum DocumentExcerptBuilder {
         // Reserve room for the marker, which is prepended — prefixing the body to the
         // full budget and then adding the marker pushed the result over maxCharacters.
         let bodyBudget = max(0, maxCharacters - marker.count - 1)
+        // Too little room to carry any content: emitting just the marker would waste
+        // the caller's budget on a note about nothing.
+        guard bodyBudget >= 32 else { return "" }
         let excerpt = String(body.prefix(bodyBudget))
         return marker + "\n" + excerpt
     }

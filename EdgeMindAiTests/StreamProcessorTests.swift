@@ -422,6 +422,21 @@ final class StreamProcessorTests: XCTestCase {
         // The bare value must survive to the tool's raw-string fallback.
         XCTAssertEqual(CalculateTool.extractExpression(argsJSON), "47 * 89")
         XCTAssertEqual(try MathEvaluator.evaluate("47 * 89"), 4183, accuracy: 0.0001)
+
+        // Actually run it end to end. This test used to evaluate the literal "47 * 89"
+        // with MathEvaluator, so ToolRegistry.dispatch and CalculateTool.run were never
+        // exercised and a dispatch-level regression could not fail it.
+        let context = ToolContext(
+            settings: .default,
+            conversation: [],
+            chatSessions: [],
+            attachedDocuments: [],
+            installedModel: nil
+        )
+        let result = await ToolRegistry.dispatch(name: name, argsJSON: argsJSON, context: context)
+
+        XCTAssertEqual(result?.output, "Result: 4183",
+                       "the parsed payload must produce a real tool result, got \(result?.output ?? "nil")")
     }
 
     /// The standard nested form must also reach the tool as arguments only.
