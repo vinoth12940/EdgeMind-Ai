@@ -331,6 +331,13 @@ struct ChatToolActivity: Identifiable, Hashable, Codable {
     let name: String
     let displayName: String
     let output: String
+    /// The arguments the model sent with the `<tool_call>`, when known.
+    ///
+    /// The UI used to re-parse `output` (the tool's *result*) as if it were the
+    /// input — so the calculator card rendered "Result: 42" as its expression. The
+    /// real arguments were never persisted, so there was nothing better to show.
+    /// Optional, so previously persisted messages still decode.
+    let args: String?
     let status: Status
     let createdAt: Date
     let duration: Double?
@@ -340,6 +347,7 @@ struct ChatToolActivity: Identifiable, Hashable, Codable {
         name: String,
         displayName: String,
         output: String,
+        args: String? = nil,
         status: Status = .completed,
         createdAt: Date = .now,
         duration: Double? = nil
@@ -348,6 +356,7 @@ struct ChatToolActivity: Identifiable, Hashable, Codable {
         self.name = name
         self.displayName = displayName
         self.output = output
+        self.args = args
         self.status = status
         self.createdAt = createdAt
         self.duration = duration
@@ -358,6 +367,7 @@ struct ChatToolActivity: Identifiable, Hashable, Codable {
         case name
         case displayName
         case output
+        case args
         case status
         case createdAt
         case duration
@@ -369,6 +379,7 @@ struct ChatToolActivity: Identifiable, Hashable, Codable {
         name = try container.decode(String.self, forKey: .name)
         displayName = try container.decode(String.self, forKey: .displayName)
         output = try container.decodeIfPresent(String.self, forKey: .output) ?? ""
+        args = try container.decodeIfPresent(String.self, forKey: .args)
         status = try container.decodeIfPresent(Status.self, forKey: .status) ?? .completed
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
         duration = try container.decodeIfPresent(Double.self, forKey: .duration)
@@ -380,6 +391,7 @@ struct ChatToolActivity: Identifiable, Hashable, Codable {
         try container.encode(name, forKey: .name)
         try container.encode(displayName, forKey: .displayName)
         try container.encode(output, forKey: .output)
+        try container.encodeIfPresent(args, forKey: .args)
         try container.encode(status, forKey: .status)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(duration, forKey: .duration)

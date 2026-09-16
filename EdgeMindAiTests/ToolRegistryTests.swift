@@ -348,4 +348,34 @@ final class ToolRegistryTests: XCTestCase {
             ToolRegistry.renderPromptSection(for: tools, format: .xmlToolCall)
         )
     }
+
+    // MARK: - tool activity arguments
+
+    /// The card needs the model's arguments; it used to re-parse the tool's *result*.
+    func test_toolActivityArgsRoundTrip() throws {
+        let activity = ChatToolActivity(
+            name: "calculate",
+            displayName: "Calculated",
+            output: "Result: 42",
+            args: #"{"expression":"6*7"}"#
+        )
+
+        let decoded = try JSONDecoder().decode(
+            ChatToolActivity.self,
+            from: try JSONEncoder().encode(activity)
+        )
+
+        XCTAssertEqual(decoded.args, #"{"expression":"6*7"}"#)
+        XCTAssertEqual(CalculateTool.extractExpression(decoded.args ?? ""), "6*7")
+    }
+
+    /// A message persisted before `args` existed must still decode.
+    func test_toolActivityWithoutArgsStillDecodes() throws {
+        let legacy = #"{"id":"\#(UUID().uuidString)","name":"calculate","displayName":"Calculated","output":"Result: 42","status":"completed","createdAt":0}"#
+
+        let decoded = try JSONDecoder().decode(ChatToolActivity.self, from: Data(legacy.utf8))
+
+        XCTAssertNil(decoded.args)
+        XCTAssertEqual(decoded.output, "Result: 42")
+    }
 }

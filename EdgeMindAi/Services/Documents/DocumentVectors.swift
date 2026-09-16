@@ -68,11 +68,13 @@ struct DocumentVectors {
         guard rowOffset + dimension * 4 <= storage.count else { return nil }
 
         return storage.withUnsafeBytes { raw -> [Float]? in
-            guard let base = raw.baseAddress else { return nil }
-            let floatPointer = base.advanced(by: rowOffset).assumingMemoryBound(to: UInt32.self)
             var row = [Float](repeating: 0, count: dimension)
             for element in 0..<dimension {
-                row[element] = Float(bitPattern: UInt32(littleEndian: floatPointer[element]))
+                // `rowsOffset` is 9, so rows are never 4-byte aligned. Binding an
+                // aligned UInt32 pointer here is undefined behaviour; `loadUnaligned`
+                // is the correct accessor.
+                let bits = raw.loadUnaligned(fromByteOffset: rowOffset + element * 4, as: UInt32.self)
+                row[element] = Float(bitPattern: UInt32(littleEndian: bits))
             }
             return row
         }

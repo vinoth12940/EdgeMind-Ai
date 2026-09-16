@@ -63,8 +63,11 @@ enum DocumentExcerptBuilder {
             .map { chunks[$0].text }
             .joined(separator: "\n…\n")
 
-        let excerpt = String(body.prefix(maxCharacters))
         let marker = "[Excerpted the \(ordered.count) most relevant part(s) of \(chunks.count) for this question.]"
+        // Reserve room for the marker, which is prepended — prefixing the body to the
+        // full budget and then adding the marker pushed the result over maxCharacters.
+        let bodyBudget = max(0, maxCharacters - marker.count - 1)
+        let excerpt = String(body.prefix(bodyBudget))
         return marker + "\n" + excerpt
     }
 }

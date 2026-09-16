@@ -109,7 +109,15 @@ enum DocumentSearchService {
         for hit in hits {
             let label = hit.pageNumber.map { "\(hit.fileName) p.\($0)" } ?? hit.fileName
             let block = "[\(label)] \(hit.text)"
-            if used + block.count > budgetCharacters, !blocks.isEmpty { break }
+            if used + block.count > budgetCharacters {
+                // Never exceed the budget. The first block used to be appended in full
+                // even when it alone was larger than the whole allowance, which is how
+                // a long passage could overrun a small model's context window.
+                if blocks.isEmpty {
+                    blocks.append(String(block.prefix(budgetCharacters)))
+                }
+                break
+            }
             blocks.append(block)
             used += block.count
         }

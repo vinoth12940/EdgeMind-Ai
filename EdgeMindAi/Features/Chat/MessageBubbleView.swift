@@ -186,6 +186,7 @@ struct MessageBubbleView: View {
                     LocalToolResultCard(
                         toolName: activity.name,
                         output: activity.output,
+                        args: activity.args,
                         attachments: message.attachments,
                         duration: activity.duration
                     )
@@ -937,7 +938,11 @@ struct WorkflowCard: View {
 
     private var searchQuery: String? {
         if let activity = toolActivities.first(where: { $0.name.lowercased() == "web_search" }) {
-            return WebSearchTool.extractQuery(activity.output) ?? WebSearchTool.extractQuery(activity.displayName)
+            // Prefer the model's actual arguments. `output` is the search *result*
+            // text, not the query; older persisted messages have no args, so fall
+            // back to the display name, which carried the refined query.
+            return activity.args.flatMap(WebSearchTool.extractQuery)
+                ?? WebSearchTool.extractQuery(activity.displayName)
         }
         return nil
     }
@@ -1447,6 +1452,9 @@ struct LocalToolResultCard: View {
     @Environment(AppStateStore.self) private var store
     let toolName: String
     let output: String
+    /// The arguments the model sent, so the card can show the real input rather than
+    /// re-parsing the tool's result as if it were the input.
+    let args: String?
     let attachments: [ChatAttachment]
     let duration: Double?
 
@@ -1539,7 +1547,9 @@ struct LocalToolResultCard: View {
                 Group {
                     switch toolName.lowercased() {
                     case "calculate":
-                        let expr = CalculateTool.extractExpression(output) ?? ""
+                        // The expression comes from the model's arguments. Parsing
+                        // `output` here used to render "Result: 42" as the expression.
+                        let expr = args.flatMap(CalculateTool.extractExpression) ?? ""
                         CalculatorWidgetView(expression: expr, result: output)
                     case "get_battery_level":
                         BatteryWidgetView(output: output)

@@ -352,4 +352,24 @@ final class DocumentSearchTests: XCTestCase {
         XCTAssertEqual(hits.first?.text, "termination notice period",
                        "the BM25 match must stay on top; got \(hits.map(\.text))")
     }
+
+    /// A single passage larger than the whole budget used to be appended in full.
+    func test_renderHits_neverExceedsBudget() {
+        let doc = document("big.pdf")
+        let hits = [
+            DocumentHit(
+                documentID: doc.id,
+                fileName: "big.pdf",
+                pageNumber: 1,
+                text: String(repeating: "x", count: 5_000),
+                score: 1
+            )
+        ]
+
+        let rendered = DocumentSearchService.renderHits(hits, budgetCharacters: 200)
+
+        XCTAssertLessThanOrEqual(rendered.count, 200,
+                                 "rendered passages must fit the budget; got \(rendered.count)")
+        XCTAssertFalse(rendered.isEmpty, "the top hit should still contribute a truncated passage")
+    }
 }

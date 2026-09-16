@@ -148,7 +148,8 @@ extension ChatTurnEngine {
                 name: toolName,
                 output: Self.toolRunningOutput(for: toolName, argsJSON: argsJSON),
                 model: model,
-                status: .running
+                status: .running,
+                args: argsJSON
             )
             visibleToolActivities.append(runningActivity)
             output.setToolActivities(visibleToolActivities, persist: false)
@@ -166,7 +167,8 @@ extension ChatTurnEngine {
                     output: "Unknown tool",
                     model: model,
                     status: .failed,
-                    duration: toolDuration
+                    duration: toolDuration,
+                    args: argsJSON
                 )
                 output.setToolActivities(visibleToolActivities, persist: true)
                 output.appendNotice("⚠️ Unknown tool: \(toolName)")
@@ -176,7 +178,7 @@ extension ChatTurnEngine {
             accumulatedToolResults.append(result)
             if let sc = result.searchContext { combinedSearchContext = sc }
             combinedCitations.append(contentsOf: result.citations)
-            visibleToolActivities[visibleToolActivities.count - 1] = Self.toolActivity(from: result, model: model, duration: toolDuration)
+            visibleToolActivities[visibleToolActivities.count - 1] = Self.toolActivity(from: result, model: model, duration: toolDuration, args: argsJSON)
             output.setToolActivities(visibleToolActivities, persist: true)
             output.setCitations(combinedCitations)
 
@@ -341,13 +343,14 @@ extension ChatTurnEngine {
         return blocks.joined(separator: "\n\n")
     }
 
-    static func toolActivity(from result: ToolResult, model: InstalledModel, duration: Double? = nil) -> ChatToolActivity {
+    static func toolActivity(from result: ToolResult, model: InstalledModel, duration: Double? = nil, args: String? = nil) -> ChatToolActivity {
         toolActivity(
             name: result.toolName,
             output: result.output,
             model: model,
             status: result.output.localizedCaseInsensitiveContains("Error:") ? .failed : .completed,
-            duration: duration
+            duration: duration,
+            args: args
         )
     }
 
@@ -356,12 +359,14 @@ extension ChatTurnEngine {
         output: String,
         model: InstalledModel,
         status: ChatToolActivity.Status,
-        duration: Double? = nil
+        duration: Double? = nil,
+        args: String? = nil
     ) -> ChatToolActivity {
         ChatToolActivity(
             name: name,
             displayName: toolDisplayName(for: name, status: status),
             output: boundToolOutputForContext(output, model: model),
+            args: args,
             status: status,
             duration: duration
         )
