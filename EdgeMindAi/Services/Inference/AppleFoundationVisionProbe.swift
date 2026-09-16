@@ -20,7 +20,9 @@ enum AppleFoundationVisionProbe {
         let visionRequested = ProcessInfo.processInfo.arguments.contains("-probe-fm-vision")
             || environment["FM_VISION_PROBE"] == "1"
         let toolRequested = environment["FM_TOOL_PROBE"] == "1"
+        let documentRequested = environment["DOC_PROBE"] == "1"
 
+        if documentRequested { await runDocumentProbe() }
         if toolRequested { await runToolCallingProbe() }
         guard visionRequested else { return }
 
@@ -113,6 +115,119 @@ enum AppleFoundationVisionProbe {
         } catch {
             print("FMPROBE TOOL RESULT: ERROR \(error.localizedDescription)")
         }
+    }
+
+    /// DEBUG-only on-device probe for the document pipeline and the tool gates that
+    /// were reported broken. Runs the reported flows end to end on real hardware:
+    ///
+    ///   DEVICECTL_CHILD_DOC_PROBE=1 xcrun devicectl device process launch --console ...
+    @MainActor
+    static func runDocumentProbe() async {
+        print("DOCPROBE start")
+
+        // 1. Greeting gate — a social prompt must not advertise tools, a real
+        //    request must keep them.
+        print("DOCPROBE socialOnly(hi)=\(UpfrontToolDetector.isSocialOnly(prompt: "hi"))")
+        print("DOCPROBE socialOnly(Hi there!)=\(UpfrontToolDetector.isSocialOnly(prompt: "Hi there!"))")
+        print("DOCPROBE socialOnly(hey can you help me search the web)=\(UpfrontToolDetector.isSocialOnly(prompt: "hey can you help me search the web"))")
+        print("DOCPROBE socialOnly(what time is it)=\(UpfrontToolDetector.isSocialOnly(prompt: "what time is it"))")
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("docprobe-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent("contract.txt")
+            try """
+            Termination. Either party may end this agreement with 30 days written notice. \
+            The notice period for termination must be given in writing to the other party.
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+            let library = DocumentLibraryStore(directory: dir)
+            let imported = await library.importDocument(from: file)
+            print("DOCPROBE imported=\(imported?.fileName ?? "nil") chunks=\(imported?.chunkCount ?? -1) kind=\(String(describing: imported?.embeddingKind))")
+
+            let index = library.searchIndex()
+            print("DOCPROBE indexEmpty=\(index.isEmpty) indexChunks=\(index.chunkCount)")
+
+            guard let item = MockCatalogData.items.first(where: { $0.runtimeType == .foundationModels }) else {
+                print("DOCPROBE ERROR no catalog model")
+                return
+            }
+            let model = InstalledModel(
+                catalogItem: item,
+                installState: .installed,
+                progress: 1,
+                localPath: AppleFoundationModelService.localPathMarker
+            )
+            let settings = AppSettings.default
+            let context = ToolContext(
+                settings: settings,
+                conversation: [],
+                chatSessions: [],
+                attachedDocuments: [],
+                installedModel: model,
+                documentSearchIndex: index
+            )
+
+            // 2. The Apple Intelligence argument shape: a BARE STRING. This is the
+            //    exact payload that used to fail with "query argument is required",
+            //    making the model tell the user to upload the document.
+            let bare = await SearchDocumentsTool().run(
+                argsJSON: "what is the notice period for termination",
+                context: context
+            )
+            print("DOCPROBE bareString ok=\(!bare.output.hasPrefix("Error")) out=\(bare.output.prefix(140))")
+
+            // 3. The full pipeline for that payload: model text -> StreamProcessor ->
+            //    ToolRegistry.dispatch -> real passages.
+            let aiPayload = #"<tool_call>{"name": "search_documents", "arguments": "what is the notice period for termination"}</tool_call>"#
+            await runPipeline(payload: aiPayload, label: "appleIntelligence", context: context)
+
+            // 4. The flat shape Gemma/LFM emit, which used to lose its arguments.
+            let flatPayload = #"<tool_call>{"name": "search_documents", "query": "notice period termination"}</tool_call>"#
+            await runPipeline(payload: flatPayload, label: "flatQuery", context: context)
+
+            // 5. A natural question must reach the library for a model with no tool loop.
+            let upfront = await UpfrontToolDetector.detectAndRun(
+                prompt: "What does the contract say about termination?",
+                context: context
+            )
+            print("DOCPROBE upfrontTools=\(upfront.map(\.toolName)) reachedLibrary=\(upfront.contains { $0.toolName == "search_documents" })")
+
+            print("DOCPROBE done")
+        } catch {
+            print("DOCPROBE ERROR \(error.localizedDescription)")
+        }
+    }
+
+    private static func runPipeline(payload: String, label: String, context: ToolContext) async {
+        let raw = AsyncStream<String> { continuation in
+            continuation.yield(payload)
+            continuation.finish()
+        }
+        let processor = StreamProcessor(
+            rawStream: raw,
+            v2Enabled: AppSettings.default.streamProcessorV2Enabled,
+            hangTimeout: AppSettings.default.inferenceV2Timeout
+        )
+
+        var name: String?
+        var args: String?
+        for await event in await processor.process() {
+            if case .toolCall(let parsedName, let parsedArgs) = event {
+                name = parsedName
+                args = parsedArgs
+            }
+        }
+
+        guard let name, let args else {
+            print("DOCPROBE \(label) NO_TOOL_CALL parsed")
+            return
+        }
+
+        let result = await ToolRegistry.dispatch(name: name, argsJSON: args, context: context)
+        let output = result?.output ?? "nil"
+        print("DOCPROBE \(label) name=\(name) args=\(args.prefix(70)) ok=\(!(output.hasPrefix("Error"))) out=\(output.prefix(140))")
     }
 
     /// Renders a high-contrast word so the result is unambiguous.
