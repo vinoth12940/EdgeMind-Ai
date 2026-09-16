@@ -312,8 +312,22 @@ actor StreamProcessor {
     ///
     /// A bare value is passed through unchanged so each tool's own
     /// "model sent the raw string" fallback can interpret it.
+    ///
+    /// A payload with no `arguments` wrapper at all — `{"name": "web_search",
+    /// "query": "tokyo weather"}` — passes its remaining keys through unchanged,
+    /// because that is how several models (and the app's own legacy `web_search`
+    /// fallback below) express arguments. Collapsing these to `{}` made every
+    /// such call fail with "Missing … argument".
     static func argumentsJSON(from payload: [String: Any]) -> String {
-        guard let arguments = payload["arguments"] else { return "{}" }
+        guard let arguments = payload["arguments"] else {
+            let remainder = payload.filter { $0.key != "name" }
+            guard !remainder.isEmpty,
+                  let data = try? JSONSerialization.data(withJSONObject: remainder),
+                  let text = String(data: data, encoding: .utf8) else {
+                return "{}"
+            }
+            return text
+        }
 
         if let dict = arguments as? [String: Any],
            let data = try? JSONSerialization.data(withJSONObject: dict),

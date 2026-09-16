@@ -119,9 +119,15 @@ final class StreamProcessorTests: XCTestCase {
     func test_liquidToolCallFormat_emitted() async throws {
         let json = #"{"name":"web_search","query":"boston weather"}"#
         let events = await process(tokens: ["<|tool_call_start|>", json, "<|tool_call_end|>"])
-        XCTAssertTrue(events.contains {
-            if case .toolCall(let name, _) = $0 { return name == "web_search" }; return false
-        })
+        guard case .toolCall(let name, let argsJSON)? = events.first(where: {
+            if case .toolCall = $0 { return true }; return false
+        }) else {
+            return XCTFail("expected a toolCall event, got \(events)")
+        }
+        XCTAssertEqual(name, "web_search")
+        // This payload has no `arguments` wrapper — the flat form must keep its
+        // arguments. It previously normalized to `{}`, silently dropping the query.
+        XCTAssertEqual(WebSearchTool.extractQuery(argsJSON), "boston weather")
         XCTAssertFalse(events.contains { if case .done = $0 { return true }; return false })
     }
 
@@ -435,5 +441,50 @@ final class StreamProcessorTests: XCTestCase {
         }
 
         XCTAssertEqual(CalculateTool.extractExpression(argsJSON), "6*7")
+    }
+
+    /// Some models omit the `arguments` wrapper entirely and put the arguments at
+    /// the top level. Regression guard: these were normalized to `{}`, so every
+    /// tool reported "Missing … argument" even though the model sent them.
+    func test_flatPayload_queryReachesWebSearch() async throws {
+        let payload = """
+        <tool_call>
+        {"name": "web_search", "query": "tokyo weather now"}
+        </tool_call>
+        """
+        let events = await process(tokens: [payload])
+
+        guard case .toolCall(let name, let argsJSON)? = events.first(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }) else {
+            return XCTFail("expected a toolCall event, got \(events)")
+        }
+
+        XCTAssertEqual(name, "web_search")
+        XCTAssertEqual(WebSearchTool.extractQuery(argsJSON), "tokyo weather now")
+    }
+
+    func test_flatPayload_expressionReachesCalculate() async throws {
+        let payload = """
+        <tool_call>
+        {"name": "calculate", "expression": "6*7"}
+        </tool_call>
+        """
+        let events = await process(tokens: [payload])
+
+        guard case .toolCall(_, let argsJSON)? = events.first(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }) else {
+            return XCTFail("expected a toolCall event, got \(events)")
+        }
+
+        XCTAssertEqual(CalculateTool.extractExpression(argsJSON), "6*7")
+    }
+
+    /// A call with genuinely no arguments still normalizes to an empty object.
+    func test_flatPayload_withNoArguments_staysEmptyObject() {
+        XCTAssertEqual(StreamProcessor.argumentsJSON(from: ["name": "get_current_time"]), "{}")
     }
 }
