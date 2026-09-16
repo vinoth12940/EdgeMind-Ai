@@ -308,4 +308,48 @@ final class DocumentSearchTests: XCTestCase {
         XCTAssertNil(SearchDocumentsTool.extractQuery("{}"))
         XCTAssertNil(SearchDocumentsTool.extractQuery(#"{"arguments":""}"#))
     }
+
+    // MARK: - embedding alignment and score blending
+
+    /// A chunk that fails to embed must keep its slot. Dropping the row shortened the
+    /// array, so `DocumentIndexer` saw a count mismatch and discarded the vectors for
+    /// the entire document because of one bad chunk.
+    func test_embeddingAlignment_padsFailuresWithZeroVectors() {
+        let rows: [[Float]] = [[1, 2, 3], [], [4, 5, 6]]
+
+        let aligned = DocumentEmbedder.aligned(rows, dimension: 3)
+
+        XCTAssertEqual(aligned.count, 3, "row count must stay equal to the chunk count")
+        XCTAssertEqual(aligned[0], [1, 2, 3])
+        XCTAssertEqual(aligned[1], [0, 0, 0], "a failed chunk becomes an inert zero vector")
+        XCTAssertEqual(aligned[2], [4, 5, 6], "later chunks must not shift up a slot")
+    }
+
+    func test_embeddingAlignment_truncatesOverlongRows() {
+        let aligned = DocumentEmbedder.aligned([[1, 2, 3, 4]], dimension: 2)
+        XCTAssertEqual(aligned, [[1, 2]])
+    }
+
+    /// The vector signal must never demote a chunk BM25 matched strongly: query and
+    /// document vectors can come from different language models, so the cosine is not
+    /// always comparable.
+    func test_vectorScore_neverDemotesAStrongKeywordMatch() {
+        let doc = document("handbook.pdf")
+        let index = DocumentSearchIndex(entries: [
+            entry(doc,
+                  chunks: [("termination notice period", nil), ("unrelated filler text", nil)],
+                  vectors: (kind: .sentence, rows: [[1, 0, 0], [0, 1, 0]]))
+        ])
+
+        // A query vector orthogonal to the matching chunk (cosine 0) but aligned with
+        // the irrelevant one — the pathological case the language mismatch produces.
+        let hits = DocumentSearchService.search(
+            query: "termination",
+            index: index,
+            queryVectorProvider: { _ in [0, 1, 0] }
+        )
+
+        XCTAssertEqual(hits.first?.text, "termination notice period",
+                       "the BM25 match must stay on top; got \(hits.map(\.text))")
+    }
 }

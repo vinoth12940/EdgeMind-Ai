@@ -71,7 +71,15 @@ enum DocumentSearchService {
                queryVector.count == vectors.dimension,
                let chunkVector = vectors.vector(at: item.chunk.index) {
                 let cosine = max(0, cosineSimilarity(queryVector, chunkVector))
-                score = 0.7 * cosine + 0.3 * normalizedBM25
+                // Never let the vector signal demote a chunk that BM25 matched
+                // strongly. The query is embedded with the *query's* detected
+                // language while the document was embedded with the document's, so
+                // the two vectors can come from different models (or different
+                // spaces at the same dimension) and the cosine is not always
+                // comparable. Blending alone let a meaningless cosine push the real
+                // keyword hit out of the top results.
+                let blended = 0.7 * cosine + 0.3 * normalizedBM25
+                score = max(normalizedBM25, blended)
             }
 
             guard score > 0 else { continue }

@@ -656,7 +656,12 @@ extension ChatTurnEngine {
                 // invoke them in response to "hi" instead of just replying.
                 let isSocialTurn = UpfrontToolDetector.isSocialOnly(prompt: trimmedPrompt)
                 if modelCanUseToolLoop && searchContext == nil && !availableTools.isEmpty && !isSocialTurn {
-                    let section = ToolRegistry.renderPromptSection(for: availableTools)
+                    // Teach the model the tool-call shape IT was trained on, not a
+                    // single hardcoded XML form (Gemma 4 and LFM2.5 differ).
+                    let section = ToolRegistry.renderPromptSection(
+                        for: availableTools,
+                        format: resolvedModel.tools ?? .xmlToolCall
+                    )
                     systemPromptForInference += section
                     chatEngineLogger.log("Tool definitions injected: \(availableTools.map { $0.name }.joined(separator: ", "), privacy: .public)")
                 } else if isSocialTurn && modelCanUseToolLoop {

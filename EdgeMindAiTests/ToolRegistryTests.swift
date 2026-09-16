@@ -319,4 +319,33 @@ final class ToolRegistryTests: XCTestCase {
         XCTAssertTrue(section.contains("Do NOT call a tool for greetings"),
                       "the tool section must explicitly forbid greeting tool calls")
     }
+
+    /// Each runtime must be taught the tool-call shape its own model was trained on.
+    /// The section used to hardcode the XML form for everyone, so Gemma 4 and LFM2.5
+    /// were asked for syntax that is not their native convention.
+    func test_promptSectionTeachesEachModelsOwnToolSyntax() {
+        let tools = [CalculateTool()]
+
+        let xml = ToolRegistry.renderPromptSection(for: tools, format: .xmlToolCall)
+        XCTAssertTrue(xml.contains("<tool_call>"))
+        XCTAssertTrue(xml.contains("</tool_call>"))
+
+        let gemma = ToolRegistry.renderPromptSection(for: tools, format: .gemmaNativeToolCall)
+        XCTAssertTrue(gemma.contains("call:tool_name"), "Gemma must be shown the call:NAME{…} form")
+        XCTAssertTrue(gemma.contains("<|tool_call>"))
+        XCTAssertTrue(gemma.contains("<tool_call|>"))
+
+        let liquid = ToolRegistry.renderPromptSection(for: tools, format: .liquidToolCall)
+        XCTAssertTrue(liquid.contains("<|tool_call_start|>"))
+        XCTAssertTrue(liquid.contains("<|tool_call_end|>"))
+    }
+
+    /// Default rendering stays the XML form, so existing callers are unaffected.
+    func test_promptSectionDefaultsToXMLFormat() {
+        let tools = [CalculateTool()]
+        XCTAssertEqual(
+            ToolRegistry.renderPromptSection(for: tools),
+            ToolRegistry.renderPromptSection(for: tools, format: .xmlToolCall)
+        )
+    }
 }

@@ -65,7 +65,14 @@ enum ToolRegistry {
 
     /// Builds the `# Tools` prompt section injected into the system prompt. Generalizes
     /// the old hardcoded `toolCallDefinition` (which described only `web_search`).
-    static func renderPromptSection(for tools: [Tool]) -> String {
+    ///
+    /// `format` must be the model's own verified tool-call convention. The section
+    /// used to hardcode the XML/JSON form for every model, so Gemma 4 (which emits
+    /// `call:NAME{…}`) and LFM2.5 (which emits `<|tool_call_start|>`) were instructed
+    /// to produce syntax that is not their native convention — and then the parser
+    /// was expected to cope. It does cope, but the model is far more reliable when
+    /// asked for the shape it was trained on.
+    static func renderPromptSection(for tools: [Tool], format: ToolCallFormat = .xmlToolCall) -> String {
         guard !tools.isEmpty else { return "" }
 
         var lines: [String] = []
@@ -83,9 +90,7 @@ enum ToolRegistry {
         }
 
         lines.append("To call a tool, output ONLY this block (no other text before the closing tag):")
-        lines.append("<tool_call>")
-        lines.append("{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}")
-        lines.append("</tool_call>")
+        lines.append(contentsOf: exampleLines(for: format))
         lines.append("")
         lines.append("Rules:")
         lines.append("- Do NOT call a tool for greetings, thanks, small talk, or anything you can already answer. Just reply normally.")
@@ -96,6 +101,31 @@ enum ToolRegistry {
         lines.append("- If a tool returns an error, explain it briefly and answer from your own knowledge if you can.")
 
         return lines.joined(separator: "\n")
+    }
+
+    /// One concrete example call, rendered in the model's own convention. These match
+    /// exactly what `StreamProcessor` / `GemmaToolCallPayload` parse.
+    private static func exampleLines(for format: ToolCallFormat) -> [String] {
+        switch format {
+        case .xmlToolCall:
+            return [
+                "<tool_call>",
+                "{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}",
+                "</tool_call>"
+            ]
+        case .gemmaNativeToolCall:
+            return [
+                "<|tool_call>",
+                "call:tool_name{param:<|\"|>value<|\"|>}",
+                "<tool_call|>"
+            ]
+        case .liquidToolCall:
+            return [
+                "<|tool_call_start|>",
+                "{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}",
+                "<|tool_call_end|>"
+            ]
+        }
     }
 
     /// Looks up a tool by the name the model emitted and runs it. Returns nil for

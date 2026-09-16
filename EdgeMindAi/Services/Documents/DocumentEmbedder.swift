@@ -23,33 +23,53 @@ enum DocumentEmbedder {
 
     /// Embeds every text with the best available kind. Returns `.none` with no
     /// vectors when no embedding is available.
+    ///
+    /// Rows are always positionally aligned with `texts`: a chunk that fails to
+    /// embed becomes a zero vector rather than being dropped. Skipping it used to
+    /// shorten the array, so `DocumentIndexer` saw `vectors.count != chunks.count`
+    /// and threw away the vectors for the WHOLE document because of one bad chunk.
+    /// A zero vector is inert — `cosineSimilarity` returns 0 for zero magnitude.
     static func embed(_ texts: [String], language: NLLanguage) -> Embeddings {
         guard !texts.isEmpty else { return Embeddings(kind: .none, dimension: 0, vectors: []) }
 
         if let embedding = contextualEmbedding(for: language) {
-            var vectors: [[Float]] = []
+            var rows: [[Float]] = []
             var dimension = 0
             for text in texts {
-                guard let vector = contextualVector(for: text, language: language, using: embedding) else { continue }
-                dimension = vector.count
-                vectors.append(vector)
+                let vector = contextualVector(for: text, language: language, using: embedding) ?? []
+                if !vector.isEmpty { dimension = vector.count }
+                rows.append(vector)
             }
-            if !vectors.isEmpty {
-                return Embeddings(kind: .contextual, dimension: dimension, vectors: vectors)
+            if dimension > 0 {
+                return Embeddings(kind: .contextual, dimension: dimension, vectors: aligned(rows, dimension: dimension))
             }
         }
 
         if let embedding = NLEmbedding.sentenceEmbedding(for: language) {
-            let vectors = texts.compactMap { text -> [Float]? in
-                guard let vector = embedding.vector(for: text) else { return nil }
-                return vector.map(Float.init)
+            var rows: [[Float]] = []
+            var dimension = 0
+            for text in texts {
+                let vector = embedding.vector(for: text).map { $0.map(Float.init) } ?? []
+                if !vector.isEmpty { dimension = vector.count }
+                rows.append(vector)
             }
-            if !vectors.isEmpty {
-                return Embeddings(kind: .sentence, dimension: vectors[0].count, vectors: vectors)
+            if dimension > 0 {
+                return Embeddings(kind: .sentence, dimension: dimension, vectors: aligned(rows, dimension: dimension))
             }
         }
 
         return Embeddings(kind: .none, dimension: 0, vectors: [])
+    }
+
+    /// Pads or truncates every row to `dimension` so row *i* always belongs to text *i*.
+    /// Internal rather than private so the alignment invariant is unit-testable
+    /// without the NaturalLanguage embedding assets.
+    static func aligned(_ rows: [[Float]], dimension: Int) -> [[Float]] {
+        rows.map { row in
+            if row.count == dimension { return row }
+            if row.count > dimension { return Array(row.prefix(dimension)) }
+            return row + [Float](repeating: 0, count: dimension - row.count)
+        }
     }
 
     /// Embeds a query with the same kind a document was indexed with. Returns nil
