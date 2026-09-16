@@ -27,7 +27,7 @@ enum DocumentExtractionService {
     ]
     private static let maxExtractedCharacters = 20_000
 
-    static func attachment(from url: URL) throws -> ChatAttachment {
+    static func attachment(from url: URL) async throws -> ChatAttachment {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer {
             if didStartAccessing {
@@ -44,12 +44,21 @@ enum DocumentExtractionService {
             let pageText = (0..<document.pageCount)
                 .compactMap { document.page(at: $0)?.string }
                 .joined(separator: "\n\n")
+            let resolved = await resolveTextLayer(pageText) {
+                var recognized: [String] = []
+                for index in 0..<document.pageCount {
+                    guard let page = document.page(at: index) else { continue }
+                    let text = await DocumentTextRecognizer.text(in: page)
+                    if !text.isEmpty { recognized.append(text) }
+                }
+                return recognized.joined(separator: "\n\n")
+            }
             return ChatAttachment(
                 kind: .pdf,
                 fileName: fileName,
                 mimeType: "application/pdf",
                 rawData: nil,
-                extractedText: truncate(pageText)
+                extractedText: truncate(resolved)
             )
         }
 
@@ -80,7 +89,7 @@ enum DocumentExtractionService {
     /// Page-addressable extraction for the document library. PDFs keep one entry
     /// per page so chunks can carry their page number; everything else is a
     /// single "page".
-    static func libraryPages(from url: URL) throws -> (fileName: String, kind: ChatAttachment.Kind, pages: [String]) {
+    static func libraryPages(from url: URL) async throws -> (fileName: String, kind: ChatAttachment.Kind, pages: [String]) {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer {
             if didStartAccessing { url.stopAccessingSecurityScopedResource() }
@@ -100,7 +109,15 @@ enum DocumentExtractionService {
 
         if type?.conforms(to: .pdf) == true {
             guard let document = PDFDocument(url: url) else { throw DocumentExtractionError.unreadableFile }
-            let pages = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.map(capped)
+            var pages: [String] = []
+            for index in 0..<document.pageCount {
+                guard let page = document.page(at: index) else { continue }
+                let textLayer = page.string ?? ""
+                let resolved = await resolveTextLayer(textLayer) {
+                    await DocumentTextRecognizer.text(in: page)
+                }
+                pages.append(capped(resolved))
+            }
             return (fileName, .pdf, pages)
         }
 
@@ -122,7 +139,11 @@ enum DocumentExtractionService {
     /// rejects the request outright). Callers pass
     /// `InferenceBudget.documentContextBudget(for:)`; the default preserves the
     /// historical 20,000-character cap.
-    static func promptContext(from attachments: [ChatAttachment], maxCharacters: Int = maxExtractedCharacters) -> String {
+    static func promptContext(
+        from attachments: [ChatAttachment],
+        maxCharacters: Int = maxExtractedCharacters,
+        query: String = ""
+    ) -> String {
         let header = "\n\nAttached document context:\n"
         // Leave room for the header and the per-document label.
         var remaining = max(0, maxCharacters - header.count)
@@ -139,13 +160,30 @@ enum DocumentExtractionService {
             guard label.count < remaining else { continue }
             remaining -= label.count
 
-            let body = text.count <= remaining ? text : String(text.prefix(remaining))
+            let body = DocumentExcerptBuilder.excerpt(from: text, maxCharacters: remaining, query: query)
             remaining -= body.count
             documentBlocks.append(label + body)
         }
 
         guard !documentBlocks.isEmpty else { return "" }
         return header + documentBlocks.joined(separator: "\n\n")
+    }
+
+    /// Uses the embedded text layer when it has real content and falls back to
+    /// on-device OCR otherwise (scans and photos of documents have no text layer).
+    private static func resolveTextLayer(_ textLayer: String, ocr: () async -> String) async -> String {
+        let trimmed = textLayer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count < DocumentTextRecognizer.minimumTextLayerCharacters else { return textLayer }
+
+        let recognized = (await ocr()).trimmingCharacters(in: .whitespacesAndNewlines)
+        return recognized.isEmpty ? textLayer : recognized
+    }
+
+    /// True when an attachment carries no usable text even after OCR.
+    static func hasNoReadableText(_ attachment: ChatAttachment) -> Bool {
+        guard attachment.kind != .image else { return false }
+        let text = attachment.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty
     }
 
     private static func readText(_ url: URL) throws -> String {

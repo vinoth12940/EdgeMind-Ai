@@ -510,9 +510,23 @@ extension ChatTurnEngine {
         // unbounded PDF overflows small-context runtimes such as LiteRT-LM.
         let documentContext = DocumentExtractionService.promptContext(
             from: attachments,
-            maxCharacters: InferenceBudget.documentContextBudget(for: model)
+            maxCharacters: InferenceBudget.documentContextBudget(for: model),
+            // Bias long documents toward the part that answers this question
+            // rather than always keeping the opening text.
+            query: trimmedPrompt
         )
         let inferencePrompt = documentContext.isEmpty ? trimmedPrompt : "\(trimmedPrompt)\n\n\(documentContext)"
+
+        // Tell the user when an attached document contributed nothing, instead
+        // of silently answering as if no document were attached.
+        let unreadableNames = attachments
+            .filter(DocumentExtractionService.hasNoReadableText)
+            .map(\.fileName)
+        if !unreadableNames.isEmpty {
+            output.appendNotice(
+                "⚠️ Couldn't read any text from \(unreadableNames.joined(separator: ", ")). If it's a scan or photo, the words may not be machine-readable."
+            )
+        }
 
         let effectiveImageData = ChatVisionContext.inheritedImageData(
             explicitImageData: jpegData,

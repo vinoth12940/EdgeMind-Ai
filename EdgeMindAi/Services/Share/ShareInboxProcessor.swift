@@ -48,7 +48,7 @@ enum ShareInboxProcessor {
                 }
                 // Also inline the extracted text so the first turn has context
                 // without a tool round-trip.
-                if let attachment = try? DocumentExtractionService.attachment(from: fileURL),
+                if let attachment = try? await DocumentExtractionService.attachment(from: fileURL),
                    let text = attachment.extractedText,
                    !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     outcome.attachments.append(ChatAttachment(

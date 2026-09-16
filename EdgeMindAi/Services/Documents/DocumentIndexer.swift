@@ -25,10 +25,10 @@ actor DocumentIndexer {
     }
 
     /// Indexes a file URL end to end.
-    func index(fileURL: URL) throws -> Result {
+    func index(fileURL: URL) async throws -> Result {
         let extracted: (fileName: String, kind: ChatAttachment.Kind, pages: [String])
         do {
-            extracted = try DocumentExtractionService.libraryPages(from: fileURL)
+            extracted = try await DocumentExtractionService.libraryPages(from: fileURL)
         } catch {
             throw IndexError.unreadable(error.localizedDescription)
         }

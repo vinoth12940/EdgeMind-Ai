@@ -445,7 +445,7 @@ private extension View {
                     guard let url = urls.first else { return }
                     Task {
                         do {
-                            let attachment = try DocumentExtractionService.attachment(from: url)
+                            let attachment = try await DocumentExtractionService.attachment(from: url)
                             await MainActor.run {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     attachedDocuments.wrappedValue.append(attachment)
