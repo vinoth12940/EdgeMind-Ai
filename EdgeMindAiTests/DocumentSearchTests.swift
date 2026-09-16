@@ -216,4 +216,33 @@ final class DocumentSearchTests: XCTestCase {
 
         XCTAssertTrue(result.output.hasPrefix("Error:"))
     }
+
+    // MARK: - Argument shapes
+    //
+    // Apple Intelligence sends a BARE STRING for arguments
+    // (`{"name": "search_documents", "arguments": "vacation policy"}`). Missing that
+    // case made every Apple Intelligence document search fail with a "query
+    // required" error, so the model told the user to upload the document instead.
+
+    func test_extractQuery_toleratesEveryModelShape() {
+        // Flat top-level key.
+        XCTAssertEqual(SearchDocumentsTool.extractQuery(#"{"query":"vacation policy"}"#), "vacation policy")
+        // Nested arguments object.
+        XCTAssertEqual(SearchDocumentsTool.extractQuery(#"{"arguments":{"query":"vacation policy"}}"#), "vacation policy")
+        // JSON encoded as a string.
+        XCTAssertEqual(
+            SearchDocumentsTool.extractQuery(#"{"arguments":"{\"query\":\"vacation policy\"}"}"#),
+            "vacation policy"
+        )
+        // Bare value inside a JSON envelope.
+        XCTAssertEqual(SearchDocumentsTool.extractQuery(#"{"arguments":"vacation policy"}"#), "vacation policy")
+        // Bare string — the Apple Intelligence shape.
+        XCTAssertEqual(SearchDocumentsTool.extractQuery("vacation policy"), "vacation policy")
+    }
+
+    func test_extractQuery_rejectsEmptyOrUnrelated() {
+        XCTAssertNil(SearchDocumentsTool.extractQuery(""))
+        XCTAssertNil(SearchDocumentsTool.extractQuery("{}"))
+        XCTAssertNil(SearchDocumentsTool.extractQuery(#"{"arguments":""}"#))
+    }
 }

@@ -630,10 +630,16 @@ extension ChatTurnEngine {
                         : nil
                 )
                 let availableTools = ToolRegistry.availableTools(context: toolContext)
-                if modelCanUseToolLoop && searchContext == nil && !availableTools.isEmpty {
+                // A greeting or small talk gets no tool section at all. Advertising
+                // calculate/time/device/battery on every turn made small models
+                // invoke them in response to "hi" instead of just replying.
+                let isSocialTurn = UpfrontToolDetector.isSocialOnly(prompt: trimmedPrompt)
+                if modelCanUseToolLoop && searchContext == nil && !availableTools.isEmpty && !isSocialTurn {
                     let section = ToolRegistry.renderPromptSection(for: availableTools)
                     systemPromptForInference += section
                     chatEngineLogger.log("Tool definitions injected: \(availableTools.map { $0.name }.joined(separator: ", "), privacy: .public)")
+                } else if isSocialTurn && modelCanUseToolLoop {
+                    chatEngineLogger.log("Social prompt — tool definitions skipped")
                 } else if searchContext != nil {
                     chatEngineLogger.log("Upfront search provided results — tool definition skipped to save context window")
                 } else if !modelCanUseToolLoop && effectiveImageData == nil {

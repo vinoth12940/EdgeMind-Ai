@@ -228,4 +228,39 @@ final class ToolRegistryTests: XCTestCase {
         XCTAssertTrue(UpfrontToolDetector.canHandleLocally(prompt: "What does my document say about vacation?"))
         XCTAssertTrue(UpfrontToolDetector.canHandleLocally(prompt: "Summarize the PDF I attached"))
     }
+
+    // MARK: - Social-prompt gate (tools must not fire on "hi")
+
+    func test_socialPromptsAreDetected() {
+        for prompt in ["hi", "Hi!", "hello", "hey there", "Hello!", "thanks",
+                       "thank you", "good morning", "how are you?", "what can you do",
+                       "ok", "cool", "test"] {
+            XCTAssertTrue(UpfrontToolDetector.isSocialOnly(prompt: prompt),
+                          "\"\(prompt)\" should be treated as social-only")
+        }
+    }
+
+    func test_realRequestsAreNotSocial() {
+        for prompt in ["What is 47 * 89?", "what time is it",
+                       "What does my document say about vacation?",
+                       "Summarize the PDF I attached", "who won the game last night",
+                       "Write me a poem about the ocean",
+                       "explain quantum tunnelling in detail"] {
+            XCTAssertFalse(UpfrontToolDetector.isSocialOnly(prompt: prompt),
+                           "\"\(prompt)\" carries real intent and must keep its tools")
+        }
+    }
+
+    /// A greeting that also asks a real question must NOT be suppressed.
+    func test_greetingWithQuestionKeepsTools() {
+        XCTAssertFalse(UpfrontToolDetector.isSocialOnly(prompt: "hi, what time is it?"))
+        XCTAssertFalse(UpfrontToolDetector.isSocialOnly(prompt: "hello, calculate 12 * 12"))
+    }
+
+    /// The rendered section must actively tell the model not to use tools for small talk.
+    func test_promptSectionForbidsGreetingToolCalls() {
+        let section = ToolRegistry.renderPromptSection(for: ToolRegistry.allTools)
+        XCTAssertTrue(section.contains("Do NOT call a tool for greetings"),
+                      "the tool section must explicitly forbid greeting tool calls")
+    }
 }

@@ -72,7 +72,7 @@ enum ToolRegistry {
         lines.append("")
         lines.append("# Tools")
         lines.append("")
-        lines.append("You have access to the following tools. Call one when it would help answer the user's request. Each tool returns its result, which you will see in your context on the next turn.")
+        lines.append("You have access to the following tools. Call one ONLY when the user's request genuinely needs information you do not already have. Each tool returns its result, which you will see in your context on the next turn.")
         lines.append("")
 
         for tool in tools {
@@ -88,7 +88,9 @@ enum ToolRegistry {
         lines.append("</tool_call>")
         lines.append("")
         lines.append("Rules:")
+        lines.append("- Do NOT call a tool for greetings, thanks, small talk, or anything you can already answer. Just reply normally.")
         lines.append("- Call a tool only when it gives you information you genuinely need and do not already have.")
+        lines.append("- Being offered a tool is not a reason to use it.")
         lines.append("- Output ONLY the tool-call block when you call a tool. Do not add narration around it.")
         lines.append("- Call at most ONE tool per response. After a tool result arrives, answer the user or call another tool.")
         lines.append("- If a tool returns an error, explain it briefly and answer from your own knowledge if you can.")

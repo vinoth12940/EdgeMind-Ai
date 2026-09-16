@@ -109,6 +109,46 @@ enum UpfrontToolDetector {
         return result.output
     }
 
+    // MARK: - Social-prompt gate
+
+    /// True when the prompt is purely social — a greeting, thanks, or small talk —
+    /// and therefore needs no tools at all.
+    ///
+    /// `ToolRegistry.availableTools` advertises `calculate`, `get_current_time`,
+    /// `get_device_info` and `get_battery_level` on every turn. Small models take
+    /// that as an invitation and call `get_current_time`/`calculate` in response to
+    /// "hi" instead of just replying, so the tool section is suppressed for turns
+    /// that carry no real request.
+    ///
+    /// Deliberately exact-match and length-bounded: anything carrying genuine
+    /// intent ("hi, what time is it?") falls through to the normal tool path.
+    static func isSocialOnly(prompt: String) -> Bool {
+        let normalized = prompt
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+            .split(separator: " ")
+            .joined(separator: " ")
+        guard !normalized.isEmpty, normalized.count <= 30 else { return false }
+
+        // Never suppress tools when the prompt maps to a local tool.
+        if canHandleLocally(prompt: prompt) { return false }
+
+        return socialPhrases.contains(normalized)
+    }
+
+    private static let socialPhrases: Set<String> = [
+        "hi", "hii", "hiii", "hey", "hey there", "hello", "hello there", "yo",
+        "howdy", "hiya", "sup", "greetings",
+        "good morning", "good afternoon", "good evening", "good night",
+        "thanks", "thank you", "thanks a lot", "thank you so much", "thx", "ty",
+        "cheers", "ok", "okay", "k", "cool", "nice", "great", "awesome",
+        "sounds good", "got it", "alright",
+        "how are you", "how are you doing", "hows it going", "how is it going",
+        "whats up", "what is up", "how have you been",
+        "who are you", "what are you", "what can you do",
+        "test", "testing"
+    ]
+
     // MARK: - Intent matching (deliberately conservative to avoid false positives)
 
     private static func matchesTimeIntent(_ s: String) -> Bool {

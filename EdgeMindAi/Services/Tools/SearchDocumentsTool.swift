@@ -60,15 +60,46 @@ struct SearchDocumentsTool: Tool {
         )
     }
 
+    /// Extracts the query from any shape models emit, mirroring
+    /// `WebSearchTool.extractQuery`: a flat `{"query": "…"}`, a nested
+    /// `{"arguments": {"query": "…"}}`, a JSON-encoded `arguments` string, or a
+    /// BARE STRING — which is what Apple Intelligence sends
+    /// (`{"name": "search_documents", "arguments": "vacation policy"}`).
+    ///
+    /// The bare-string case was missing here even though every sibling tool
+    /// handles it, so Apple Intelligence document search always failed with
+    /// "A non-empty 'query' argument is required." and the model fell back to
+    /// telling the user to upload the document.
     static func extractQuery(_ argsJSON: String) -> String? {
-        guard let data = argsJSON.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        let trimmed = argsJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let data = trimmed.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let query = json["query"] as? String, !query.isEmpty {
+                return query.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let query = json["q"] as? String, !query.isEmpty {
+                return query.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let args = json["arguments"] as? [String: Any],
+               let query = args["query"] as? String, !query.isEmpty {
+                return query.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            // String-encoded arguments: {"arguments": "{\"query\":\"…\"}"} or a
+            // bare value: {"arguments": "vacation policy"}.
+            if let argsStr = json["arguments"] as? String, !argsStr.isEmpty {
+                if let argsData = argsStr.data(using: .utf8),
+                   let argsDict = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any],
+                   let query = argsDict["query"] as? String, !query.isEmpty {
+                    return query.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return argsStr.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             return nil
         }
-        if let query = json["query"] as? String { return query.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if let args = json["arguments"] as? [String: Any], let query = args["query"] as? String {
-            return query.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return nil
+
+        // Bare string fallback: the model sent the raw query, not JSON.
+        return trimmed
     }
 }
