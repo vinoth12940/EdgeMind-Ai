@@ -42,8 +42,16 @@ struct DocumentVectors {
         let count = Int(data.readLittleEndianUInt32(at: 4))
         let kind = Self.kind(for: data[data.startIndex + 8])
         guard dimension > 0, count >= 0 else { return nil }
-        let expected = Self.headerByteCount + count * dimension * 4
-        guard data.count >= expected else { return nil }
+
+        // Guard the arithmetic: a corrupt header can hold UInt32.max in both fields,
+        // and `count * dimension * 4` would TRAP (crash) instead of failing this
+        // failable initializer, taking the app down on a malformed .vectors.bin.
+        let (rowBytes, rowOverflow) = count.multipliedReportingOverflow(by: dimension)
+        guard !rowOverflow else { return nil }
+        let (payloadBytes, byteOverflow) = rowBytes.multipliedReportingOverflow(by: 4)
+        guard !byteOverflow else { return nil }
+        let (expected, sumOverflow) = Self.headerByteCount.addingReportingOverflow(payloadBytes)
+        guard !sumOverflow, data.count >= expected else { return nil }
 
         self.kind = kind
         self.dimension = dimension

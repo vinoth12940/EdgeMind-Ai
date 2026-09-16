@@ -38,11 +38,18 @@ final class DocumentLibraryStore {
     }
 
     func chunks(for id: UUID) -> [DocumentChunk] {
-        guard let data = try? Data(contentsOf: chunksURL(for: id)),
-              let chunks = try? JSONDecoder().decode([DocumentChunk].self, from: data) else {
+        do {
+            let data = try Data(contentsOf: chunksURL(for: id))
+            return try JSONDecoder().decode([DocumentChunk].self, from: data)
+        } catch {
+            // Swallowing this silently made a single unreadable chunk file look like
+            // "the library is empty", which the model then reports to the user as
+            // "upload the document". Log it so the failure is diagnosable.
+            libraryLogger.error(
+                "Failed to read chunks for \(id.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
             return []
         }
-        return chunks
     }
 
     func vectors(for id: UUID) -> DocumentVectors? {

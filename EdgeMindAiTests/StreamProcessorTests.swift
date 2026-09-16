@@ -487,4 +487,43 @@ final class StreamProcessorTests: XCTestCase {
     func test_flatPayload_withNoArguments_staysEmptyObject() {
         XCTAssertEqual(StreamProcessor.argumentsJSON(from: ["name": "get_current_time"]), "{}")
     }
+
+    /// A JSON-encoded scalar kept its quotes, so `calculate` failed on an expression
+    /// the model had actually sent correctly.
+    func test_toolArguments_quotedScalarIsUnwrapped() {
+        XCTAssertEqual(StreamProcessor.argumentsJSON(from: ["arguments": "\"6*7\""]), "6*7")
+    }
+
+    /// Non-string/non-object arguments used to collapse to "{}", losing the value.
+    func test_toolArguments_numericArgumentIsPreserved() {
+        XCTAssertEqual(StreamProcessor.argumentsJSON(from: ["arguments": 5]), "5")
+    }
+
+    /// A well-formed tool call whose closing tag never arrived must still be dispatched.
+    /// It used to be flushed as assistant prose, which turned a real tool call into a
+    /// wrong answer (the old post-stream recovery only knew how to rescue web_search).
+    func test_toolCall_missingCloseTag_stillParsed() async throws {
+        let events = await process(tokens: [
+            #"<tool_call>{"name":"calculate","arguments":{"expression":"6*7"}}"#
+        ])
+
+        guard case .toolCall(let name, let argsJSON)? = events.first(where: {
+            if case .toolCall = $0 { return true }
+            return false
+        }) else {
+            return XCTFail("a truncated but well-formed tool call must not degrade to prose: \(events)")
+        }
+
+        XCTAssertEqual(name, "calculate")
+        XCTAssertEqual(CalculateTool.extractExpression(argsJSON), "6*7")
+    }
+
+    /// Garbage in an unterminated block still degrades to text (no false tool calls).
+    func test_toolCall_missingCloseTag_badJSON_stillText() async throws {
+        let events = await process(tokens: ["<tool_call>", "not json at all"])
+
+        XCTAssertFalse(events.contains { if case .toolCall = $0 { return true }; return false })
+        let text = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertTrue(text.contains("not json at all"), "the raw text must not be swallowed: \(text)")
+    }
 }

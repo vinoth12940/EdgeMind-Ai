@@ -48,8 +48,17 @@ enum UpfrontToolDetector {
             results.append(r)
         }
 
-        // search_documents — when the prompt clearly refers to the user's own library.
-        if matchesDocumentIntent(lowered),
+        // search_documents — when the prompt refers to the user's library, OR is a
+        // question the library could answer.
+        //
+        // The phrase list alone was far too narrow: for the 24 catalog models without
+        // the tool loop this is the ONLY route to the library, so a natural question
+        // ("What does the contract say about termination?") matched no phrase, no
+        // search ran, and the model told the user to upload the document. Irrelevant
+        // questions are still filtered, because a search with no matching terms
+        // returns no hits and nothing is injected.
+        if !isSocialOnly(prompt: prompt),
+           matchesDocumentIntent(lowered) || looksLikeContentQuestion(lowered),
            context.settings.documentSearchEnabled,
            let index = context.documentSearchIndex,
            !index.isEmpty {
@@ -120,21 +129,40 @@ enum UpfrontToolDetector {
     /// "hi" instead of just replying, so the tool section is suppressed for turns
     /// that carry no real request.
     ///
-    /// Deliberately exact-match and length-bounded: anything carrying genuine
-    /// intent ("hi, what time is it?") falls through to the normal tool path.
+    /// Deliberately conservative: anything carrying genuine intent
+    /// ("hi, what time is it?", "hey can you search for X") falls through to the
+    /// normal tool path.
     static func isSocialOnly(prompt: String) -> Bool {
         let normalized = prompt
             .lowercased()
             .filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
             .split(separator: " ")
             .joined(separator: " ")
-        guard !normalized.isEmpty, normalized.count <= 30 else { return false }
+        guard !normalized.isEmpty, normalized.count <= 40 else { return false }
 
         // Never suppress tools when the prompt maps to a local tool.
         if canHandleLocally(prompt: prompt) { return false }
 
-        return socialPhrases.contains(normalized)
+        if socialPhrases.contains(normalized) { return true }
+
+        // A greeting followed only by filler ("hi there", "hello everyone",
+        // "hey edge mind"). The remainder must be *entirely* filler, so
+        // "hey can you help me" keeps its tools rather than being swallowed.
+        let words = normalized.split(separator: " ").map(String.init)
+        guard let first = words.first, greetingOpeners.contains(first) else { return false }
+        let remainder = words.dropFirst()
+        return remainder.allSatisfy { greetingFillers.contains($0) }
     }
+
+    private static let greetingOpeners: Set<String> = [
+        "hi", "hii", "hiii", "hey", "hello", "yo", "howdy", "hiya", "sup",
+        "greetings", "thanks", "thx", "ty", "cheers"
+    ]
+
+    private static let greetingFillers: Set<String> = [
+        "there", "you", "all", "everyone", "everybody", "guys", "team",
+        "friend", "buddy", "mate", "edge", "mind", "ai", "again", "too"
+    ]
 
     private static let socialPhrases: Set<String> = [
         "hi", "hii", "hiii", "hey", "hey there", "hello", "hello there", "yo",
@@ -144,8 +172,8 @@ enum UpfrontToolDetector {
         "cheers", "ok", "okay", "k", "cool", "nice", "great", "awesome",
         "sounds good", "got it", "alright",
         "how are you", "how are you doing", "hows it going", "how is it going",
-        "whats up", "what is up", "how have you been",
-        "who are you", "what are you", "what can you do",
+        "whats up", "what is up", "how have you been", "nice to meet you",
+        "who are you", "what are you", "what can you do", "what do you do",
         "test", "testing"
     ]
 
@@ -175,6 +203,27 @@ enum UpfrontToolDetector {
                         "in my notes", "from my notes", "in my files", "my library",
                         "the file i", "uploaded file"]
         return keywords.contains { s.contains($0) }
+    }
+
+    /// True when the prompt is a question or content request the on-device document
+    /// library could plausibly answer, even without naming "document".
+    ///
+    /// Used ONLY to widen the document search. It deliberately does not feed
+    /// `canHandleLocally`, which would otherwise suppress upfront web search for
+    /// every question. Irrelevant questions cost nothing: a search with no matching
+    /// terms returns no hits, so nothing is injected.
+    private static func looksLikeContentQuestion(_ s: String) -> Bool {
+        let words = s.split(separator: " ").map(String.init)
+        guard words.count >= 3 else { return false }
+        if s.contains("?") { return true }
+        let openers: Set<String> = [
+            "what", "how", "why", "when", "where", "which", "who", "whose",
+            "can", "could", "does", "do", "did", "is", "are", "was", "were",
+            "should", "would", "explain", "summarize", "summarise", "describe",
+            "tell", "outline", "compare", "find", "show"
+        ]
+        guard let first = words.first else { return false }
+        return openers.contains(first)
     }
 
     private static func matchesBatteryIntent(_ s: String) -> Bool {

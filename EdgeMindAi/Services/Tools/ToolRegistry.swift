@@ -104,6 +104,21 @@ enum ToolRegistry {
         guard let tool = allTools.first(where: { $0.name.lowercased() == name.lowercased() }) else {
             return nil
         }
+
+        // Only run tools that were actually offered for this turn. `availableTools`
+        // exists so the model "can't call" a gated tool, but dispatch previously ran
+        // anything in `allTools` — so a model could invoke `search_documents` with the
+        // feature switched off, or `search_chats` with no history, and burn one of the
+        // three loop iterations on a guaranteed failure.
+        let offered = availableTools(context: context)
+            .contains { $0.name.lowercased() == tool.name.lowercased() }
+        guard offered else {
+            return .error(
+                toolName: tool.name,
+                message: "The \(tool.name) tool is not available in this conversation."
+            )
+        }
+
         return await tool.run(argsJSON: argsJSON, context: context)
     }
 }

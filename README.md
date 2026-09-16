@@ -339,7 +339,7 @@ Profile details are shown in **Settings → Profile**. Session is persisted loca
 | Apple Foundation Models | 1 |
 | AI Labs | 10 |
 | Search providers | 4 |
-| Unit tests | 472 XCTest test cases covering hardware tiering, device capabilities, catalog consistency, runtime profiles, streaming, memory guards, the chat turn engine, answer versions, chat export, model suggestions, personal memory, document search, share import, prompt budgeting, OCR fallback, Foundation Models, and agentic tools |
+| Unit tests | 482 XCTest test cases covering hardware tiering, device capabilities, catalog consistency, runtime profiles, streaming, memory guards, the chat turn engine, answer versions, chat export, model suggestions, personal memory, document search, share import, prompt budgeting, OCR fallback, Foundation Models, and agentic tools |
 | Bundle ID | `com.vinothrajalingam.EdgeMindAi` |
 | Min deployment target | iOS 17.0 |
 | Color scheme | Adaptive Light / Dark via AppTheme |

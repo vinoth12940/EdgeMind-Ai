@@ -234,10 +234,66 @@ final class ToolRegistryTests: XCTestCase {
     func test_socialPromptsAreDetected() {
         for prompt in ["hi", "Hi!", "hello", "hey there", "Hello!", "thanks",
                        "thank you", "good morning", "how are you?", "what can you do",
-                       "ok", "cool", "test"] {
+                       "ok", "cool", "test",
+                       // Greeting + filler variants the exact-match list used to miss.
+                       "Hi there!", "hello everyone", "hey you", "hello edge mind",
+                       "hey buddy", "yo team"] {
             XCTAssertTrue(UpfrontToolDetector.isSocialOnly(prompt: prompt),
                           "\"\(prompt)\" should be treated as social-only")
         }
+    }
+
+    /// A greeting followed by a real request must keep its tools — the filler rule
+    /// only applies when the entire remainder is filler.
+    func test_greetingFollowedByRequestIsNotSocial() {
+        for prompt in ["hey can you help me write a poem", "hi can you search the web",
+                       "hello please summarize my document"] {
+            XCTAssertFalse(UpfrontToolDetector.isSocialOnly(prompt: prompt),
+                           "\"\(prompt)\" is a request and must keep its tools")
+        }
+    }
+
+    // MARK: - dispatch honours the per-turn tool gate
+
+    func test_dispatchRefusesToolThatWasNotOffered() async {
+        var settings = AppSettings.default
+        settings.documentSearchEnabled = false
+        let ctx = ToolContext(
+            settings: settings,
+            conversation: [],
+            chatSessions: [],
+            attachedDocuments: [],
+            installedModel: nil,
+            documentSearchIndex: .empty
+        )
+
+        let result = await ToolRegistry.dispatch(
+            name: "search_documents",
+            argsJSON: #"{"query":"x"}"#,
+            context: ctx
+        )
+
+        XCTAssertNotNil(result, "a known-but-gated tool should report an error, not vanish")
+        XCTAssertTrue(result?.output.contains("not available") == true,
+                      "a gated tool must not run; got \(result?.output ?? "nil")")
+    }
+
+    func test_dispatchStillRunsOfferedTools() async {
+        let ctx = ToolContext(
+            settings: .default,
+            conversation: [],
+            chatSessions: [],
+            attachedDocuments: [],
+            installedModel: nil
+        )
+
+        let result = await ToolRegistry.dispatch(
+            name: "calculate",
+            argsJSON: #"{"expression":"6*7"}"#,
+            context: ctx
+        )
+
+        XCTAssertEqual(result?.output, "Result: 42")
     }
 
     func test_realRequestsAreNotSocial() {

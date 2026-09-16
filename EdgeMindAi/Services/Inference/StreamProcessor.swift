@@ -344,7 +344,27 @@ actor StreamProcessor {
                (try? JSONSerialization.jsonObject(with: data)) is [String: Any] {
                 return trimmed
             }
+            // A JSON-encoded scalar or array, e.g. `"\"6*7\""` or `"[\"a\"]"`. Passing
+            // these through verbatim kept the quotes, so `calculate` failed with
+            // `unexpectedCharacter("\"")` on an expression the model had sent correctly.
+            if trimmed.hasPrefix("\"") || trimmed.hasPrefix("["),
+               let data = trimmed.data(using: .utf8),
+               let decoded = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
+                if let decodedString = decoded as? String { return decodedString }
+                if let encoded = try? JSONSerialization.data(withJSONObject: decoded),
+                   let text = String(data: encoded, encoding: .utf8) {
+                    return text
+                }
+            }
             return trimmed
+        }
+
+        // Non-string, non-object arguments (a number, boolean, or array). Serialize the
+        // value so the tool's own raw-string fallback can interpret it, instead of
+        // handing back "{}" and reporting a missing argument.
+        if let data = try? JSONSerialization.data(withJSONObject: arguments, options: [.fragmentsAllowed]),
+           let text = String(data: data, encoding: .utf8) {
+            return text
         }
 
         return "{}"
@@ -681,9 +701,21 @@ private struct ParserState {
             thinkBuffer = ""
             thinkMode = nil
             thinkStart = nil
-        } else if let toolCallBuffer {
-            _ = emit(.textDelta(toolCallBuffer))
-            self.toolCallBuffer = nil
+        }
+
+        // A tool-call block that never saw its closing tag. The model usually did emit
+        // complete arguments, so try to PARSE it before giving up — flushing it as prose
+        // silently turned a real tool call into a wrong answer, and the post-stream
+        // recovery path only knew how to rescue `web_search`. This also covers a call
+        // that was opened inside a think block, which the old `else if` dropped entirely.
+        if let buffered = toolCallBuffer {
+            toolCallBuffer = nil
+            if !toolCallFired, let parsed = StreamProcessor.parseToolCall(buffered) {
+                toolCallFired = true
+                _ = emit(.toolCall(name: parsed.name, argsJSON: parsed.argsJSON))
+            } else if !buffered.isEmpty {
+                _ = emit(.textDelta(buffered))
+            }
         }
 
         if !lineBuffer.isEmpty {

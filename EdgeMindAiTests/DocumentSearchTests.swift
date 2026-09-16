@@ -175,6 +175,69 @@ final class DocumentSearchTests: XCTestCase {
         XCTAssertNil(DocumentVectors(contentsOf: url))
     }
 
+    /// A corrupt header with UInt32.max in both fields used to trap on
+    /// `count * dimension * 4` and crash the app instead of failing init.
+    func test_vectorsFileWithOverflowingHeader_isRejectedNotCrashing() throws {
+        let url = directory.appendingPathComponent("overflow.bin")
+        try Data([
+            0xFF, 0xFF, 0xFF, 0xFF,   // dimension = UInt32.max
+            0xFF, 0xFF, 0xFF, 0xFF,   // count = UInt32.max
+            0x02                      // kind tag
+        ]).write(to: url)
+
+        XCTAssertNil(DocumentVectors(contentsOf: url),
+                     "an overflowing header must fail the failable init, not trap")
+    }
+
+    // MARK: library reachability for non-tool models
+
+    /// 24 of the 46 catalog models have no tool loop, so the upfront detector is their
+    /// only route to the document library. The 16-phrase literal gate meant a natural
+    /// question reached nothing and the model told the user to upload the document.
+    func test_upfrontDocumentSearch_firesOnNaturalQuestionWithoutDocumentKeyword() async {
+        let doc = document("contract.pdf")
+        let index = DocumentSearchIndex(entries: [
+            entry(doc, chunks: [("Termination: either party may end this agreement with 30 days written notice.", nil)])
+        ])
+        let context = ToolContext(
+            settings: .default,
+            conversation: [],
+            chatSessions: [],
+            attachedDocuments: [],
+            installedModel: nil,
+            documentSearchIndex: index
+        )
+
+        let results = await UpfrontToolDetector.detectAndRun(
+            prompt: "What does the contract say about termination?",
+            context: context
+        )
+
+        XCTAssertTrue(results.contains { $0.toolName == "search_documents" },
+                      "a natural question must reach the library; got \(results.map(\.toolName))")
+    }
+
+    /// A greeting must not drag the whole library into the prompt.
+    func test_upfrontDocumentSearch_doesNotFireOnGreeting() async {
+        let doc = document("contract.pdf")
+        let index = DocumentSearchIndex(entries: [
+            entry(doc, chunks: [("Either party may terminate with 30 days written notice.", nil)])
+        ])
+        let context = ToolContext(
+            settings: .default,
+            conversation: [],
+            chatSessions: [],
+            attachedDocuments: [],
+            installedModel: nil,
+            documentSearchIndex: index
+        )
+
+        let results = await UpfrontToolDetector.detectAndRun(prompt: "hi", context: context)
+
+        XCTAssertFalse(results.contains { $0.toolName == "search_documents" },
+                       "a greeting must not trigger a library search")
+    }
+
     // MARK: tool integration
 
     func test_searchDocumentsToolReturnsLabeledPassagesAndCitations() async {

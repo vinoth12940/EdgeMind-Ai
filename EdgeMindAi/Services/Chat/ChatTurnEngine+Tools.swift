@@ -308,16 +308,13 @@ extension ChatTurnEngine {
     static let continuationPrompt = "Continue using the tool result above, then answer the user."
 
     /// Bounds a tool's output text so it can't blow the context budget on small devices.
-    /// Compact devices (A14, 2K context) get a much smaller cap than Pro/Ultra tiers.
+    ///
+    /// Uses the same model-aware character budget as injected document passages.
+    /// `InferenceBudget` is the single source of truth for prompt limits, and the old
+    /// hardcoded tier switch ignored the model's actual context window — LiteRT-LM is
+    /// clamped to 2048 tokens no matter how much RAM the device has.
     static func boundToolOutputForContext(_ output: String, model: InstalledModel) -> String {
-        let tier = DeviceTier.current()
-        let cap: Int
-        switch tier {
-        case .compact:  cap = 400
-        case .standard: cap = 800
-        case .pro:      cap = 1_500
-        case .ultra:    cap = 2_500
-        }
+        let cap = InferenceBudget.documentContextBudget(for: model)
         if output.count <= cap { return output }
         let end = output.index(output.startIndex, offsetBy: cap, limitedBy: output.endIndex) ?? output.endIndex
         return String(output[output.startIndex..<end]) + "\n…[truncated to fit device context]"

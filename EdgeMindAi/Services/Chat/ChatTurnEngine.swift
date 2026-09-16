@@ -528,6 +528,27 @@ extension ChatTurnEngine {
             )
         }
 
+        // Tell the user when library documents are switched on but unsearchable.
+        // Previously an indexing failure was invisible in chat — the model simply
+        // replied "upload the document" and the reason lived only in Settings.
+        if store.settings.documentSearchEnabled, let library = dependencies.documentLibrary {
+            let stalled = library.documents.filter {
+                guard $0.isEnabled else { return false }
+                if case .failed = $0.indexState { return true }
+                return false
+            }
+            if !stalled.isEmpty {
+                output.appendNotice(
+                    "⚠️ \(stalled.count) document\(stalled.count == 1 ? "" : "s") in your library couldn't be indexed (\(stalled.map(\.fileName).joined(separator: ", "))), so \(stalled.count == 1 ? "it" : "they") can't be searched. Try removing and re-importing."
+                )
+            } else if library.documents.contains(where: { $0.isEnabled && $0.isReady }),
+                      library.searchIndex().isEmpty {
+                output.appendNotice(
+                    "⚠️ Your document library couldn't be loaded, so document search is unavailable this turn. Try removing and re-importing the affected files."
+                )
+            }
+        }
+
         let effectiveImageData = ChatVisionContext.inheritedImageData(
             explicitImageData: jpegData,
             prompt: trimmedPrompt,
@@ -734,7 +755,12 @@ extension ChatTurnEngine {
                     case .toolCall(let name, let argsJSON):
                         chatEngineLogger.log("StreamProcessor yielded .toolCall: name=\(name, privacy: .public) argsLen=\(argsJSON.count)")
                         guard modelCanUseToolLoop else {
+                            // The parser consumes the block, so just stopping here left the
+                            // user with an empty answer and no explanation of why. Say so.
                             chatEngineLogger.log("Ignoring tool call: model is not tool-verified")
+                            output.appendNotice(
+                                "⚠️ This model tried to use the \(name) tool, but tool calling isn't verified for it, so it answered without it."
+                            )
                             break
                         }
                         // Multi-tool, multi-step dispatch via the registry. This loop
