@@ -46,7 +46,7 @@ final class DocumentSearchTests: XCTestCase {
                   vectors: (.contextual, [[1, 0], [0, 1]]))
         ])
 
-        let hits = DocumentSearchService.search(query: "zzz", index: index) { _ in [1, 0] }
+        let hits = DocumentSearchService.search(query: "zzz", index: index) { _, _ in [1, 0] }
 
         XCTAssertEqual(hits.count, 1)
         XCTAssertEqual(hits[0].text, "unrelated words")
@@ -61,7 +61,7 @@ final class DocumentSearchTests: XCTestCase {
             entry(vectorDoc, chunks: [("nothing relevant", nil)], vectors: (.sentence, [[1, 0]]))
         ])
 
-        let hits = DocumentSearchService.search(query: "invoice", index: index) { _ in [0, 1] }
+        let hits = DocumentSearchService.search(query: "invoice", index: index) { _, _ in [0, 1] }
 
         let best = try? XCTUnwrap(hits.first)
         XCTAssertEqual(best?.fileName, "notes.txt")
@@ -346,11 +346,37 @@ final class DocumentSearchTests: XCTestCase {
         let hits = DocumentSearchService.search(
             query: "termination",
             index: index,
-            queryVectorProvider: { _ in [0, 1, 0] }
+            queryVectorProvider: { _, _ in [0, 1, 0] }
         )
 
         XCTAssertEqual(hits.first?.text, "termination notice period",
                        "the BM25 match must stay on top; got \(hits.map(\.text))")
+    }
+
+    /// The query must be embedded in the DOCUMENT's language. Using the query's own
+    /// language put the two vectors in different embedding spaces whenever the user
+    /// asked in a different language from the document.
+    func test_queryIsEmbeddedWithTheDocumentsLanguage() {
+        // French document, English query.
+        let doc = document("bail.pdf")
+        let index = DocumentSearchIndex(entries: [
+            entry(doc,
+                  chunks: [("Le présent contrat de location est conclu pour une durée de trois ans. Le locataire doit verser un préavis de résiliation de trente jours avant la date d'échéance prévue par le présent contrat.", nil)],
+                  vectors: (kind: .sentence, rows: [[1, 0, 0]]))
+        ])
+
+        var observedLanguage: String?
+        _ = DocumentSearchService.search(
+            query: "notice period",
+            index: index,
+            queryVectorProvider: { _, language in
+                observedLanguage = language.rawValue
+                return [1, 0, 0]
+            }
+        )
+
+        XCTAssertEqual(observedLanguage, "fr",
+                       "the query must use the document's language; got \(observedLanguage ?? "nil")")
     }
 
     /// A single passage larger than the whole budget used to be appended in full.

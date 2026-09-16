@@ -39,18 +39,33 @@ enum DocumentSearchService {
         query: String,
         index: DocumentSearchIndex,
         limit: Int = defaultLimit,
-        queryVectorProvider: ((DocumentEmbeddingKind) -> [Float]?)? = nil
+        queryVectorProvider: ((DocumentEmbeddingKind, NLLanguage) -> [Float]?)? = nil
     ) -> [DocumentHit] {
         let queryTerms = tokenize(query)
         guard !queryTerms.isEmpty, !index.isEmpty else { return [] }
 
-        let vectorProvider = queryVectorProvider ?? { kind in
-            DocumentEmbedder.embedQuery(query, kind: kind, language: DocumentEmbedder.language(of: query))
+        let vectorProvider = queryVectorProvider ?? { kind, language in
+            DocumentEmbedder.embedQuery(query, kind: kind, language: language)
         }
+
+        // The document was embedded with the language detected from ITS text, so the
+        // query must be embedded with that same language. Using the query's own
+        // language put the two vectors in different embedding spaces whenever the
+        // user asked in a different language from the document — the cosine then
+        // ranked noise, and a real match could fall out of the top results.
+        var languageByDocument: [UUID: NLLanguage] = [:]
 
         // Flatten every chunk so BM25 statistics span the whole library.
         var flat: [(entry: DocumentSearchIndex.Entry, chunk: DocumentChunk, tokens: [String])] = []
         for entry in index.entries {
+            guard let vectors = entry.vectors, !vectors.isEmpty else {
+                for chunk in entry.chunks {
+                    flat.append((entry, chunk, tokenize(chunk.text)))
+                }
+                continue
+            }
+            let sample = String(entry.chunks.map(\.text).joined(separator: "\n").prefix(2_000))
+            languageByDocument[entry.document.id] = DocumentEmbedder.language(of: sample)
             for chunk in entry.chunks {
                 flat.append((entry, chunk, tokenize(chunk.text)))
             }
@@ -67,17 +82,13 @@ enum DocumentSearchService {
 
             if let vectors = item.entry.vectors,
                !vectors.isEmpty,
-               let queryVector = vectorProvider(vectors.kind),
+               let documentLanguage = languageByDocument[item.entry.document.id],
+               let queryVector = vectorProvider(vectors.kind, documentLanguage),
                queryVector.count == vectors.dimension,
                let chunkVector = vectors.vector(at: item.chunk.index) {
                 let cosine = max(0, cosineSimilarity(queryVector, chunkVector))
-                // Never let the vector signal demote a chunk that BM25 matched
-                // strongly. The query is embedded with the *query's* detected
-                // language while the document was embedded with the document's, so
-                // the two vectors can come from different models (or different
-                // spaces at the same dimension) and the cosine is not always
-                // comparable. Blending alone let a meaningless cosine push the real
-                // keyword hit out of the top results.
+                // Belt and braces: even embedded in the right language, a weak vector
+                // signal must never demote a chunk BM25 matched strongly.
                 let blended = 0.7 * cosine + 0.3 * normalizedBM25
                 score = max(normalizedBM25, blended)
             }
