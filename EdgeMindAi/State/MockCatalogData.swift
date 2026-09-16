@@ -17,6 +17,11 @@ enum MockCatalogData {
             diskSize: "System managed",
             contextWindow: "System",
             runtimeType: .foundationModels,
+            // Verified on device (iOS 27 system model advertises .vision):
+            // the prompt carries the image directly. iOS 26 and earlier fall
+            // back to the text-only path, gated by
+            // AppleFoundationModelService.supportsVision.
+            supportsVision: true,
             supportsReasoning: true,
             supportsToolCalling: false,
             runtimeStatus: .recommended,

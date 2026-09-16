@@ -52,6 +52,7 @@
 		40BDC01A9B9CD1F827B62228 /* DeviceTier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99189CA7B4E7023615C009D4 /* DeviceTier.swift */; };
 		4394565838CF19BF67D40D6C /* DocumentExcerptBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F8A1E8D8C229F243B2D4E47 /* DocumentExcerptBuilder.swift */; };
 		43BD38EC1D97F1B7FD74AFAF /* WebSearchToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF8321C1315921B4DA44BC0C /* WebSearchToolTests.swift */; };
+		44AA253F4EBF70C0FB3884B6 /* AppleFoundationVisionProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E4514A49A559999547F773C /* AppleFoundationVisionProbe.swift */; };
 		4840D5409C3F9AF648D2D198 /* GenerationStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB61AB66ED144949ED7F7CB /* GenerationStats.swift */; };
 		49A886826ADBBD740EDD17F3 /* LocalLlamaRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D3ED673F55F8CF52D43595D /* LocalLlamaRuntime.swift */; };
 		49C40BFD70409D4B4780E3A3 /* ChatExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB2B82A0B2D3835B3D424E56 /* ChatExporterTests.swift */; };
@@ -295,6 +296,7 @@
 		7BF2B34CA694B59520969BE9 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
 		7C36F031CE57DB4431E0C25F /* PromptTemplateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptTemplateTests.swift; sourceTree = "<group>"; };
 		7C91A12BB1CC42C288EF0D21 /* RuntimeProfiles.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = RuntimeProfiles.json; sourceTree = "<group>"; };
+		7E4514A49A559999547F773C /* AppleFoundationVisionProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationVisionProbe.swift; sourceTree = "<group>"; };
 		7F338530BD4FE2DF48CB9A27 /* DocumentIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentIndexer.swift; sourceTree = "<group>"; };
 		7F6B84C3B368598E069D4BC6 /* SearchQueryRefiner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchQueryRefiner.swift; sourceTree = "<group>"; };
 		8029E13C643F2D81B95CD812 /* ChatHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHistoryView.swift; sourceTree = "<group>"; };
@@ -477,6 +479,7 @@
 			isa = PBXGroup;
 			children = (
 				718D9D79650CF5FED4B77BC9 /* AppleFoundationModelService.swift */,
+				7E4514A49A559999547F773C /* AppleFoundationVisionProbe.swift */,
 				C89A157963AA0336067ACD4D /* AuditCase.swift */,
 				CB47495F4C53BA467B998E7B /* AvailableMemoryGuard.swift */,
 				9D7F5738EA1A31BF37570844 /* DeviceCapabilityService.swift */,
@@ -1046,6 +1049,7 @@
 				0D387902B568F3F7DBF2C5BB /* AppStateStore.swift in Sources */,
 				827048CDBB7B19A7A994F70C /* AppTheme.swift in Sources */,
 				31D179B27FA980F4959E3E10 /* AppleFoundationModelService.swift in Sources */,
+				44AA253F4EBF70C0FB3884B6 /* AppleFoundationVisionProbe.swift in Sources */,
 				5D70D5230D4B13CBB7C31E4E /* AuditCase.swift in Sources */,
 				505316FF12BABCA58A86E577 /* AuditDownloader.swift in Sources */,
 				B6DCB597C9D8EC4F675508C8 /* AuthLandingView.swift in Sources */,

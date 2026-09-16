@@ -41,6 +41,7 @@ struct EdgeMindAiApp: App {
             .task {
                 #if DEBUG
                 deepLinks.handleLaunchArguments()
+                await AppleFoundationVisionProbe.runIfRequested()
                 #endif
             }
             .environment(store)

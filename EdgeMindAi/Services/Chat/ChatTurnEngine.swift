@@ -346,7 +346,7 @@ extension ChatTurnEngine {
             return memoryGuardMessage
         }
         if hasImage && !ChatInputCapability.acceptsImage(model, profileStore: profileStore) {
-            return ChatInputCapability.imageUnsupportedMessage
+            return ChatInputCapability.imageUnsupportedMessage(for: model)
         }
         return nil
     }

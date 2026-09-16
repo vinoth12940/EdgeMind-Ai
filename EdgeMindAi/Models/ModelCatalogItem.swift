@@ -519,7 +519,11 @@ struct ModelCatalogItem: Identifiable, Hashable, Codable {
             return [.audio]
         }
         var modes: [InputCategory] = [.text, .document]
-        if (runtimeType == .mlx || runtimeType == .liteRTLM) && supportsVision {
+        // Runtimes whose image path this app actually drives. GGUF stays
+        // text-only (the llama.cpp path does not accept images), and
+        // Foundation Models gained vision with the iOS 27 system model.
+        let visionCapableRuntimes: Set<RuntimeType> = [.mlx, .liteRTLM, .foundationModels]
+        if visionCapableRuntimes.contains(runtimeType) && supportsVision {
             modes.append(.image)
         }
         return modes

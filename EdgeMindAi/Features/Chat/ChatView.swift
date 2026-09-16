@@ -5,7 +5,25 @@ enum ChatInputCapability {
     static let imageUnsupportedMessage = "This model supports text and document prompts only. Choose a vision model such as Qwen 3.5 VL, LFM2.5 VL, or Gemma 4 LiteRT-LM to ask about an image."
 
     static func acceptsImage(_ model: InstalledModel, profileStore: RuntimeProfileStore) -> Bool {
-        ModelRuntimeResolver.resolve(catalog: model.catalogItem, store: profileStore).vision == .imageAndText
+        guard ModelRuntimeResolver.resolve(catalog: model.catalogItem, store: profileStore).vision == .imageAndText else {
+            return false
+        }
+
+        // The runtime profile records what this app has *verified*, but the OS can
+        // still be too old to expose the capability. Apple Intelligence vision
+        // needs iOS 27, so iOS 17-26 keeps the text-only composer.
+        if model.catalogItem.runtimeType == .foundationModels {
+            return AppleFoundationModelService.supportsVision
+        }
+        return true
+    }
+
+    /// Message shown when an image is attached to a model that cannot take one.
+    static func imageUnsupportedMessage(for model: InstalledModel) -> String {
+        if model.catalogItem.runtimeType == .foundationModels {
+            return AppleFoundationModelService.visionUnavailableMessage
+        }
+        return imageUnsupportedMessage
     }
 }
 

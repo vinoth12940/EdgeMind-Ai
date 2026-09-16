@@ -3,7 +3,7 @@
     "catalogID": "088DAD16-6510-56FE-86C9-AEA507A22E2D",
     "verifiedThinking": null,
     "verifiedToolCalling": null,
-    "verifiedVision": "none",
+    "verifiedVision": "imageAndText",
     "knownLeakTokens": [
       "<|im_end|>",
       "<|endoftext|>",
@@ -11,11 +11,16 @@
       "</s>"
     ],
     "recommendedMaxTokens": 1024,
-    "auditedAt": "2026-05-19T14:23:14-05:00",
+    "auditedAt": "2026-09-15T00:00:00Z",
     "auditVerdict": {
       "kind": "green"
     },
-    "lastAuditedDeviceTier": "pro"
+    "lastAuditedDeviceTier": "pro",
+    "verifiedInputModes": [
+      "text",
+      "image",
+      "document"
+    ]
   },
   {
     "catalogID": "DE41E350-0A19-585E-A68F-84BC5010A379",
