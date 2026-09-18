@@ -377,11 +377,19 @@ actor MLXRuntime {
                     lastError = nil
                     break
                 } catch {
+                    // Cancellation must not be treated as a transient failure: retrying a
+                    // cancelled case swallowed the cancel and re-loaded the model, which
+                    // is why the audit's per-case timeout could not abort a stuck case
+                    // (and `releaseAfterAudit` never ran, holding GPU/RAM).
+                    if Task.isCancelled || error is CancellationError {
+                        throw CancellationError()
+                    }
                     lastError = error
                     mlxLogger.error("MLX model load attempt \(attempt)/3 failed: \(error.localizedDescription)")
                     if attempt < 3 {
                         // Exponential backoff: 2s, 4s
                         try? await Task.sleep(for: .seconds(2 * attempt))
+                        if Task.isCancelled { throw CancellationError() }
                     }
                 }
             }

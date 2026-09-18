@@ -19,11 +19,14 @@ protocol ModelDownloadService {
 
 enum ModelDownloadError: LocalizedError {
     case exceedsDeviceBudget(required: Double, available: Double)
+    case insufficientDiskSpace(required: Double, available: Double)
 
     var errorDescription: String? {
         switch self {
         case .exceedsDeviceBudget(let required, let available):
             return "This model needs about \(String(format: "%.1f", required)) GB. This device budget is about \(String(format: "%.1f", available)) GB."
+        case .insufficientDiskSpace(let required, let available):
+            return "Not enough free storage: this download needs about \(String(format: "%.1f", required)) GB and only \(String(format: "%.1f", available)) GB is free. Free up space and try again."
         }
     }
 }
@@ -243,6 +246,17 @@ final class URLModelDownloadService: NSObject, ModelDownloadService {
         let required = item.estimatedResidentGB(contextTokens: tier.safeContextTokens)
         guard required <= tier.usableWeightGB || ModelDownloadConsentStore.hasConsent(for: item) else {
             throw ModelDownloadError.exceedsDeviceBudget(required: required, available: tier.usableWeightGB)
+        }
+
+        // Free storage, not just RAM. Without this a 0.15-3.7 GB download started on a
+        // nearly-full device, ran for minutes consuming the remaining space, then failed
+        // with a generic "the file couldn't be saved". The audit path already refuses to
+        // start in this situation — the user-facing install path did not.
+        let freeGB = ModelAuditRunner.freeDiskGB()
+        let neededGB = item.parsedDiskSizeGBForEstimator + 0.5
+        // A 0 reading means the volume could not be queried; don't block the download.
+        guard freeGB <= 0 || freeGB >= neededGB else {
+            throw ModelDownloadError.insufficientDiskSpace(required: neededGB, available: freeGB)
         }
     }
 }

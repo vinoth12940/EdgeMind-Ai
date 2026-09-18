@@ -40,12 +40,34 @@ enum AppTheme {
         dark: (0.20, 0.20, 0.22, 1),
         light: (0.86, 0.89, 0.92, 1)
     )
-    static let accent = Color(red: 0.13, green: 0.79, blue: 0.84)
-    static let accentSoft = Color(red: 0.85, green: 0.57, blue: 0.34)
-    static let accentWarm = Color(red: 1.0, green: 0.41, blue: 0.22)
-    static let success = Color(red: 0.37, green: 0.87, blue: 0.49)
-    static let warning = Color(red: 1.0, green: 0.70, blue: 0.24)
-    static let destructive = Color(red: 1.0, green: 0.33, blue: 0.31)
+    // These are used as TEXT/label colours as well as fills, so they need a light-mode
+    // variant. The dark-mode values are bright (e.g. warning #FFB33D) and read at about
+    // 1.8:1 on the white `panel` — under the 4.5:1 minimum. The light variants are the
+    // same hues taken darker, so the palette keeps its identity on both appearances.
+    static let accent = adaptive(
+        dark: (0.13, 0.79, 0.84, 1),
+        light: (0.04, 0.44, 0.49, 1)
+    )
+    static let accentSoft = adaptive(
+        dark: (0.85, 0.57, 0.34, 1),
+        light: (0.60, 0.34, 0.10, 1)
+    )
+    static let accentWarm = adaptive(
+        dark: (1.00, 0.41, 0.22, 1),
+        light: (0.72, 0.22, 0.06, 1)
+    )
+    static let success = adaptive(
+        dark: (0.37, 0.87, 0.49, 1),
+        light: (0.08, 0.44, 0.19, 1)
+    )
+    static let warning = adaptive(
+        dark: (1.00, 0.70, 0.24, 1),
+        light: (0.52, 0.33, 0.00, 1)
+    )
+    static let destructive = adaptive(
+        dark: (1.00, 0.33, 0.31, 1),
+        light: (0.70, 0.12, 0.11, 1)
+    )
     static let textPrimary = adaptive(
         dark: (0.98, 0.98, 0.98, 1),
         light: (0.07, 0.09, 0.12, 1)

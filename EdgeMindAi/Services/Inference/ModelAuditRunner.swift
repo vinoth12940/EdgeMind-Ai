@@ -500,7 +500,9 @@ Rules:
         String(format: "%.1f", value)
     }
 
-    private static func freeDiskGB() -> Double {
+    /// Free space on the volume holding app data. Shared with the download path so the
+    /// user-facing install and the audit harness agree on what "enough room" means.
+    static func freeDiskGB() -> Double {
         guard
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
             let values = try? documents.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
