@@ -1,6 +1,6 @@
 # App Store Listing — Edge Mind Ai
 
-> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.3.2).
+> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.3.3).
 > Anything in `[brackets]` you must fill in (URLs, contact, demo account).
 
 ---
@@ -99,15 +99,21 @@ on-device AI,offline AI,local LLM,private chat,AI assistant,MLX,llama,vision,voi
 ## 5. What's New in This Version
 
 ```
-• Regenerate any answer (optionally with a different model) and swipe between versions; edit an earlier message and resend it.
-• Save short facts to Memory so replies fit you, with a "Using N memories" chip on answers that used them.
-• Import your own documents (PDF, text, Markdown, CSV) and ask questions about them — answers cite the file and page. Everything is indexed on device.
-• Scanned and photographed PDFs are now read on device with OCR, and long documents surface the passages that actually answer your question.
-• Apple Intelligence now understands images, and can use on-device tools such as the calculator, current time, device info, and your own document library.
-• Share Extension: summarize, explain, or ask about anything you can share from another app.
-• Shortcuts can return an answer inline with Apple Intelligence or a small model.
-• Home-screen and lock-screen widgets for Ask, Voice, and Camera.
-• Export a chat as Markdown or PDF.
+• Fixed: saying "hi" could make the model run the calculator or read the date/time instead of simply replying.
+• Fixed: questions about documents you imported were sometimes answered with "please upload the document". Apple Intelligence and the Gemma/LFM models now find your library reliably.
+• Fixed: a long chat could lose its entire history if one conversation record was damaged.
+• Fixed: regenerating an older answer while switching between versions could overwrite a saved answer.
+• Fixed: a message containing a line like "#### Heading" or "#1" could freeze the app.
+• Fixed: exporting a long answer to PDF silently cut off everything after the first page.
+• Fixed: photos were sometimes dropped from a saved chat after relaunch.
+• Fixed: deleting several documents at once could remove the wrong files.
+• Fixed: a photo attached in one chat could be sent into another after switching conversations.
+• Fixed: web search answers were not grounded on the retrieved results for Gemma models, and long requests could lose the beginning of the question.
+• Fixed: saved web-search and HuggingFace credentials could be cleared on some launches.
+• Fixed: scanning a very long PDF could hang; Stop now stops generation promptly.
+• Fixed: a downloaded model could still show as installed after iOS cleared its cached files.
+• Fixed: light appearance had low-contrast labels, and a prompt preview's Cancel button did nothing.
+• Fixed: code answers kept their indentation.
 • Bug fixes and stability improvements.
 ```
 
@@ -258,7 +264,7 @@ Because there is **no Sign in with Apple** in this build (entitlement disabled),
 
 ## 12. Pre-submit checklist (App Store Connect will block submission until these are green)
 
-- [ ] Build 0.3.2 (9) shows a green checkmark in TestFlight (processing finished)
+- [ ] Build 0.3.3 (10) shows a green checkmark in TestFlight (processing finished)
 - [ ] Build selected on the App Store tab → "Build" section
 - [ ] All screenshots uploaded (iPhone 6.9" + iPad 13")
 - [ ] Description, subtitle, keywords, promo text filled
@@ -276,7 +282,7 @@ Once all green → **"Add for Review"** → **"Submit to Review"**.
 
 ## 13. Submission command (for the NEXT version, e.g. 0.4.0)
 
-Once 0.3.2 is approved, future uploads are one command. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, then:
+Once 0.3.3 is approved, future uploads are one command. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, then:
 
 ```bash
 cd "/Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge Mind Ai"
