@@ -396,6 +396,14 @@ struct ChatView: View {
         }
         .onChange(of: store.selectedSessionID) {
             editingMessage = nil
+            // The composer must not carry into a different conversation. Only
+            // `editingMessage` used to reset, so a photo (and draft text) attached in
+            // chat A would be sent into chat B after switching via History — a
+            // context/privacy leak. The model-change handler above already clears
+            // `attachedImage`, so this was inconsistent as well as wrong.
+            prompt = ""
+            attachedImage = nil
+            attachedDocuments = []
         }
         .alert("Delete Conversation", isPresented: $showDeleteCurrentSessionConfirmation) {
             Button("Cancel", role: .cancel) { }

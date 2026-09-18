@@ -86,9 +86,14 @@ enum MLXModelCache {
         }
 
         let directoryName = "models--" + modelID.replacingOccurrences(of: "/", with: "--")
+        // NO `hub` component here. The app builds its hub client with
+        // `HubCache(cacheDirectory: <Caches>/huggingface)`, and in swift-huggingface
+        // `HubCache.repoDirectory` is just `<cacheDirectory>/models--org--repo`. The
+        // `hub` segment only exists for `CacheLocationProvider.defaultCacheDirectory()`,
+        // which this app does not use — so including it made `isDownloaded` ALWAYS
+        // false: every MLX model looked uninstalled (and deleting one freed nothing).
         return base
             .appending(path: "huggingface", directoryHint: .isDirectory)
-            .appending(path: "hub", directoryHint: .isDirectory)
             .appending(path: directoryName, directoryHint: .isDirectory)
     }
 

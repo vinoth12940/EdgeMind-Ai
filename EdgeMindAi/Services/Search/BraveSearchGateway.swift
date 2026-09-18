@@ -41,10 +41,13 @@ struct BraveSearchGateway: SearchGateway {
                 }
                 return content
             },
-            citations: webResults.prefix(5).map { item in
-                SearchCitation(
+            citations: webResults.prefix(5).compactMap { item in
+                // Drop unparseable URLs instead of pointing at the vendor's homepage,
+                // which misattributed the result's title to an unrelated site.
+                guard let url = URL(string: item.url) else { return nil }
+                return SearchCitation(
                     title: item.title,
-                    url: URL(string: item.url) ?? URL(string: "https://brave.com")!,
+                    url: url,
                     snippet: String(item.description.prefix(200))
                 )
             }

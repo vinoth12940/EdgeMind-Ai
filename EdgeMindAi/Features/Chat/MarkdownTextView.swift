@@ -150,6 +150,14 @@ struct MarkdownTextView: View {
             }
             if !paraLines.isEmpty {
                 blocks.append(.paragraph(paraLines.joined(separator: " ")))
+            } else {
+                // The line is "special" to the paragraph loop but no parser above
+                // claimed it — e.g. "#1 priority", "#tag", or "#### Summary", which
+                // parseHeading rejects (it only accepts "# ", "## ", "### "). Without
+                // this fallback nothing was appended and `i` never advanced, so the
+                // outer loop spun forever on the main thread and froze the app.
+                blocks.append(.paragraph(lines[i]))
+                i += 1
             }
         }
 

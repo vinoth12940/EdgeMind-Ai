@@ -695,4 +695,23 @@ final class ModelCatalogItemTests: XCTestCase {
         XCTAssertEqual(receivedRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer test_token",
                        "Authorization header must be preserved when redirecting within the same host")
     }
+
+    /// `MLXModelCache` must mirror swift-huggingface's layout for a CUSTOM cache
+    /// directory: `HubCache(cacheDirectory: <Caches>/huggingface)` resolves a repo to
+    /// `<Caches>/huggingface/models--org--repo`. An extra `hub` segment here made
+    /// `isDownloaded` always false, so every MLX model looked uninstalled and deleting
+    /// one freed nothing.
+    func test_mlxCacheDirectory_matchesHubCacheLayout() throws {
+        let directory = try XCTUnwrap(MLXModelCache.cacheDirectory(for: "mlx-community/Qwen3-0.6B-4bit"))
+        let components = directory.pathComponents
+
+        XCTAssertTrue(
+            directory.path.hasSuffix("huggingface/models--mlx-community--Qwen3-0.6B-4bit"),
+            "unexpected MLX cache path: \(directory.path)"
+        )
+        XCTAssertFalse(
+            components.contains("hub"),
+            "a custom HubCache has no `hub` component; got \(directory.path)"
+        )
+    }
 }

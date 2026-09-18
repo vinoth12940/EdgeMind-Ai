@@ -744,7 +744,7 @@ enum MockCatalogData {
             quantization: "GGUF Q4_K_M",
             diskSize: "~2.3 GB",
             contextWindow: "128K",
-            downloadURL: URL(string: "https://huggingface.co/unsloth/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf?download=true"),
+            downloadURL: URL(string: "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf?download=true"),
             runtimeType: .gguf,
             supportsReasoning: true,
             runtimeStatus: .recommended,

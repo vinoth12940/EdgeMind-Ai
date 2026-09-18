@@ -56,10 +56,14 @@ struct TavilySearchGateway: SearchGateway {
             query: query,
             answer: answerText,
             snippets: Array(snippets),
-            citations: result.results.prefix(5).map { item in
-                SearchCitation(
+            citations: result.results.prefix(5).compactMap { item in
+                // Drop a result whose URL won't parse rather than substituting the
+                // vendor's homepage: that rendered a citation chip showing this
+                // result's title while linking somewhere unrelated.
+                guard let url = URL(string: item.url) else { return nil }
+                return SearchCitation(
                     title: Self.stripHTML(item.title),
-                    url: URL(string: item.url) ?? URL(string: "https://tavily.com")!,
+                    url: url,
                     snippet: String(Self.stripHTML(item.content).prefix(200))
                 )
             }

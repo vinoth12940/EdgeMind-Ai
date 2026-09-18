@@ -101,6 +101,7 @@ struct PromptLibraryView: View {
 
 /// Read-only preview of a single template before inserting.
 private struct PromptPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
     let template: PromptTemplate
     let onUse: () -> Void
 
@@ -145,7 +146,9 @@ private struct PromptPreviewSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {}
+                    // Was `Button("Cancel") {}` — an empty action, so the control did
+                    // nothing at all and the sheet looked broken.
+                    Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Use") { onUse() }

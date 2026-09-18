@@ -86,6 +86,13 @@ final class VoiceInteractionController: NSObject, ObservableObject {
             synthesizer.stopSpeaking(at: .immediate)
         }
         isSpeaking = false
+
+        // Only tear the audio session down if we are NOT still recording. The header's
+        // "Stop" button and the composer's mic button can both be visible, so tapping
+        // Stop mid-dictation used to deactivate the session under a live audio tap and
+        // recognition task — the OS mic indicator stayed lit until the recognizer
+        // eventually errored out.
+        guard !isListening else { return }
         deactivateAudioSession()
     }
 

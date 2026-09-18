@@ -237,7 +237,17 @@ actor MLXRuntime {
     private func gpuCacheLimit(modelID: String, isVision: Bool) -> Int {
         let tier = DeviceTier.current()
         let normalized = modelID.lowercased()
-        let isLarge = normalized.contains("4b") || normalized.contains("8b") || normalized.contains("9b")
+        // Match a real parameter-count token, not the quantisation suffix: the repo id
+        // makes "-4bit"/"-8bit" contain "4b"/"8b" (and "0.8b" contains "8b"), so almost
+        // every small 4-bit model was treated as a 4B/8B model and given a reduced GPU
+        // cache. Strip the quantisation suffix, then require the size not to follow a
+        // digit or dot, so "0.8b" and "1b" stay small while "4b"/"8b"/"9b" do not.
+        let withoutQuantization = normalized.replacingOccurrences(
+            of: #"-\d+bit"#, with: "", options: .regularExpression
+        )
+        let isLarge = withoutQuantization.range(
+            of: #"(?<![0-9.])[489]b"#, options: .regularExpression
+        ) != nil
         let isGemma4Vision = isVision && (normalized.contains("gemma-4") || normalized.contains("gemma4"))
 
         switch tier {

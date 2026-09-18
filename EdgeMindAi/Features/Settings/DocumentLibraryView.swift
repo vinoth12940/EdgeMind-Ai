@@ -139,8 +139,13 @@ struct DocumentLibraryView: View {
     }
 
     private func delete(at offsets: IndexSet) {
-        for offset in offsets where library.documents.indices.contains(offset) {
-            library.remove(id: library.documents[offset].id)
-        }
+        // Snapshot the ids BEFORE removing anything. `library.remove(id:)` shrinks
+        // `documents` synchronously, so indexing the live array offset-by-offset
+        // deleted the wrong rows: for {0,1} over [A,B,C] it removed A and then C,
+        // silently keeping B. MemorySettingsView snapshots for the same reason.
+        let ids = offsets
+            .filter { library.documents.indices.contains($0) }
+            .map { library.documents[$0].id }
+        ids.forEach { library.remove(id: $0) }
     }
 }

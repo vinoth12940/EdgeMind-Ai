@@ -39,7 +39,10 @@ private final class StatsAccumulator: @unchecked Sendable {
         lock.withLock {
             let total = Date().timeIntervalSince(streamStart)
             return GenerationStats(
-                timeToFirstToken: firstTokenDate.map { _ in Date().timeIntervalSince(streamStart) },
+                // Measure to the FIRST delta. The old closure ignored the stored
+                // date and used "now" (i.e. finalize time), so time-to-first-token
+                // always equalled the total duration.
+                timeToFirstToken: firstTokenDate.map { $0.timeIntervalSince(streamStart) },
                 totalDuration: total,
                 outputTokens: exactOutputTokens,
                 deltaCount: deltaCount
@@ -267,18 +270,29 @@ actor StreamProcessor {
     }
 
     private static func filteredLeakTokens(_ leakTokens: [String], activeThinkFormats: Set<ThinkFormat>) -> [String] {
-        leakTokens.filter { token in
-            let normalized = token.lowercased()
-            if activeThinkFormats.contains(.qwenNative),
-               normalized == "<|im_start|>" || normalized == "<|im_end|>" {
-                return false
-            }
-            if activeThinkFormats.contains(.gemmaChannel),
-               normalized == "<|channel>" || normalized == "<channel|>" {
-                return false
-            }
-            return true
+        // Structural tokens of an ACTIVE think format must never be scrubbed: the parser
+        // needs them to open and close the reasoning block. `</think>` was missing from
+        // this exemption, and two DeepSeek R1 profiles declare BOTH
+        // `verifiedThinking: "xmlThink"` AND `knownLeakTokens: ["</think>"]` — so the
+        // scrubber ate the close tag, `thinkMode` never ended, the entire answer was
+        // classified as thinking, and every reply rendered as "The model reasoned, but
+        // it never produced a final answer…".
+        var structural: Set<String> = []
+        if activeThinkFormats.contains(.qwenNative) {
+            structural.formUnion(["<|im_start|>", "<|im_end|>"])
         }
+        if activeThinkFormats.contains(.gemmaChannel) {
+            structural.formUnion(["<|channel>", "<|channel|>"])
+        }
+        if activeThinkFormats.contains(.xmlThink) {
+            structural.formUnion([
+                "<think>", "</think>",
+                "<thinking>", "</thinking>",
+                "<reasoning>", "</reasoning>"
+            ])
+        }
+
+        return leakTokens.filter { !structural.contains($0.lowercased()) }
     }
 
     fileprivate static func earliestMatch(in text: String, candidates: [String]) -> TokenMatch? {

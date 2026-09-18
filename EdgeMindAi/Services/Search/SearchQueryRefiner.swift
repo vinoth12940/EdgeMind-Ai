@@ -77,8 +77,12 @@ struct SearchQueryRefiner {
     private static func appendCurrentYearIfTimeSensitive(_ query: String) -> String {
         let lower = query.lowercased()
         
-        // If it already contains a year (e.g. 2024, 2025, 2026), don't override
-        let hasYear = lower.range(of: #"\\b(19|20)\\d{2}\\b"#, options: .regularExpression) != nil
+        // If it already contains a year (e.g. 2024, 2025, 2026), don't override.
+        // NOTE: in a Swift raw string `\b` is a LITERAL backslash-b, not a regex word
+        // boundary — the old `#"\\b(19|20)\\d{2}\\b"#` therefore matched a backslash
+        // before the digits and never fired, so every dated query got the current year
+        // appended ("nba finals score 2024" searched as "…2024 2025").
+        let hasYear = lower.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression) != nil
         if hasYear {
             return query
         }

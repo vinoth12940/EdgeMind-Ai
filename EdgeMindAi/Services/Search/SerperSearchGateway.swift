@@ -49,10 +49,13 @@ struct SerperSearchGateway: SearchGateway {
             query: query,
             answer: answerText,
             snippets: snippets,
-            citations: organic.prefix(5).map { item in
-                SearchCitation(
+            citations: organic.prefix(5).compactMap { item in
+                // Drop unparseable URLs instead of pointing at the vendor's homepage,
+                // which misattributed the result's title to an unrelated site.
+                guard let url = URL(string: item.link) else { return nil }
+                return SearchCitation(
                     title: item.title,
-                    url: URL(string: item.link) ?? URL(string: "https://google.com")!,
+                    url: url,
                     snippet: String((item.snippet ?? "").prefix(200))
                 )
             }

@@ -111,6 +111,11 @@ enum DocumentExtractionService {
             guard let document = PDFDocument(url: url) else { throw DocumentExtractionError.unreadableFile }
             var pages: [String] = []
             for index in 0..<document.pageCount {
+                // Stop once the text budget is spent. `capped` already returned "" for
+                // later pages, but the loop kept rendering and OCR-ing every remaining
+                // page and discarding the result — a several-hundred-page scan hung the
+                // import, burned battery, and risked memory pressure.
+                if remaining <= 0 { break }
                 guard let page = document.page(at: index) else { continue }
                 let textLayer = page.string ?? ""
                 let resolved = await resolveTextLayer(textLayer) {
