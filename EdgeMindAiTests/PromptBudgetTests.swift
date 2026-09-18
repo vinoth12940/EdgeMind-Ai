@@ -196,4 +196,33 @@ final class PromptBudgetTests: XCTestCase {
             InferenceBudget.promptCharacterBudget(for: liteRTModel)
         )
     }
+
+    /// On LiteRT the generation reserve used to eat 1792 of the 2048-token window,
+    /// leaving ~256 for the entire prompt. `fitPrompt` then fell into its tiny-budget
+    /// branch, which kept the TAIL of the current turn — so on every web-search turn the
+    /// user's actual question was silently discarded and the model answered the end of
+    /// the text instead.
+    func test_searchTurn_keepsTheQuestion_onTheSmallestWindowRuntime() {
+        let question = "What is the capital of France, and why does it matter historically?"
+        let padded = question + String(repeating: " additional context", count: 400)
+        let context = SearchContext(
+            query: "capital of france",
+            answer: "Paris is the capital of France.",
+            snippets: ["Paris has been the capital since the 10th century."],
+            citations: []
+        )
+
+        let fitted = InferenceBudget.fitPrompt(
+            system: AppSettings.default.systemPrompt,
+            history: [],
+            current: padded,
+            for: liteRTModel,
+            searchContext: context
+        )
+
+        XCTAssertTrue(
+            fitted.current.hasPrefix(String(question.prefix(40))),
+            "the question must survive trimming; current starts with: \(fitted.current.prefix(90))"
+        )
+    }
 }

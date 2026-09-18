@@ -433,7 +433,14 @@ enum InferenceBudget {
     static func maxGeneratedTokens(for model: InstalledModel, searchContext: SearchContext?) -> Int {
         let preferred = searchContext == nil ? 1_024 : 2_048
         let contextWindow = safeContextWindow(for: model)
-        let hardCeiling = max(512, contextWindow - 256)
+        // Never let the generation reserve starve the prompt. `contextWindow - 256` is
+        // harmless on a large window, but on LiteRT's hard 2048 it reserved 1792 tokens
+        // and left only 256 for system + turn. That drove `fitPrompt` into its
+        // tiny-budget branch, which trimmed the current turn to its last 256 characters —
+        // silently discarding the user's actual question (and the head of any inlined
+        // document) on every web-search turn.
+        let promptFloor = max(256, contextWindow / 3)
+        let hardCeiling = max(128, contextWindow - promptFloor)
         return min(preferred, hardCeiling)
     }
 
@@ -551,7 +558,10 @@ enum InferenceBudget {
 
     static func trimHistoryText(_ text: String, maxCharacters: Int) -> String {
         guard text.count > maxCharacters else { return text }
-        guard maxCharacters > 256 else { return String(text.suffix(maxCharacters)) }
+        // With very little room keep the START of the text. Every caller of this method
+        // is bounding a prompt turn or an inlined excerpt, where the beginning carries
+        // the user's request; returning the tail dropped it entirely.
+        guard maxCharacters > 256 else { return String(text.prefix(maxCharacters)) }
 
         let marker = "\n\n[Earlier part of this long turn was trimmed for on-device memory safety.]\n\n"
         let available = max(128, maxCharacters - marker.count)
