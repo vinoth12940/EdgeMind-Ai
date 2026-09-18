@@ -575,6 +575,10 @@ private struct ParserState {
     private var thinkStart: Date?
     private var toolCallBuffer: String?
     private var toolCallFired = false
+    /// Odd while the stream is inside a ``` code fence. A tool-call tag inside a fence
+    /// is the model QUOTING the syntax (e.g. explaining how tools work), not calling
+    /// one — executing it ran an example the user never asked for.
+    private var fenceDepth = 0
     private let activeThinkFormats: Set<ThinkFormat>
 
     init(activeThinkFormats: Set<ThinkFormat>) {
@@ -670,12 +674,26 @@ private struct ParserState {
 
             if !toolCallFired,
                let toolOpen = StreamProcessor.earliestMatch(in: remaining, candidates: ["<tool_call>", "<|tool_call>", "<|tool_call_start|>"]) {
+                let openTag = String(remaining[toolOpen.range])
                 lineBuffer += String(remaining[..<toolOpen.range.lowerBound])
+                // Flush BEFORE deciding: this updates `fenceDepth` for any ``` that
+                // appeared earlier in this same chunk, so the check below sees the
+                // fence state as of the tag's position.
                 let textOutcome = flushLineBuffer(emit: emit)
                 if textOutcome == .terminateStream {
                     return .terminateStream
                 }
                 remaining = String(remaining[toolOpen.range.upperBound...])
+
+                // Inside a fence the tag is quoted syntax, not a call. Emit it as text
+                // so the user still sees the example, and keep parsing.
+                if fenceDepth % 2 == 1 {
+                    if !emit(.textDelta(openTag)) {
+                        return .terminateStream
+                    }
+                    continue
+                }
+
                 toolCallBuffer = ""
                 continue
             }
@@ -728,6 +746,9 @@ private struct ParserState {
         var lines = lineBuffer.components(separatedBy: "\n")
         lineBuffer = lines.removeLast()
         for line in lines {
+            // Track fences only on COMPLETE lines, so a ``` split across chunks can't
+            // flip the state twice. Same counting approach as the repetition guard.
+            fenceDepth = (fenceDepth + line.components(separatedBy: "```").count - 1) % 2
             if !emit(.textDelta(line + "\n")) {
                 return .terminateStream
             }

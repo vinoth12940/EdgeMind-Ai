@@ -546,4 +546,37 @@ final class StreamProcessorTests: XCTestCase {
         let text = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
         XCTAssertTrue(text.contains("not json at all"), "the raw text must not be swallowed: \(text)")
     }
+
+    /// A tool tag INSIDE a ``` fence is the model quoting the syntax (for example while
+    /// explaining how tools work), not asking to run one.
+    func test_toolCallInsideCodeFence_isNotExecuted() async throws {
+        let payload = """
+        Here is the format:
+        ```xml
+        <tool_call>{"name":"calculate","arguments":{"expression":"6*7"}}</tool_call>
+        ```
+        That is how you call a tool.
+        """
+
+        let events = await process(tokens: [payload])
+
+        XCTAssertFalse(
+            events.contains { if case .toolCall = $0 { return true }; return false },
+            "a fenced example must not be executed"
+        )
+        let text = events.compactMap { if case .textDelta(let t) = $0 { return t } else { return nil } }.joined()
+        XCTAssertTrue(text.contains("<tool_call>"), "the quoted example should still be shown to the user")
+    }
+
+    /// The fence guard must not break a genuine call.
+    func test_toolCallOutsideCodeFence_isStillDispatched() async throws {
+        let payload = #"<tool_call>{"name":"calculate","arguments":{"expression":"6*7"}}</tool_call>"#
+
+        let events = await process(tokens: [payload])
+
+        XCTAssertTrue(
+            events.contains { if case .toolCall = $0 { return true }; return false },
+            "an unfenced tool call must still fire: \(events)"
+        )
+    }
 }
