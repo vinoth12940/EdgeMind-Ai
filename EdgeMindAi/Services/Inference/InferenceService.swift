@@ -689,7 +689,15 @@ enum AssistantResponseSanitizer {
         }
 
         cleaned = cleaned.replacingOccurrences(of: "^(assistant|model)\\s*:\\s*", with: "", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
+        // Collapse runs of spaces/tabs OUTSIDE code fences only. Done globally this
+        // flattened code indentation, so a requested code sample came back with its
+        // structure destroyed (Python/Swift/YAML/JSON all broke), and column-aligned
+        // output lost its alignment. Fenced segments are passed through verbatim.
+        let fenceSegments = cleaned.components(separatedBy: "```")
+        cleaned = fenceSegments.enumerated().map { index, segment in
+            guard index % 2 == 0 else { return segment }
+            return segment.replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
+        }.joined(separator: "```")
         cleaned = cleaned.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
 
         // Scrub leaked raw tool-call JSON (e.g. {"name": "search_chats", "arguments": ...})

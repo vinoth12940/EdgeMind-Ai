@@ -95,4 +95,34 @@ final class AssistantResponseSanitizerTests: XCTestCase {
         """
         XCTAssertEqual(AssistantResponseSanitizer.clean(rawLeaked), "")
     }
+
+    /// A run of spaces inside a code fence is meaningful indentation and must survive.
+    /// The whitespace squeeze used to run over the whole answer, so any requested code
+    /// sample came back with its structure flattened.
+    func test_codeFenceIndentationIsPreserved() {
+        let answer = """
+        Here is the fix:
+
+        ```python
+        def add(a, b):
+            return a + b
+        ```
+
+        That should do it.
+        """
+
+        let cleaned = AssistantResponseSanitizer.clean(answer)
+
+        XCTAssertTrue(
+            cleaned.contains("    return a + b"),
+            "code indentation must survive sanitizing; got: \(cleaned)"
+        )
+    }
+
+    /// Padding outside a fence is still tidied.
+    func test_whitespaceOutsideFencesIsStillCollapsed() {
+        let cleaned = AssistantResponseSanitizer.clean("too    many      spaces")
+
+        XCTAssertEqual(cleaned, "too many spaces")
+    }
 }
