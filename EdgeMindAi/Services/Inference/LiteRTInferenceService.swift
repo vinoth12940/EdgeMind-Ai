@@ -231,9 +231,15 @@ struct LiteRTInferenceService: InferenceService {
             multimodal: imageData != nil
         )
         let rawStream = AsyncStream<String> { continuation in
-            Task {
+            // Cancelling the consumer must cancel this bridge. Without `onTermination`
+            // the inner Task kept draining `rawThrowingStream` after Stop, so the model
+            // ran to its token cap (heat/battery) and the conversation's own
+            // `cancel()` — reachable only from the INNER stream's termination — never
+            // fired, leaving the multi-GB engine unloadable on a memory warning.
+            let task = Task {
                 do {
                     for try await chunk in rawThrowingStream {
+                        if Task.isCancelled { break }
                         continuation.yield(chunk)
                     }
                 } catch {
@@ -241,6 +247,7 @@ struct LiteRTInferenceService: InferenceService {
                 }
                 continuation.finish()
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
         let runtimeProfile = RuntimeProfileStore().profile(for: model.catalogItem.id)
             ?? .safeMinimum(catalogID: model.catalogItem.id)
@@ -355,14 +362,43 @@ struct LiteRTInferenceService: InferenceService {
 
     private static func systemPrompt(base: String, searchContext: SearchContext?) -> String {
         guard let searchContext else { return base }
-        let sources = searchContext.citations
-            .map { "- \($0.title): \($0.url.absoluteString)" }
+
+        // LiteRT previously received ONLY a bullet list of citation titles and URLs —
+        // `answer` and `snippets` were dropped, so the model had nothing to ground on
+        // (GGUF, MLX and Apple Foundation Models all inject them). Keep it bounded so
+        // the result still fits LiteRT's hard 2048-token cap.
+        let budgetCharacters = 1_600
+        var sections: [String] = []
+
+        if let answer = searchContext.answer?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !answer.isEmpty {
+            sections.append("Direct answer from search:\n" + String(answer.prefix(budgetCharacters / 2)))
+        }
+
+        let snippetText = searchContext.snippets
+            .prefix(4)
+            .enumerated()
+            .map { "- \($1)" }
             .joined(separator: "\n")
+        if !snippetText.isEmpty {
+            sections.append("Retrieved snippets:\n" + String(snippetText.prefix(budgetCharacters / 2)))
+        }
+
+        if !searchContext.citations.isEmpty {
+            let sources = searchContext.citations
+                .prefix(5)
+                .map { "- \($0.title): \($0.url.absoluteString)" }
+                .joined(separator: "\n")
+            sections.append("Sources:\n" + sources)
+        }
+
+        guard !sections.isEmpty else { return base }
         return """
         \(base)
 
-        Use these retrieved sources when they are relevant:
-        \(sources)
+        Use the retrieved information below when it is relevant, and cite the source titles.
+
+        \(sections.joined(separator: "\n\n"))
         """
     }
 
