@@ -288,6 +288,16 @@ final class ChatTurnEngineTests: XCTestCase {
 
         XCTAssertTrue(messages.contains { $0.text.contains("Reached the tool-call limit") })
         XCTAssertFalse(messages.last { $0.role == .assistant }?.text.isEmpty ?? true)
+
+        // The loop must be BOUNDED, not merely produce a notice. Four tool calls were
+        // scripted; only `maxIterations` may actually reach the model, so the cap is
+        // real rather than the model happening to stop. The old assertions never
+        // counted calls, so an unbounded loop would still have passed.
+        XCTAssertEqual(
+            service.calls.count,
+            ToolRegistry.maxIterations + 1,
+            "one initial call plus at most maxIterations tool-loop re-invocations"
+        )
     }
 
     // MARK: fallback lanes
