@@ -346,11 +346,16 @@ final class StreamProcessorTests: XCTestCase {
                 continuation.finish()
             }
         }
+        // The watchdog timeout must dwarf the yield interval. At 0.3s vs 150ms the
+        // margin was only 2x, so a loaded machine (the full suite schedules ~500 tests)
+        // starved the 150ms sleeps past 300ms and this test intermittently failed the
+        // release gate with a bogus "watchdog fired" result. 2s keeps the intent —
+        // activity re-arms the timer — with a ~13x margin, and still runs in <1s.
         let processor = StreamProcessor(
             rawStream: raw,
             leakTokens: [],
             v2Enabled: true,
-            hangTimeout: 0.3,
+            hangTimeout: 2.0,
             repetitionNgram: 6,
             repetitionCount: 3
         )

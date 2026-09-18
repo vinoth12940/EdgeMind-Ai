@@ -396,21 +396,39 @@ extension ChatTurnEngine {
         return SearchResultFallbackComposer.compose(query: prompt, searchContext: searchContext)
     }
 
+    /// MLX/LiteRT vision keeps a smaller budget so the SigLIP prefill stays bounded.
+    static let constrainedVisionImageByteBudget = 320_000
+
     static func encodedAttachmentData(from image: UIImage?, model: InstalledModel) -> Data? {
         guard let image else { return nil }
 
         let isMLXVision = (model.catalogItem.runtimeType == .mlx || model.catalogItem.runtimeType == .liteRTLM)
             && (model.catalogItem.supportsVision || model.catalogItem.sourceSupportsVision)
-        let preparedImage = isMLXVision ? downsampleImage(image, maxDimension: 640) : image
-        let maxBytes = isMLXVision ? 320_000 : 700_000
+        // Shared with the persistence cap on purpose: a JPEG the engine accepts but the
+        // store refuses is a photo the user sees now and loses on the next launch.
+        let maxBytes = isMLXVision
+            ? constrainedVisionImageByteBudget
+            : AppStateStore.maxPersistedImageBytes
         let qualitySteps: [CGFloat] = [0.75, 0.65, 0.55, 0.45, 0.35, 0.25]
-        for quality in qualitySteps {
-            guard let data = preparedImage.jpegData(compressionQuality: quality) else { continue }
-            if data.count <= maxBytes {
-                return data
+
+        var candidate = isMLXVision ? downsampleImage(image, maxDimension: 640) : image
+        while true {
+            for quality in qualitySteps {
+                guard let data = candidate.jpegData(compressionQuality: quality) else { continue }
+                if data.count <= maxBytes {
+                    return data
+                }
             }
+            // Quality alone wasn't enough — shrink the pixels and retry. The old code
+            // gave up here and returned the 0.25 JPEG unconditionally, which for a
+            // full-resolution photo could be several MB.
+            let currentMax = max(candidate.size.width, candidate.size.height)
+            guard currentMax > 128 else { break }
+            candidate = downsampleImage(candidate, maxDimension: currentMax * 0.7)
         }
-        return preparedImage.jpegData(compressionQuality: 0.25)
+
+        // At <=128pt a 0.25 JPEG is a few KB, so this fits the budget in practice.
+        return candidate.jpegData(compressionQuality: 0.25)
     }
 
     nonisolated static func downsampleImage(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
@@ -466,6 +484,9 @@ extension ChatTurnEngine {
         var conversation = session.messages
         var overrideModel: InstalledModel?
         var outputMode: StoreTurnOutput.Mode = .newMessage
+        /// Set when a request can't proceed but the user should be told why. The
+        /// notice is emitted after `output` exists (it is created below the switch).
+        var blockedNotice: String?
 
         switch request.target {
         case .newMessage:
@@ -474,10 +495,21 @@ extension ChatTurnEngine {
             // History is everything before the answer being replaced. The prompt
             // and image come from the user message that triggered that answer.
             guard let assistantIndex = session.messages.firstIndex(where: { $0.id == assistantMessageID }),
-                  session.messages[assistantIndex].role == .assistant,
-                  let userMessage = session.messages[..<assistantIndex].last(where: { $0.role == .user }) else {
+                  session.messages[assistantIndex].role == .assistant else {
                 return
             }
+
+            // Require the IMMEDIATELY preceding message to be the user turn. A long
+            // chat is truncated to a message cap, and that truncation can drop the user
+            // message above the oldest surviving answer — in which case `last(where:)`
+            // would walk back to the chat's first prompt and regenerate the right
+            // message against the wrong question and the wrong attachments.
+            guard assistantIndex > 0,
+                  session.messages[assistantIndex - 1].role == .user else {
+                blockedNotice = "⚠️ Can't regenerate this answer — its original question is no longer in the conversation."
+                break
+            }
+            let userMessage = session.messages[assistantIndex - 1]
             overrideModel = model
             trimmedPrompt = userMessage.text
             currentImage = userMessage.imageData.flatMap(UIImage.init(data:))
@@ -489,9 +521,17 @@ extension ChatTurnEngine {
             )
         }
 
-        guard !trimmedPrompt.isEmpty || currentImage != nil || !currentDocuments.isEmpty else { return }
         let output: TurnOutput = overrideOutput
             ?? StoreTurnOutput(store: store, sessionID: sessionID, mode: outputMode)
+
+        // Surface a request we refused (e.g. regenerate with its question truncated
+        // away) instead of silently doing nothing when the user taps.
+        if let blockedNotice {
+            output.appendNotice(blockedNotice)
+            return
+        }
+
+        guard !trimmedPrompt.isEmpty || currentImage != nil || !currentDocuments.isEmpty else { return }
 
         guard let model = overrideModel ?? dependencies.resolveModel(store) else {
             output.finish(text: InferenceServiceError.noModelInstalled.localizedDescription, toolActivities: nil, stats: nil, duration: nil)

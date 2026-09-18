@@ -70,6 +70,30 @@ struct ShareInbox {
         return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Atomically takes ownership of an item by deleting its `payload.json` marker.
+    ///
+    /// Both `pending()` and `payload(id:)` require that marker, so once one caller has
+    /// claimed an item a second reader finds nothing. This matters because the inbox is
+    /// drained from BOTH `onAppear` and `didBecomeActive` while the extension also opens
+    /// an `edgemindai://share/<id>` deep link; the file import suspends on the
+    /// `DocumentIndexer` actor, and inside that window the same file was imported twice.
+    /// Safe because callers are `@MainActor`, so the check-and-delete cannot interleave.
+    /// Returns false when the item was already claimed or is gone.
+    @discardableResult
+    func claim(id: UUID) -> Bool {
+        guard let inboxURL else { return false }
+        let marker = inboxURL
+            .appendingPathComponent(id.uuidString, isDirectory: true)
+            .appendingPathComponent(Self.payloadFileName)
+        guard fileManager.fileExists(atPath: marker.path) else { return false }
+        do {
+            try fileManager.removeItem(at: marker)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Removes an item after it has been imported.
     func remove(id: UUID) {
         guard let inboxURL else { return }

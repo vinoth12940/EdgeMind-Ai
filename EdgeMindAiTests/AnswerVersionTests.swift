@@ -88,6 +88,42 @@ final class AnswerVersionTests: XCTestCase {
         XCTAssertEqual(assistant.text, "answer 5")
     }
 
+    /// The cap must never evict the version the user is currently reading. The old
+    /// predicate excluded only the NEW version, so with version 0 selected it removed
+    /// exactly the answer on screen — contradicting the documented "oldest
+    /// non-selected" rule.
+    func test_versionCap_neverEvictsTheSelectedVersion() {
+        for index in 0..<5 {
+            store.beginRegeneration(assistantID, in: session.id, modelName: "Model \(index)")
+            store.updateMessageText(assistantID, in: session.id, text: "answer \(index)")
+        }
+        // Go back and select the OLDEST version before pushing past the cap.
+        store.selectVersion(0, of: assistantID, in: session.id)
+
+        let selectedBefore = store.chatSessions
+            .first { $0.id == session.id }!
+            .messages.first { $0.id == assistantID }!
+            .versions[0]
+            .id
+
+        store.beginRegeneration(assistantID, in: session.id, modelName: "Model final")
+        store.updateMessageText(assistantID, in: session.id, text: "answer final")
+
+        let message = store.chatSessions
+            .first { $0.id == session.id }!
+            .messages.first { $0.id == assistantID }!
+
+        XCTAssertEqual(message.versions.count, AppStateStore.maxAnswerVersions)
+        XCTAssertTrue(
+            message.versions.contains { $0.id == selectedBefore },
+            "the version the user was reading must survive eviction"
+        )
+        XCTAssertFalse(
+            message.versions.contains { $0.text == "first answer" },
+            "the oldest genuinely unprotected version is the one that should go"
+        )
+    }
+
     func test_removeVersion_fallsBackToRemainingSelection() {
         let versionID = store.beginRegeneration(assistantID, in: session.id, modelName: "Model A")!
         store.updateMessageText(assistantID, in: session.id, text: "second answer")

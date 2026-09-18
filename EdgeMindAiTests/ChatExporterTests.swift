@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 @testable import EdgeMindAi
 
 final class ChatExporterTests: XCTestCase {
@@ -89,5 +90,29 @@ final class ChatExporterTests: XCTestCase {
         let rich = try Data(contentsOf: withThinking)
         // Thinking text adds content, so the richer export must not be smaller.
         XCTAssertGreaterThanOrEqual(rich.count, plain.count)
+    }
+
+    /// A block taller than one page used to be drawn into a single rect and clipped,
+    /// so a long answer exported a PDF missing most of its text.
+    func test_pdf_paginatesLongAnswerInsteadOfClippingIt() async throws {
+        let paragraph = "This paragraph exists to make the exported answer far taller than a single PDF page, so the layout must flow onto further pages rather than clip at the bottom margin."
+        let longBody = Array(repeating: paragraph, count: 60).joined(separator: "\n\n")
+        let session = ChatSession(
+            title: "Long",
+            modelID: nil,
+            messages: [
+                ChatMessage(role: .user, text: "Explain at length."),
+                ChatMessage(role: .assistant, text: longBody)
+            ]
+        )
+
+        let url = try await ChatExporter.export(session: session, format: .pdf, includeThinking: false)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let document = try XCTUnwrap(CGPDFDocument(url as CFURL))
+        XCTAssertGreaterThan(
+            document.numberOfPages, 1,
+            "a multi-thousand-character answer must paginate, not clip at page 1"
+        )
     }
 }

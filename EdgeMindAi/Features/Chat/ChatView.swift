@@ -98,6 +98,12 @@ struct ChatView: View {
     @State private var pendingMemoryCandidate: String?
     @State private var attachedDocuments: [ChatAttachment] = []
     @StateObject private var voiceController = VoiceInteractionController()
+    /// The message currently being regenerated, so its version arrows can be frozen.
+    /// `engine.isGenerating` alone was not enough: it was only surfaced on the LAST
+    /// message, so regenerating an earlier answer left ‹ / › enabled and tapping one
+    /// mid-stream made every subsequent write land on the wrong version — silently
+    /// overwriting a saved answer with the in-progress text.
+    @State private var regeneratingMessageID: UUID?
 
 
     private func resolved(for model: InstalledModel) -> ResolvedModel {
@@ -226,7 +232,7 @@ struct ChatView: View {
                                 ForEach(activeMessages) { message in
                                     MessageBubbleView(
                                         message: message,
-                                        isGenerating: message.id == activeMessages.last?.id && engine.isGenerating,
+                                        isGenerating: (message.id == regeneratingMessageID || message.id == activeMessages.last?.id) && engine.isGenerating,
                                         showGenerationStats: store.settings.showGenerationStats,
                                         regenerateModels: store.availableChatModels,
                                         currentModelName: activeModel?.catalogItem.displayName,
@@ -234,6 +240,11 @@ struct ChatView: View {
                                             regenerate(message, model: model)
                                         },
                                         onSelectVersion: { index in
+                                            // Switching versions mid-stream would make the
+                                            // in-progress text land on the newly selected
+                                            // version and destroy it. The arrows are disabled
+                                            // too; this is the belt-and-braces guard.
+                                            guard !engine.isGenerating else { return }
                                             guard let sessionID = store.selectedSession?.id else { return }
                                             store.selectVersion(index, of: message.id, in: sessionID)
                                         },
@@ -282,6 +293,8 @@ struct ChatView: View {
                                     proxy.scrollTo("typing", anchor: .bottom)
                                 } else {
                                     proxy.scrollTo(activeMessages.last?.id, anchor: .bottom)
+                                    // Generation finished — the version arrows unlock.
+                                    regeneratingMessageID = nil
                                 }
                             }
                         }
@@ -1492,6 +1505,7 @@ struct ChatView: View {
     private func regenerate(_ message: ChatMessage, model: InstalledModel?) {
         guard !engine.isGenerating else { return }
         guard let sessionID = store.selectedSession?.id else { return }
+        regeneratingMessageID = message.id
         engine.send(TurnRequest(
             sessionID: sessionID,
             prompt: "",

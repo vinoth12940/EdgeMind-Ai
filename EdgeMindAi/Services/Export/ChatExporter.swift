@@ -276,22 +276,47 @@ private final class PDFLayout {
     }
 
     func add(_ text: NSAttributedString, spacing: CGFloat) {
-        let bounding = text.boundingRect(
-            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            context: nil
-        )
-        let height = ceil(bounding.height)
-        ensurePage(for: height)
-        text.draw(with: CGRect(x: margin, y: cursorY, width: contentWidth, height: height),
-                  options: [.usesLineFragmentOrigin, .usesFontLeading],
-                  context: nil)
-        cursorY += height + spacing
+        guard text.length > 0 else { return }
+
+        // Draw line by line so a block taller than one page flows onto the next.
+        // The old version measured the WHOLE message, called `ensurePage` (which only
+        // starts a new page) and then drew it into ONE rect — anything past the page
+        // bounds was silently clipped, so a long answer exported a PDF missing most
+        // of its text while the Markdown export of the same chat had all of it.
+        var lines: [NSAttributedString] = []
+        let source = text.string as NSString
+        source.enumerateSubstrings(
+            in: NSRange(location: 0, length: source.length),
+            options: [.byLines, .substringNotRequired]
+        ) { _, range, _, _ in
+            lines.append(text.attributedSubstring(from: range))
+        }
+        if lines.isEmpty { lines = [text] }
+
+        for line in lines {
+            let lineHeight = ceil(line.boundingRect(
+                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            ).height)
+            ensurePage(for: lineHeight)
+            line.draw(
+                with: CGRect(x: margin, y: cursorY, width: contentWidth, height: lineHeight),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                context: nil
+            )
+            cursorY += lineHeight
+        }
+
+        cursorY += spacing
     }
 
     func addImage(_ image: UIImage, spacing: CGFloat) {
         guard image.size.width > 0, image.size.height > 0 else { return }
-        let scale = min(1, contentWidth / image.size.width)
+        // Fit BOTH axes. Scaling by width alone let a tall phone screenshot extend past
+        // the bottom margin, and the lower part was clipped out of the export.
+        let maxHeight = max(1, bottomLimit - margin)
+        let scale = min(1, contentWidth / image.size.width, maxHeight / image.size.height)
         let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         ensurePage(for: size.height)
         image.draw(in: CGRect(origin: CGPoint(x: margin, y: cursorY), size: size))

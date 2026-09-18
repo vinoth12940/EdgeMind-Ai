@@ -13,13 +13,22 @@ final class AppStateStore {
     var settings: AppSettings
     var isSidebarOpen = false
 
+    /// False until `restoreSecretsFromKeychain()` has loaded the Keychain-backed
+    /// secrets into `settings`. Guards `saveSettings()` against writing a
+    /// never-loaded `""` back to the Keychain, which would delete it.
+    private var secretsRestored = false
+
     private static let installedModelsKey = "persistedInstalledModels"
     private static let settingsKey = "persistedAppSettings"
     private static let searchDefaultOffMigrationKey = "migration.searchDefaultOff.v020"
     private static let chatSessionsKey = "persistedChatSessions"
     private static let selectedSessionIDKey = "persistedSelectedSessionID"
     private static let placeholderSessionTitle = "New Chat"
-    private static let maxPersistedImageBytes = 600_000
+    /// Raw image bytes kept per attachment in a persisted chat. Internal (not private)
+    /// because `ChatTurnEngine.encodedAttachmentData` must encode to the SAME budget —
+    /// when the engine accepted a larger JPEG than this, the photo rendered in the bubble
+    /// and was then silently dropped from disk on the next launch.
+    static let maxPersistedImageBytes = 600_000
     private static let maxPersistedSessions = 40
     private static let maxInMemoryMessagesPerSession = 260
     private static let maxInMemoryMessageTextCharacters = 96_000
@@ -63,10 +72,13 @@ final class AppStateStore {
             self.installedModels = installedModels
         }
 
+        // Restore the Keychain-backed secrets FIRST. Everything below can call
+        // saveSettings(), and writing the not-yet-restored empty secret fields through
+        // to the Keychain would delete the user's saved API key / HF token.
+        restoreSecretsFromKeychain()
         reconcilePersistedInstalledModelsWithCurrentCatalog()
         migrateUnsupportedCatalogEntriesIfNeeded()
         ensureSystemFoundationModelAvailable()
-        restoreSecretsFromKeychain()
         migrateWebSearchDefaultOffIfNeeded()
     }
 
@@ -76,13 +88,17 @@ final class AppStateStore {
     }
 
     var defaultModel: InstalledModel? {
-        if let defaultModelID = settings.defaultModelID {
-            return installedModels.first(where: {
-                $0.catalogItem.id == defaultModelID &&
-                isReadyChatModel($0)
-            })
+        if let defaultModelID = settings.defaultModelID,
+           let pinned = installedModels.first(where: {
+               $0.catalogItem.id == defaultModelID && isReadyChatModel($0)
+           }) {
+            return pinned
         }
 
+        // A stale id must never block chat. The pinned model can disappear (restored
+        // backup, purged weights, catalog rename) while other models remain installed;
+        // returning nil here made the app insist "Install a model before starting a
+        // chat." with a fully populated Models tab. Fall through to any ready model.
         return installedModels.first(where: { $0.isDefault && isReadyChatModel($0) })
             ?? installedModels.first(where: isReadyChatModel)
     }
@@ -342,12 +358,22 @@ final class AppStateStore {
         }
 
         let newVersion = AnswerVersion(text: "", citations: citations, modelName: modelName)
+
+        // Capture what the user is currently looking at BEFORE appending. The eviction
+        // below must protect both the new version and this one — the old predicate only
+        // excluded the new version, so with version 0 selected it removed exactly the
+        // answer on screen, contradicting the documented "oldest non-selected" rule.
+        let previouslySelectedID = message.versions.indices.contains(message.selectedVersion)
+            ? message.versions[message.selectedVersion].id
+            : message.versions.first?.id
+
         message.versions.append(newVersion)
 
-        // Cap: drop the oldest non-selected version first so the answer the user
-        // is looking at is never silently discarded.
+        // Cap: drop the oldest version that is neither selected nor the one being
+        // generated, so an answer the user is reading is never silently discarded.
         while message.versions.count > Self.maxAnswerVersions {
-            if let oldestOther = message.versions.firstIndex(where: { $0.id != newVersion.id }) {
+            let protected: Set<UUID> = [newVersion.id, previouslySelectedID].compactMap { $0 }.reduce(into: []) { $0.insert($1) }
+            if let oldestOther = message.versions.firstIndex(where: { !protected.contains($0.id) }) {
                 message.versions.remove(at: oldestOther)
             } else {
                 break
@@ -482,9 +508,18 @@ final class AppStateStore {
     /// Secrets are excluded from the encoded settings JSON (see `AppSettings.encode`).
     /// The Keychain is their canonical store; the in-memory fields on `settings` are
     /// working copies restored at launch and synced back here on every save.
+    ///
+    /// The `secretsRestored` guard matters: until `restoreSecretsFromKeychain()` has
+    /// run, those in-memory fields are `""` simply because they were never loaded —
+    /// NOT because the user cleared them. Writing `""` through would delete the
+    /// Keychain items (`KeychainSecretStore` treats empty as delete), which is exactly
+    /// how a launch-time migration could wipe a saved API key. Once restored, the
+    /// fields are authoritative and a user clearing them does delete.
     private func saveSettings() {
-        WebSearchKeyManager.key = settings.webSearchAPIKey
-        HFTokenManager.token = settings.huggingFaceToken
+        if secretsRestored {
+            WebSearchKeyManager.key = settings.webSearchAPIKey
+            HFTokenManager.token = settings.huggingFaceToken
+        }
         guard let data = try? JSONEncoder().encode(settings) else { return }
         UserDefaults.standard.set(data, forKey: Self.settingsKey)
     }
@@ -508,6 +543,10 @@ final class AppStateStore {
             HFTokenManager.token = legacyToken
         }
         settings.huggingFaceToken = HFTokenManager.token ?? ""
+
+        // The in-memory fields now mirror the Keychain, so saveSettings() may write
+        // them back safely — and this legacy-plaintext migration needs exactly that.
+        secretsRestored = true
 
         if hadLegacyPlaintext {
             saveSettings()
@@ -542,9 +581,29 @@ final class AppStateStore {
 
     private static func loadChatSessions() -> [ChatSession]? {
         guard let data = UserDefaults.standard.data(forKey: chatSessionsKey) else { return nil }
-        guard let sessions = try? JSONDecoder().decode([ChatSession].self, from: data) else {
-            return nil
+
+        // Decode element-by-element. A single undecodable session used to fail the whole
+        // `[ChatSession]` decode, and since the empty fallback is then written back on the
+        // next mutation, one bad record silently destroyed the user's entire history.
+        // Keeping the readable sessions bounds the damage to losing one chat.
+        var sessions: [ChatSession] = []
+        if let array = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+            let decoder = JSONDecoder()
+            for element in array {
+                guard let elementData = try? JSONSerialization.data(withJSONObject: element),
+                      let session = try? decoder.decode(ChatSession.self, from: elementData) else {
+                    continue
+                }
+                sessions.append(session)
+            }
+        } else {
+            guard let decoded = try? JSONDecoder().decode([ChatSession].self, from: data) else {
+                return nil
+            }
+            sessions = decoded
         }
+
+        guard !sessions.isEmpty else { return nil }
         return boundedSessionsForPersistence(sessions).map(sanitizedSessionForPersistence)
     }
 
@@ -711,7 +770,11 @@ final class AppStateStore {
                   model.localPath == mlxModelID else {
                 return false
             }
-            return true
+            // MLX weights live in the purgeable Caches directory, so iOS can delete
+            // them under storage pressure while the record still says .installed.
+            // Without this check the model kept showing as Installed/Default and the
+            // next message silently re-downloaded multiple GB, or failed offline.
+            return MLXModelCache.isDownloaded(mlxModelID)
 #endif
         case .foundationModels:
             return model.localPath == AppleFoundationModelService.localPathMarker

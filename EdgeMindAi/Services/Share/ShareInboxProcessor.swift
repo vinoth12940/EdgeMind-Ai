@@ -25,6 +25,16 @@ enum ShareInboxProcessor {
         inbox: ShareInbox = ShareInbox(),
         library: DocumentLibraryStore
     ) async -> ShareImportOutcome? {
+        // Claim the item BEFORE the first `await`. The inbox is drained from `onAppear`
+        // and `didBecomeActive` while the `share/<id>` deep link can also be handling the
+        // same payload, and `library.importDocument` suspends on the DocumentIndexer
+        // actor. Without this claim both callers passed the "is it still pending?" check
+        // and the shared file was imported into the library twice.
+        guard inbox.claim(id: payload.id) else {
+            shareProcessorLogger.log("Share item \(payload.id.uuidString, privacy: .public) was already claimed")
+            return nil
+        }
+
         var outcome = ShareImportOutcome(
             prompt: payload.resolvedPrompt,
             attachments: [],

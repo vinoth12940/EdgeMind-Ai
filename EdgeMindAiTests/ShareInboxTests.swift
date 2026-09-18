@@ -143,4 +143,39 @@ final class ShareInboxTests: XCTestCase {
         XCTAssertEqual(outcomes.count, 2)
         XCTAssertTrue(inbox.pending().isEmpty)
     }
+
+    // MARK: - Claiming
+
+    /// The inbox is drained from BOTH `onAppear` and `didBecomeActive` while the
+    /// `share/<id>` deep link can handle the same payload, so an item must be claimed
+    /// atomically. Only the first claimant may process it.
+    func test_claimIsAtomic_firstCallerWins() throws {
+        let payload = SharePayload(action: .ask, text: "shared body")
+        try inbox.enqueue(payload)
+
+        XCTAssertTrue(inbox.claim(id: payload.id), "the first caller should win the claim")
+        XCTAssertFalse(inbox.claim(id: payload.id), "a second caller must not also claim it")
+    }
+
+    /// Once claimed, the item is no longer discoverable — which is what prevents the
+    /// duplicate library import.
+    func test_claimedItemIsNoLongerPendingOrLoadable() throws {
+        let payload = SharePayload(action: .ask, text: "shared body")
+        try inbox.enqueue(payload)
+
+        XCTAssertTrue(inbox.claim(id: payload.id))
+
+        XCTAssertTrue(inbox.pending().isEmpty, "a claimed item must not be listed as pending")
+        XCTAssertNil(inbox.payload(id: payload.id), "a claimed item must not be readable")
+    }
+
+    func test_processingAnAlreadyClaimedPayloadIsANoOp() async throws {
+        let payload = SharePayload(action: .ask, text: "shared body")
+        try inbox.enqueue(payload)
+        XCTAssertTrue(inbox.claim(id: payload.id))
+
+        let outcome = await ShareInboxProcessor.process(payload, inbox: inbox, library: library)
+
+        XCTAssertNil(outcome, "processing an already-claimed payload must do nothing")
+    }
 }
