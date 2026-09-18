@@ -396,10 +396,23 @@ Rules:
            auditCase.expectations.visionAnswerAcceptList.contains(where: { normalized.contains($0.lowercased()) }) {
             return true
         }
-        if auditCase.id == "leakStressor", normalized.contains("hello") {
-            return true
+        if auditCase.id == "leakStressor" {
+            // The prompt tells the model to END its reply with "HELLO.", so stopping at
+            // the first "hello" broke the loop BEFORE the trailing special token was
+            // streamed. The leak regex then never saw it, so a leaking model was graded
+            // green and its token never reached the profile's `knownLeakTokens`. Only
+            // stop once an actual leak token has arrived; otherwise run to the cap.
+            return containsLeakToken(text) || text.count >= maxAuditOutputCharacters
         }
         return text.count >= maxAuditOutputCharacters
+    }
+
+    /// Raw control/leak tokens a model must not emit. Shared by the early-stop check
+    /// and the `noLeakTokens` expectation so the two can never disagree.
+    static func containsLeakToken(_ text: String) -> Bool {
+        let leakPattern = #"(?i)(<\|im_end\|>|<\|endoftext\|>|<\|end_of_text\|>|<end_of_turn>|\[INST\]|<\|eot_id\|>|<\|channel>)"#
+        guard let regex = try? NSRegularExpression(pattern: leakPattern) else { return false }
+        return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
     private func evaluate(
@@ -416,9 +429,7 @@ Rules:
         }
 
         if auditCase.expectations.noLeakTokens {
-            let leakPattern = #"(?i)(<\|im_end\|>|<\|endoftext\|>|<\|end_of_text\|>|<end_of_turn>|\[INST\]|<\|eot_id\|>|<\|channel>)"#
-            if let regex = try? NSRegularExpression(pattern: leakPattern),
-               regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil {
+            if Self.containsLeakToken(text) {
                 return (false, "leak-token-detected")
             }
         }

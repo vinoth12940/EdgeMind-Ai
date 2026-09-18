@@ -318,4 +318,17 @@ private actor CapturingInferenceService: InferenceService {
             }
         })
     }
+
+    /// The leak detector must see a special token that arrives AFTER the "HELLO." the
+    /// prompt asks for. The early-stop check used to break the stream at the first
+    /// "hello", so the trailing token was never read and a leaking model graded green.
+    func test_leakTokenDetectedAfterTheHelloMarker() {
+        let stream = "HELLO.<|im_end|>"
+
+        XCTAssertTrue(
+            ModelAuditRunner.containsLeakToken(stream),
+            "a special token following the HELLO marker must be detected"
+        )
+        XCTAssertFalse(ModelAuditRunner.containsLeakToken("HELLO. Nice to meet you."))
+    }
 }
