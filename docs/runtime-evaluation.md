@@ -1,6 +1,6 @@
 # Runtime Evaluation & Architecture — Edge Mind Ai
 
-## Status: Validated & In Production (v0.3.3)
+## Status: Validated & In Production (v0.3.4)
 
 Four on-device inference runtimes have been evaluated, integrated, and verified on Apple Silicon hardware:
 

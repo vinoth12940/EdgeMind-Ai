@@ -436,97 +436,48 @@ struct MarkdownTextView: View {
 
     // MARK: - Inline Markdown (bold, italic, code, citation refs)
 
+    /// Builds the concatenated `Text` for one line.
+    ///
+    /// Parsing lives in `InlineMarkdownParser` so that the number of runs — and therefore
+    /// the depth of the `ConcatenatedTextStorage` tree SwiftUI has to resolve — stays
+    /// bounded. Appending one `Text` per character used to overflow the main-thread stack
+    /// (1 MB on device) on any line longer than roughly 670 characters.
     private func inlineMarkdown(_ text: String) -> Text {
-        var result = Text("")
-        var remaining = text[text.startIndex...]
+        let runs = InlineMarkdownParser.runs(from: text, citationCount: citations.count)
+        return runs.reduce(Text("")) { partial, run in
+            partial + styledText(for: run)
+        }
+    }
 
-        while !remaining.isEmpty {
-            // Inline code `...`
-            if remaining.hasPrefix("`"), let end = remaining.dropFirst().firstIndex(of: "`") {
-                let code = remaining[remaining.index(after: remaining.startIndex)..<end]
-                result = result + Text(String(code))
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    .foregroundColor(isUser ? .white : AppTheme.accent)
-                remaining = remaining[remaining.index(after: end)...]
-                continue
-            }
-
-            // Bold **...**
-            if remaining.hasPrefix("**"), let endRange = remaining.dropFirst(2).range(of: "**") {
-                let bold = remaining[remaining.index(remaining.startIndex, offsetBy: 2)..<endRange.lowerBound]
-                result = result + Text(String(bold))
+    private func styledText(for run: InlineMarkdownRun) -> Text {
+        switch run {
+        case .plain(let value):
+            return Text(value)
+        case .code(let value):
+            return Text(value)
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundColor(isUser ? .white : AppTheme.accent)
+        case .bold(let value):
+            return Text(value)
                 .fontWeight(.bold)
                 .foregroundColor(isUser ? .white : AppTheme.textPrimary)
-                remaining = remaining[endRange.upperBound...]
-                continue
-            }
-
-            // Italic *...*
-            if remaining.hasPrefix("*"), !remaining.hasPrefix("**"),
-               let end = remaining.dropFirst().firstIndex(of: "*") {
-                let italic = remaining[remaining.index(after: remaining.startIndex)..<end]
-                result = result + Text(String(italic))
+        case .italic(let value):
+            return Text(value)
                 .italic()
                 .foregroundColor(isUser ? .white.opacity(0.95) : AppTheme.textSecondary)
-                remaining = remaining[remaining.index(after: end)...]
-                continue
-            }
-
-            // Strikethrough ~~...~~
-            if remaining.hasPrefix("~~"),
-               let endRange = remaining.dropFirst(2).range(of: "~~") {
-                let strike = remaining[remaining.index(remaining.startIndex, offsetBy: 2)..<endRange.lowerBound]
-                result = result + Text(String(strike))
-                    .strikethrough()
-                    .foregroundColor(isUser ? .white.opacity(0.7) : AppTheme.textSecondary)
-                remaining = remaining[endRange.upperBound...]
-                continue
-            }
-
-            // Inline link [text](url)
-            if remaining.hasPrefix("[") {
-                let afterBracket = remaining.index(after: remaining.startIndex)
-                if let closeBracket = remaining[afterBracket...].firstIndex(of: "]") {
-                    let linkText = String(remaining[afterBracket..<closeBracket])
-                    let afterClose = remaining.index(after: closeBracket)
-                    if afterClose < remaining.endIndex && remaining[afterClose] == "(",
-                       let closeParen = remaining[afterClose...].firstIndex(of: ")") {
-                        let urlString = String(remaining[remaining.index(after: afterClose)..<closeParen])
-                        if URL(string: urlString) != nil {
-                            result = result + Text(linkText)
-                                .underline()
-                                .foregroundColor(isUser ? .white : AppTheme.accent)
-                            remaining = remaining[remaining.index(after: closeParen)...]
-                            continue
-                        }
-                    }
-                }
-            }
-
-            // Citation reference [1], [2] etc. - render as inline badge
-            if remaining.hasPrefix("["),
-               let closeBracket = remaining.firstIndex(of: "]") {
-                let inside = remaining[remaining.index(after: remaining.startIndex)..<closeBracket]
-                if inside.allSatisfy({ $0.isNumber }), let citationIndex = Int(String(inside)), citationIndex > 0, citationIndex <= citations.count {
-                    // Inline badge - styled diamond symbol with number
-                    result = result + Text(" ") +
-                        Text("◆\(inside)")
-                            .font(.system(size: 11, weight: .black, design: .rounded))
-                            .foregroundColor(AppTheme.accent) +
-                        Text(" ")
-                    remaining = remaining[remaining.index(after: closeBracket)...]
-                    continue
-                }
-            }
-
-            // Plain character — advance by one Unicode Character (emoji-safe)
-            if let ch = remaining.first {
-                result = result + Text(String(ch))
-                remaining = remaining[remaining.index(after: remaining.startIndex)...]
-            }
+        case .strikethrough(let value):
+            return Text(value)
+                .strikethrough()
+                .foregroundColor(isUser ? .white.opacity(0.7) : AppTheme.textSecondary)
+        case .link(let linkText, _):
+            return Text(linkText)
+                .underline()
+                .foregroundColor(isUser ? .white : AppTheme.accent)
+        case .citationBadge(let value):
+            return Text("◆\(value)")
+                .font(.system(size: 11, weight: .black, design: .rounded))
+                .foregroundColor(AppTheme.accent)
         }
-
-        return result
     }
 
     // MARK: - Citation Helpers

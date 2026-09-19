@@ -1,6 +1,6 @@
 # App Store Listing — Edge Mind Ai
 
-> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.3.3).
+> Paste-ready metadata for App Store Connect → your app → **App Store** tab → **iOS App** (version 0.3.4).
 > Anything in `[brackets]` you must fill in (URLs, contact, demo account).
 
 ---
@@ -264,7 +264,7 @@ Because there is **no Sign in with Apple** in this build (entitlement disabled),
 
 ## 12. Pre-submit checklist (App Store Connect will block submission until these are green)
 
-- [ ] Build 0.3.3 (10) shows a green checkmark in TestFlight (processing finished)
+- [ ] Build 0.3.4 (11) shows a green checkmark in TestFlight (processing finished)
 - [ ] Build selected on the App Store tab → "Build" section
 - [ ] All screenshots uploaded (iPhone 6.9" + iPad 13")
 - [ ] Description, subtitle, keywords, promo text filled
@@ -282,7 +282,7 @@ Once all green → **"Add for Review"** → **"Submit to Review"**.
 
 ## 13. Submission command (for the NEXT version, e.g. 0.4.0)
 
-Once 0.3.3 is approved, future uploads are one command. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, then:
+Once 0.3.4 is approved, future uploads are one command. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, then:
 
 ```bash
 cd "/Users/vinothrajalingam/Desktop/AI_Project/ClaudeCode/Edge Mind Ai"

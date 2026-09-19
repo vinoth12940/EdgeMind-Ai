@@ -15,6 +15,7 @@
 		08D1953F18C209AE5BBEAE4B /* ModelCatalogItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97091D405DC8AC624F546D5D /* ModelCatalogItem.swift */; };
 		08F84DF3E273FACE52E5EE5D /* ScriptedInferenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FED7B3CFD8673B220AFF006B /* ScriptedInferenceService.swift */; };
 		09081783F593D6B84AAD4A18 /* TokenLeakScrubberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92DB99D5E01DE66CC0B13F3 /* TokenLeakScrubberTests.swift */; };
+		09C730B466A26C8D8BE0445F /* InlineMarkdownParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A031124342896713189D041A /* InlineMarkdownParserTests.swift */; };
 		0A78B83BB1C665B8891C3B15 /* DeviceInfoTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E101179D335E43936CC8F697 /* DeviceInfoTools.swift */; };
 		0D387902B568F3F7DBF2C5BB /* AppStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5B8FEE1AF211DB1530F3343 /* AppStateStore.swift */; };
 		0DB34B58C26341AAF7D3CD2A /* StreamProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87B6CE4A471E1D66261D8AD4 /* StreamProcessor.swift */; };
@@ -162,6 +163,7 @@
 		F43671D7A875F8A6EA7AD741 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECC965CA0BF0DAA351E5BD3 /* DeepLinkRouter.swift */; };
 		F4C5B417C67A8CC26D1465C9 /* DocumentChunkerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 158FBF93AFAA6463680995A0 /* DocumentChunkerTests.swift */; };
 		F6D25A91ADC549572ACE63AE /* ModelSuggestionAdvisorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B6EF3C373D50E567AD41B07 /* ModelSuggestionAdvisorTests.swift */; };
+		F8A7A23C1B3447F3A8A604DC /* InlineMarkdownParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369B39677D5B08E672D84802 /* InlineMarkdownParser.swift */; };
 		F9187CEFA895EBA1CC51D4E8 /* ModelLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451405D4E3675E9A124D92CB /* ModelLibraryView.swift */; };
 		FA143E2346D623E5CDAB38EB /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = F0DCCF28116E648755EFDDE1 /* MLXLMCommon */; };
 		FA33B38356841C7A62DF5804 /* VoiceInteractionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AFA15BB7B9BEBE652D03162 /* VoiceInteractionController.swift */; };
@@ -250,6 +252,7 @@
 		32C128DE220881AC24C185DE /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
 		35E195572CFF51A45EABC144 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		3604A5BB7BA7B0728140F2A6 /* KeychainSecretStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecretStore.swift; sourceTree = "<group>"; };
+		369B39677D5B08E672D84802 /* InlineMarkdownParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineMarkdownParser.swift; sourceTree = "<group>"; };
 		3A75974A72330DA41292A3BC /* CoreAIModelCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreAIModelCompatibility.swift; sourceTree = "<group>"; };
 		3AFA15BB7B9BEBE652D03162 /* VoiceInteractionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInteractionController.swift; sourceTree = "<group>"; };
 		3D7352EDF75ED74FFD108F0D /* SearchGatewayFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchGatewayFactory.swift; sourceTree = "<group>"; };
@@ -322,6 +325,7 @@
 		9CEDC23A91B9230670A8CEAC /* EdgeMindShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EdgeMindShare.entitlements; sourceTree = "<group>"; };
 		9D626EA291CB41E22EAD584D /* SearchHistoryToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchHistoryToolTests.swift; sourceTree = "<group>"; };
 		9D7F5738EA1A31BF37570844 /* DeviceCapabilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCapabilityService.swift; sourceTree = "<group>"; };
+		A031124342896713189D041A /* InlineMarkdownParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineMarkdownParserTests.swift; sourceTree = "<group>"; };
 		A1FE5E8D2327B80C47FFFFE4 /* InstalledModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledModel.swift; sourceTree = "<group>"; };
 		A24454EC40A98C4332005365 /* DeterministicID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeterministicID.swift; sourceTree = "<group>"; };
 		A5B8FEE1AF211DB1530F3343 /* AppStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateStore.swift; sourceTree = "<group>"; };
@@ -618,6 +622,7 @@
 				0198215C58193BDA856D464E /* ChatComposerView.swift */,
 				04683490DCBCE045957AE72B /* ChatExportSheet.swift */,
 				35E195572CFF51A45EABC144 /* ChatView.swift */,
+				369B39677D5B08E672D84802 /* InlineMarkdownParser.swift */,
 				DBC364757F5666B1E6E9D65A /* MarkdownTextView.swift */,
 				5D49DEBF7F3E3F656A5791E2 /* MessageBubbleView.swift */,
 				011D7EA4F21A03A38DC886A9 /* PromptLibraryView.swift */,
@@ -743,6 +748,7 @@
 				5135E9A4A390BB978EB9C27C /* EditMessageTests.swift */,
 				4B905A5E269426E6E10B77DC /* GemmaToolCallPayloadTests.swift */,
 				DAC4B1CB25D1476551583AD4 /* GenerationStatsTests.swift */,
+				A031124342896713189D041A /* InlineMarkdownParserTests.swift */,
 				6B6B68BEDC12082582F08F90 /* MemoryCoordinatorAndGuardStressTests.swift */,
 				B9798D4EDFC31490EF52C75F /* MemoryStoreTests.swift */,
 				8CC9D9EB62BB4FCFA53A1809 /* ModelAuditRunnerTests.swift */,
@@ -1006,6 +1012,7 @@
 				903F4693059949607C6E122D /* EditMessageTests.swift in Sources */,
 				666F2DBE3BBCED705496F67A /* GemmaToolCallPayloadTests.swift in Sources */,
 				CFEE097E9B766BE5823A6F59 /* GenerationStatsTests.swift in Sources */,
+				09C730B466A26C8D8BE0445F /* InlineMarkdownParserTests.swift in Sources */,
 				50567494153A8E6407525FCE /* MemoryCoordinatorAndGuardStressTests.swift in Sources */,
 				252C71774281D61C153F4B4F /* MemoryStoreTests.swift in Sources */,
 				E94E4BBAB44D42C58C0F1E6D /* ModelAuditRunnerTests.swift in Sources */,
@@ -1089,6 +1096,7 @@
 				0117123EBD2F4710F51554D3 /* HFTokenManager.swift in Sources */,
 				8DCA349D69DDFBB4BC3FF7A1 /* HeadlessModelAuditLauncher.swift in Sources */,
 				5077056B251E78C1D55BC93B /* InferenceService.swift in Sources */,
+				F8A7A23C1B3447F3A8A604DC /* InlineMarkdownParser.swift in Sources */,
 				D3B3D168A42D1B9AD9BFA967 /* InstalledModel.swift in Sources */,
 				0F02B5A6853856D8363EE186 /* InstalledModelsView.swift in Sources */,
 				2539B70319A95436AB32E91F /* KeychainSecretStore.swift in Sources */,
@@ -1286,7 +1294,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 43NV5DTHKG;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1308,7 +1316,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDefault;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.3.3;
+				MARKETING_VERSION = 0.3.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vinothrajalingam.EdgeMindAi;
@@ -1448,7 +1456,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 43NV5DTHKG;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1476,7 +1484,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDefault;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.3.3;
+				MARKETING_VERSION = 0.3.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
