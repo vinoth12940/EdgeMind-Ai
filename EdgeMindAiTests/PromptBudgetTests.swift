@@ -225,4 +225,46 @@ final class PromptBudgetTests: XCTestCase {
             "the question must survive trimming; current starts with: \(fitted.current.prefix(90))"
         )
     }
+
+    /// The ATTACHMENT path must actually deliver the document to a small-window runtime.
+    ///
+    /// This is the regression the user hit: with Gemma 4 (LiteRT, 2048-token window) the
+    /// inlined document is larger than the turn budget, so `fitPrompt` trims it. It must
+    /// keep enough of the DOCUMENT (not just the question) for the model to summarise it —
+    /// otherwise the model answers as if nothing were attached.
+    ///
+    /// The device audit's `documentContextProbe` does NOT cover this: it pastes a one-line
+    /// document straight into the prompt, so it never exercises the attachment budget.
+    func test_attachedDocumentSurvivesTheBudgetForEveryGemma4Runtime() throws {
+        let document = String(repeating: "The termination clause requires 30 days written notice. ", count: 40)
+        let gemmaEntries = MockCatalogData.items.filter { $0.displayName.contains("Gemma 4") }
+        XCTAssertFalse(gemmaEntries.isEmpty, "expected Gemma 4 catalog entries")
+
+        for item in gemmaEntries {
+            let model = InstalledModel(
+                catalogItem: item,
+                installState: .installed,
+                progress: 1,
+                localPath: item.mlxModelID ?? "local"
+            )
+            let budget = InferenceBudget.documentContextBudget(for: model)
+            let prompt = "Summarize this document.\n\n### contract.txt\n" + String(document.prefix(budget))
+
+            let fitted = InferenceBudget.fitPrompt(
+                system: AppSettings.default.systemPrompt,
+                history: [],
+                current: prompt,
+                for: model
+            )
+
+            XCTAssertTrue(
+                fitted.current.contains("termination clause"),
+                "\(item.displayName) dropped the attached document before inference; got: \(fitted.current.prefix(120))"
+            )
+            XCTAssertTrue(
+                fitted.current.contains("Summarize this document"),
+                "\(item.displayName) dropped the user's question"
+            )
+        }
+    }
 }
