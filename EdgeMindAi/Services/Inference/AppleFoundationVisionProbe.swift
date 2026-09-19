@@ -23,6 +23,9 @@ enum AppleFoundationVisionProbe {
         let documentRequested = environment["DOC_PROBE"] == "1"
 
         if documentRequested { await runDocumentProbe() }
+        if environment["DOC_E2E_PROBE"] == "1" {
+            await runDocumentE2EProbe(modelName: environment["DOC_E2E_MODEL"])
+        }
         if toolRequested { await runToolCallingProbe() }
         guard visionRequested else { return }
 
@@ -228,6 +231,133 @@ enum AppleFoundationVisionProbe {
         let result = await ToolRegistry.dispatch(name: name, argsJSON: args, context: context)
         let output = result?.output ?? "nil"
         print("DOCPROBE \(label) name=\(name) args=\(args.prefix(70)) ok=\(!(output.hasPrefix("Error"))) out=\(output.prefix(140))")
+    }
+
+    /// Writes a probe line to BOTH stderr (unbuffered) and a file in Documents.
+    ///
+    /// `print` to a piped stdout is block-buffered, so when the app segfaults mid-probe
+    /// every buffered line is lost — which is exactly what hid the location of the crash.
+    /// The file survives the crash and can be pulled off the device afterwards; look for
+    /// `doce2e.log`.
+    static func probeLog(_ message: String) {
+        FileHandle.standardError.write(Data(("DOCE2E " + message + "\n").utf8))
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("doce2e.log")
+        let line = Data((message + "\n").utf8)
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(line)
+            try? handle.close()
+        } else {
+            try? line.write(to: url)
+        }
+    }
+
+    /// DEBUG-only END-TO-END document probe.
+    ///
+    /// Reproduces exactly what a user does — attach a document, ask it to summarise — and
+    /// prints every stage, so a failure can be localised instead of guessed at:
+    ///
+    ///   DEVICECTL_CHILD_DOC_E2E_PROBE=1 DEVICECTL_CHILD_DOC_E2E_MODEL="Gemma 4 E2B Instruct (LiteRT-LM)"     ///     xcrun devicectl device process launch --console --terminate-existing --device <udid> com.vinothrajalingam.EdgeMindAi
+    @MainActor
+    static func runDocumentE2EProbe(modelName: String?) async {
+        let marker = "Cedar"
+        let body = """
+        Quarterly Operations Review.
+
+        The internal project codename is \(marker). The rollout window is 14 March. \
+        The designated owner is Priya Raman. Budget approved: 240000 dollars. \
+        Risk: the vendor contract renews in June and must be renegotiated.
+        """
+        probeLog("start model=\(modelName ?? "<default>")")
+
+        // 1) Pick the model under test.
+        guard let item = MockCatalogData.items.first(where: { item in
+            guard let modelName else { return item.runtimeType == .foundationModels }
+            return item.displayName.lowercased().contains(modelName.lowercased())
+        }) else {
+            probeLog("ERROR stage=catalog no model matched")
+            return
+        }
+        let installed = InstalledModel(
+            catalogItem: item,
+            installState: .installed,
+            progress: 1,
+            localPath: item.mlxModelID ?? AppleFoundationModelService.localPathMarker
+        )
+        probeLog("model=\(item.displayName) runtime=\(item.runtimeType.rawValue)")
+
+        // 2) Write a real file and run the REAL extraction path.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("doce2e-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var attachment: ChatAttachment?
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent("release-notes.txt")
+            try body.write(to: file, atomically: true, encoding: .utf8)
+            attachment = try await DocumentExtractionService.attachment(from: file)
+        } catch {
+            probeLog("ERROR stage=extraction \(error.localizedDescription)")
+            return
+        }
+        guard let attachment else {
+            probeLog("ERROR stage=extraction returned nil")
+            return
+        }
+        let extracted = attachment.extractedText ?? ""
+        probeLog("extractedChars=\(extracted.count) containsMarker=\(extracted.contains(marker))")
+        guard extracted.contains(marker) else {
+            probeLog("FAIL stage=extraction lost the document text")
+            return
+        }
+
+        // 3) Inline it exactly as ChatTurnEngine does.
+        let budget = InferenceBudget.documentContextBudget(for: installed)
+        let inlined = DocumentExtractionService.promptContext(
+            from: [attachment],
+            maxCharacters: budget,
+            query: "Summarize this document"
+        )
+        probeLog("docBudget=\(budget) inlinedChars=\(inlined.count) markerInlined=\(inlined.contains(marker))")
+
+        // 4) Ask the model through the real service for this runtime.
+        let prompt = "Summarize this document.\n\n\(inlined)"
+        let service = serviceForRuntime(item.runtimeType)
+        probeLog("calling \(type(of: service)) promptChars=\(prompt.count)")
+        do {
+            let (_, stream) = try await service.generateStream(
+                prompt: prompt,
+                model: installed,
+                conversation: [],
+                searchContext: nil,
+                systemPrompt: AppSettings.default.systemPrompt,
+                imageData: nil,
+                settings: AppSettings.default
+            )
+            var text = ""
+            var events = 0
+            for await event in stream {
+                events += 1
+                if case .textDelta(let delta) = event { text += delta }
+            }
+            let grounded = text.lowercased().contains(marker.lowercased())
+            probeLog("events=\(events) answerChars=\(text.count) groundedOnDocument=\(grounded)")
+            probeLog("ANSWER >>>\(text.prefix(400))<<<")
+            probeLog(grounded ? "RESULT: PASS" : "RESULT: FAIL (answer ignored the document)")
+        } catch {
+            probeLog("ERROR stage=inference \(error.localizedDescription)")
+        }
+        probeLog("done")
+    }
+
+    private static func serviceForRuntime(_ runtime: ModelCatalogItem.RuntimeType) -> InferenceService {
+        switch runtime {
+        case .foundationModels: return AppleFoundationInferenceService()
+        case .mlx: return MLXInferenceService()
+        case .liteRTLM: return LiteRTInferenceService()
+        case .gguf: return LocalLlamaInferenceService()
+        }
     }
 
     /// Renders a high-contrast word so the result is unambiguous.
